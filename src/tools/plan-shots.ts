@@ -66,13 +66,25 @@ SCENE TRANSITIONS:
 - Keep transitions SHORT (0.5-0.75 second) — they shouldn't distract
 
 CROSS-SHOT CONTINUITY:
-- Set continuousFromPrevious: true when this shot continues directly from the previous shot within the same scene — same location, continuous action, no time skip. The camera angle/composition may change but the scene content is continuous.
-- Set continuousFromPrevious: false when:
+- When continuousFromPrevious is true, the system uses the previous shot's end frame as a STYLE REFERENCE (art style, lighting, color palette) — it does NOT copy or reuse it as the start frame. Each shot's start frame is always generated from its own startFramePrompt.
+- Set continuousFromPrevious: true ONLY when ALL of these are true:
+  1. Same composition type (e.g., both are wide_establishing, or both are insert_cutaway)
+  2. Same primary subject (e.g., both focused on the same person or same group)
+  3. Same camera angle and framing
+  4. The shot is literally "the same camera, a few seconds later"
+- Set continuousFromPrevious: false when ANY of these are true:
   - It's the first shot of a scene (always false)
+  - Different composition type from the previous shot (e.g., wide_establishing → medium_shot)
+  - Different primary subject (e.g., close_up of Person A → close_up of Person B)
+  - Different camera angle or framing
   - There's a time skip from the previous shot
   - The location changes from the previous shot
-  - The action is not continuous (e.g., reaction shot after a pause)
-- When continuousFromPrevious is true, the system will reuse the previous shot's end frame as this shot's start frame for perfect visual continuity.
+- Examples:
+  - wide_establishing of room → medium_shot of door = FALSE (different composition)
+  - close_up of Alice → close_up of Bob = FALSE (different subject!)
+  - medium_shot of consultants → close_up of Guy = FALSE (different composition, different subject)
+  - insert_cutaway of laptop screen → insert_cutaway of same laptop screen = TRUE (same everything)
+  - close_up of Alice speaking → close_up of Alice finishing sentence = TRUE (same everything)
 `;
 
 // ---------------------------------------------------------------------------

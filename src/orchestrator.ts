@@ -615,14 +615,15 @@ IMPORTANT:
 - Use outputDir="${options.outputDir}".
 - Art style: "${analysis.artStyle}"
 
-CROSS-SHOT CONTINUITY (CRITICAL):
+CROSS-SHOT STYLE CONTINUITY:
 - Generate frames IN SHOT ORDER within each scene (shot 1 first, then shot 2, etc.)
 - For each shot AFTER the first in a scene, pass previousEndFramePath = the end frame path of the immediately preceding shot
-- This ensures visual continuity: the end of shot N visually matches the start of shot N+1
+- This provides a STYLE REFERENCE for art style, lighting, and color palette consistency across shots — it does NOT copy or override the shot's own prompts
+- Each shot's start frame is ALWAYS generated from its own startFramePrompt. The previousEndFramePath is used only as a visual style reference.
 - The first shot of each scene does NOT need previousEndFramePath
 - Look up the previous shot's end frame from state.generatedFrames[previousShotNumber].end
 
-Example: When generating shot 3, if shot 2's end frame is at state.generatedFrames[2].end = "./output/frames/shot_2_end.png", pass previousEndFramePath="./output/frames/shot_2_end.png" to generateFrame for shot 3.
+Example: When generating shot 3, if shot 2's end frame is at state.generatedFrames[2].end = "./output/frames/shot_2_end.png", pass previousEndFramePath="./output/frames/shot_2_end.png" to generateFrame for shot 3. Shot 3's start frame will be generated from shot 3's own startFramePrompt, using shot 2's end frame only as a style reference.
 
 Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", ")}`;
 

@@ -37,27 +37,12 @@ export async function generateFrame(params: {
     };
   }
 
-  // Hard continuity: copy previous shot's end frame as this shot's start frame
-  if (shot.continuousFromPrevious && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
-    console.log(`[generateFrame] Shot ${shot.shotNumber}: copying previous end frame for continuity`);
-    fs.copyFileSync(previousEndFramePath, startPath);
-
-    // Generate only the end frame
-    const endFramePath = await generateSingleFrame({
-      shot,
-      artStyle,
-      assetLibrary,
-      isEndFrame: true,
-      previousStartFramePath: startPath,  // use the copied start frame as reference for end frame
-      outputPath: endPath,
-    });
-
-    return {
-      shotNumber: shot.shotNumber,
-      startPath,
-      endPath: endFramePath,
-    };
-  }
+  // When continuousFromPrevious is true, the previous end frame is used as a
+  // high-priority style/continuity reference (first in the reference list),
+  // but the start frame is still generated from this shot's own prompt.
+  const continuityRefPath = previousEndFramePath && fs.existsSync(previousEndFramePath)
+    ? previousEndFramePath
+    : undefined;
 
   try {
     // Generate start frame
@@ -67,7 +52,8 @@ export async function generateFrame(params: {
       assetLibrary,
       isEndFrame: false,
       previousStartFramePath: undefined,
-      previousEndFramePath,
+      previousEndFramePath: continuityRefPath,
+      continuityIsHighPriority: shot.continuousFromPrevious === true,
       outputPath: startPath,
     });
 
@@ -103,6 +89,7 @@ async function generateSingleFrame(params: {
   isEndFrame: boolean;
   previousStartFramePath?: string;
   previousEndFramePath?: string;
+  continuityIsHighPriority?: boolean;
   outputPath: string;
 }): Promise<string> {
   const {
@@ -112,6 +99,7 @@ async function generateSingleFrame(params: {
     isEndFrame,
     previousStartFramePath,
     previousEndFramePath,
+    continuityIsHighPriority = false,
     outputPath,
   } = params;
 
@@ -126,16 +114,33 @@ async function generateSingleFrame(params: {
     cameraDirection: shot.cameraDirection,
   });
 
-  // Collect reference image file paths (priority: location > character > continuity)
+  // Collect reference image file paths.
+  // When continuityIsHighPriority is true (continuousFromPrevious), the previous
+  // end frame goes FIRST so the image model treats it as the strongest reference
+  // for art style and lighting consistency. Otherwise: location > character > continuity.
   const referenceImagePaths: string[] = [];
 
-  // Add location reference image if available (priority 1)
+  // Determine continuity reference path (previous end frame for start frames,
+  // or this shot's start frame for end frames)
+  let continuityRefPath: string | undefined;
+  if (!isEndFrame && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
+    continuityRefPath = previousEndFramePath;
+  } else if (isEndFrame && previousStartFramePath && fs.existsSync(previousStartFramePath)) {
+    continuityRefPath = previousStartFramePath;
+  }
+
+  // If high-priority continuity, add continuity ref FIRST
+  if (continuityIsHighPriority && continuityRefPath) {
+    referenceImagePaths.push(continuityRefPath);
+  }
+
+  // Add location reference image if available
   const locationRef = assetLibrary.locationImages[shot.location];
   if (locationRef && fs.existsSync(locationRef)) {
     referenceImagePaths.push(locationRef);
   }
 
-  // Add first character reference image if available (priority 2)
+  // Add first character reference image if available
   if (shot.charactersPresent.length > 0) {
     const charName = shot.charactersPresent[0];
     const charRefs = assetLibrary.characterImages[charName];
@@ -148,15 +153,9 @@ async function generateSingleFrame(params: {
     }
   }
 
-  // Add continuity frame if available (priority 3)
-  // For start frame, add the previous shot's end frame for cross-shot continuity
-  if (!isEndFrame && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
-    referenceImagePaths.push(previousEndFramePath);
-  }
-
-  // For end frame, add the start frame as additional input for visual continuity
-  if (isEndFrame && previousStartFramePath && fs.existsSync(previousStartFramePath)) {
-    referenceImagePaths.push(previousStartFramePath);
+  // If normal priority continuity, add continuity ref LAST
+  if (!continuityIsHighPriority && continuityRefPath) {
+    referenceImagePaths.push(continuityRefPath);
   }
 
   // Limit to max 4 reference images (Reve supports up to 4)
@@ -171,6 +170,8 @@ async function generateSingleFrame(params: {
         imgTagParts.push(`<img>${i}</img> as location reference`);
       } else if (shot.charactersPresent.length > 0 && refPath === (assetLibrary.characterImages[shot.charactersPresent[0]]?.front || assetLibrary.characterImages[shot.charactersPresent[0]]?.angle)) {
         imgTagParts.push(`<img>${i}</img> as character reference`);
+      } else if (continuityIsHighPriority && refPath === continuityRefPath) {
+        imgTagParts.push(`<img>${i}</img> as style/lighting continuity reference (match art style and palette, NOT content)`);
       } else {
         imgTagParts.push(`<img>${i}</img> as continuity reference`);
       }
@@ -228,7 +229,7 @@ Generate a high-quality, cinematic image that:
 4. Follows the camera direction and framing
 5. Is suitable as a keyframe for video generation
 6. Maintains visual continuity with reference images provided
-7. CRITICAL: If a reference image of the previous shot's end frame is provided, your start frame must visually match that moment — same characters, positions, lighting, and setting. The camera angle/composition may change, but the scene content must be continuous.
+7. CONTINUITY REFERENCE: If a continuity reference from the previous shot is provided, maintain consistent art style, lighting, and color palette — but follow THIS frame's composition and subject description exactly. The continuity reference is for visual style consistency only, not for copying the previous shot's content. Generate what THIS shot's prompt describes, not what the reference image shows.
 
 Aspect ratio: 1:1`;
 }
