@@ -16,7 +16,6 @@ type GenerateVideoParams = {
   durationSeconds: 4 | 6 | 8;
   startFramePath: string;
   endFramePath: string;
-  referenceImagePaths?: string[];
   outputDir: string;
   dryRun?: boolean;
   abortSignal?: AbortSignal;
@@ -115,7 +114,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
         // Build config
         // Veo 3.1 supports 4, 6, or 8 second durations at 720p for interpolation.
-        // Duration must be 8 for extension mode, reference images, or 1080p/4k.
+        // Duration must be 8 for extension mode or 1080p/4k.
         const config: Record<string, unknown> = {
           durationSeconds: durationSeconds,
           aspectRatio: "16:9",
@@ -215,7 +214,6 @@ export const generateVideoTool = {
     durationSeconds: z.union([z.literal(4), z.literal(6), z.literal(8)]).describe("Video duration in seconds"),
     startFramePath: z.string().describe("Path to start frame image"),
     endFramePath: z.string().describe("Path to end frame image"),
-    referenceImagePaths: z.array(z.string()).optional().describe("Paths to reference images (up to 3)"),
     outputDir: z.string().describe("Output directory for video file"),
     dryRun: z.boolean().optional().describe("Return placeholder without calling API"),
   }),
