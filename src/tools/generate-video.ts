@@ -118,6 +118,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         const config: Record<string, unknown> = {
           durationSeconds: durationSeconds,
           aspectRatio: "16:9",
+          personGeneration: "allow_adult",
         };
 
         console.log(`[generateVideo] Config: durationSeconds=${config.durationSeconds}, aspectRatio=${config.aspectRatio}`);
