@@ -260,6 +260,10 @@ async function assembleWithXfade(
     }
   }
 
+  // Build audio concat filter chain to preserve audio tracks from all clips
+  const audioInputs = videoPaths.map((_, i) => `[${i}:a]`).join("");
+  filterComplex += `${audioInputs}concat=n=${videoPaths.length}:v=0:a=1[aout];`;
+
   // Remove trailing semicolon
   filterComplex = filterComplex.slice(0, -1);
 
@@ -268,6 +272,7 @@ async function assembleWithXfade(
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", `[${previousLabel}]`,
+    "-map", "[aout]",
     "-c:v", "libx264",
     "-preset", "medium",
     "-crf", "23",
