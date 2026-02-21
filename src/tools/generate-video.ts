@@ -5,6 +5,10 @@ import { join } from "path";
 import { getGoogleClient } from "../google-client";
 import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
 
+// Cooldown tracking for Veo API calls to avoid rate-limit-like 400 errors
+let lastVeoCallTimestamp = 0;
+const VEO_COOLDOWN_MS = 30_000; // 30 seconds between Veo API calls
+
 /** Shared parameter type for all video backends. */
 type GenerateVideoParams = {
   shotNumber: number;
@@ -123,6 +127,15 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
         console.log(`[generateVideo] Config: durationSeconds=${config.durationSeconds}, aspectRatio=${config.aspectRatio}`);
 
+        // Enforce cooldown between consecutive Veo API calls
+        const elapsed = Date.now() - lastVeoCallTimestamp;
+        if (elapsed < VEO_COOLDOWN_MS) {
+          const waitMs = VEO_COOLDOWN_MS - elapsed;
+          console.log(`[generateVideo] Shot ${shotNumber}: Waiting ${Math.ceil(waitMs / 1000)}s cooldown before Veo API call...`);
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        lastVeoCallTimestamp = Date.now();
+
         let operation = await client.models.generateVideos({
           model: "veo-3.1-generate-preview",
           prompt: videoPrompt,
@@ -177,6 +190,12 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         // Don't retry if cancelled due to pipeline interruption
         if (error?.message?.includes('cancelled due to pipeline interruption')) {
           throw error;
+        }
+        // Check if it's a 400 "use case not supported" error (likely rate limiting)
+        if (error?.status === 400 && (error?.message?.includes('INVALID_ARGUMENT') || error?.message?.includes('use case is currently not supported'))) {
+          console.warn(`[generateVideo] Shot ${shotNumber}: Got 400 INVALID_ARGUMENT (likely rate limit). Waiting 60s before retry ${attempt}/${maxRetries}...`);
+          await new Promise((resolve) => setTimeout(resolve, 60000));
+          continue;
         }
         // Check if it's a 429 rate limit error
         if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
