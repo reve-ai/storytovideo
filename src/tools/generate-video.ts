@@ -5,6 +5,15 @@ import { join } from "path";
 import { getGoogleClient } from "../google-client";
 import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
 
+// Custom error for RAI celebrity filter rejections — allows orchestrator to
+// catch this specific failure and regenerate frames before retrying.
+export class RaiCelebrityError extends Error {
+  constructor(_shotNumber: number, message: string) {
+    super(message);
+    this.name = "RaiCelebrityError";
+  }
+}
+
 // Cooldown tracking for Veo API calls to avoid rate-limit-like 400 errors
 let lastVeoCallTimestamp = 0;
 const VEO_COOLDOWN_MS = 30_000; // 30 seconds between Veo API calls
@@ -171,6 +180,11 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
           if (errorInfo) console.error(`[generateVideo]   Operation error: ${JSON.stringify(errorInfo)}`);
           if (!filterCount && !filterReasons?.length && !errorInfo) {
             console.error(`[generateVideo]   Full response: ${JSON.stringify(response)}`);
+          }
+          // Throw a specific error when the RAI filter mentions "celebrity" so
+          // the orchestrator can regenerate frames and retry.
+          if (filterReasons?.some((r: string) => r.toLowerCase().includes('celebrity'))) {
+            throw new RaiCelebrityError(shotNumber, `RAI celebrity filter for shot ${shotNumber}: ${filterReasons.join(', ')}`);
           }
           throw new Error(`No video in response for shot ${shotNumber}${filterReasons?.length ? ` (RAI: ${filterReasons.join(', ')})` : ''}`);
         }
