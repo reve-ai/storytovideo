@@ -10,7 +10,7 @@ import { analyzeStory, analyzeStoryTool } from "./tools/analyze-story";
 import { planShotsForScene, planShotsForSceneTool, CINEMATIC_RULES } from "./tools/plan-shots";
 import { generateAsset, generateAssetTool } from "./tools/generate-asset";
 import { generateFrame, generateFrameTool } from "./tools/generate-frame";
-import { generateVideo, generateVideoTool, RaiCelebrityError } from "./tools/generate-video";
+import { generateVideo, generateVideoTool } from "./tools/generate-video";
 import { verifyOutput, verifyOutputTool } from "./tools/verify-output";
 import { assembleVideo, assembleVideoTool } from "./tools/assemble-video";
 import { saveState, loadState, saveStateTool } from "./tools/state";
@@ -793,65 +793,59 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
       description: generateVideoTool.description,
       inputSchema: generateVideoTool.parameters,
       execute: wrapToolExecute("video_generation", "generateVideo", async (params: z.infer<typeof generateVideoTool.parameters>) => {
-        const MAX_FRAME_REGEN_ATTEMPTS = 2;
-        let currentParams = { ...params };
+        try {
+          const result = await generateVideo({
+            ...params,
+            dryRun: options.dryRun,
+            outputDir: join(options.outputDir, "videos"),
+            abortSignal: options.abortSignal,
+            pendingJobStore: {
+              get: (key) => state.pendingJobs[key],
+              set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
+              delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
+            },
+          });
+          state.generatedVideos[result.shotNumber] = result.path;
+          await saveState({ state });
+          return result;
+        } catch (error: any) {
+          if (error?.name === 'RaiCelebrityError') {
+            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Regenerating frames...`);
 
-        for (let frameAttempt = 0; frameAttempt <= MAX_FRAME_REGEN_ATTEMPTS; frameAttempt++) {
-          try {
-            const result = await generateVideo({
-              ...currentParams,
+            // Find shot data from state
+            const shot = state.storyAnalysis!.scenes
+              .flatMap(s => s.shots || [])
+              .find(s => s.shotNumber === params.shotNumber);
+            if (!shot) throw error; // Can't regenerate without shot data
+
+            // Regenerate frames (no previousEndFramePath — we want completely fresh frames)
+            const frameResult = await generateFrame({
+              shot,
+              artStyle: state.storyAnalysis!.artStyle,
+              assetLibrary: state.assetLibrary!,
+              outputDir: options.outputDir,
               dryRun: options.dryRun,
-              outputDir: join(options.outputDir, "videos"),
-              abortSignal: options.abortSignal,
-              pendingJobStore: {
-                get: (key) => state.pendingJobs[key],
-                set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
-                delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
-              },
             });
-            state.generatedVideos[result.shotNumber] = result.path;
+
+            // Update state with new frame paths
+            state.generatedFrames[shot.shotNumber] = {
+              start: frameResult.startPath,
+              end: frameResult.endPath,
+            };
             await saveState({ state });
-            return result;
-          } catch (error) {
-            if (error instanceof RaiCelebrityError && frameAttempt < MAX_FRAME_REGEN_ATTEMPTS) {
-              console.warn(`[video_generation] Shot ${currentParams.shotNumber}: RAI celebrity filter triggered. Regenerating frames (attempt ${frameAttempt + 1}/${MAX_FRAME_REGEN_ATTEMPTS})...`);
 
-              // Find shot data from state
-              const shot = state.storyAnalysis!.scenes
-                .flatMap(s => s.shots || [])
-                .find(s => s.shotNumber === currentParams.shotNumber);
-              if (!shot) throw error; // Can't regenerate without shot data
+            console.log(`[video_generation] Shot ${params.shotNumber}: Frames regenerated at ${frameResult.startPath} and ${frameResult.endPath}. Please retry generateVideo with the new frame paths from state.`);
 
-              // Regenerate frames (no previousEndFramePath — we want completely fresh frames)
-              const frameResult = await generateFrame({
-                shot,
-                artStyle: state.storyAnalysis!.artStyle,
-                assetLibrary: state.assetLibrary!,
-                outputDir: options.outputDir,
-                dryRun: options.dryRun,
-              });
-
-              // Update state with new frame paths
-              state.generatedFrames[shot.shotNumber] = {
-                start: frameResult.startPath,
-                end: frameResult.endPath,
-              };
-              await saveState({ state });
-
-              // Update params with new frame paths
-              currentParams = {
-                ...currentParams,
-                startFramePath: frameResult.startPath!,
-                endFramePath: frameResult.endPath!,
-              };
-
-              console.log(`[video_generation] Shot ${currentParams.shotNumber}: Frames regenerated. Retrying video generation...`);
-              continue;
-            }
-            throw error;
+            // Return error info so Claude retries with updated frames
+            return {
+              shotNumber: params.shotNumber,
+              error: "RAI celebrity filter triggered. Frames have been regenerated. Retry this shot — use updated frame paths from state.generatedFrames.",
+              newStartFramePath: frameResult.startPath,
+              newEndFramePath: frameResult.endPath,
+            };
           }
+          throw error;
         }
-        throw new Error(`Shot ${currentParams.shotNumber}: RAI celebrity filter persisted after ${MAX_FRAME_REGEN_ATTEMPTS} frame regeneration attempts`);
       }, options.onToolError, options.abortSignal),
     },
     saveState: {
