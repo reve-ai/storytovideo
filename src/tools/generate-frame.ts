@@ -150,12 +150,10 @@ async function generateSingleFrame(params: {
     referenceImagePaths.push(locationRef);
   }
 
-  // Add first character reference image if available
-  if (shot.charactersPresent.length > 0) {
-    const charName = shot.charactersPresent[0];
+  // Add character reference images for all characters present
+  for (const charName of shot.charactersPresent) {
     const charRefs = assetLibrary.characterImages[charName];
     if (charRefs) {
-      // Prefer front angle, fall back to angle
       const refPath = charRefs.front || charRefs.angle;
       if (refPath && fs.existsSync(refPath)) {
         referenceImagePaths.push(refPath);
@@ -168,18 +166,28 @@ async function generateSingleFrame(params: {
     referenceImagePaths.push(continuityRefPath);
   }
 
-  // Limit to max 4 reference images (Reve supports up to 4)
-  const limitedReferencePaths = referenceImagePaths.slice(0, 4);
+  // Limit to max 6 reference images (Reve supports up to 6)
+  const limitedReferencePaths = referenceImagePaths.slice(0, 6);
 
   if (limitedReferencePaths.length > 0) {
+    // Build a set of character ref paths for labeling
+    const characterRefPaths = new Map<string, string>(); // path -> character name
+    for (const charName of shot.charactersPresent) {
+      const charRefs = assetLibrary.characterImages[charName];
+      if (charRefs) {
+        const refPath = charRefs.front || charRefs.angle;
+        if (refPath) characterRefPaths.set(refPath, charName);
+      }
+    }
+
     // Build <img> tag prefix to reference images by index
     const imgTagParts: string[] = [];
     for (let i = 0; i < limitedReferencePaths.length; i++) {
       const refPath = limitedReferencePaths[i];
       if (refPath === locationRef) {
         imgTagParts.push(`<img>${i}</img> as location reference`);
-      } else if (shot.charactersPresent.length > 0 && refPath === (assetLibrary.characterImages[shot.charactersPresent[0]]?.front || assetLibrary.characterImages[shot.charactersPresent[0]]?.angle)) {
-        imgTagParts.push(`<img>${i}</img> as character reference`);
+      } else if (characterRefPaths.has(refPath)) {
+        imgTagParts.push(`<img>${i}</img> as ${characterRefPaths.get(refPath)} character reference`);
       } else {
         imgTagParts.push(`<img>${i}</img> as style continuity reference (match art style and palette, NOT content)`);
       }

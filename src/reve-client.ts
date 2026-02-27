@@ -137,8 +137,8 @@ export async function remixImage(
   referenceImagePaths: string[],
   options?: { aspectRatio?: string; outputPath: string }
 ): Promise<string> {
-  if (referenceImagePaths.length < 1 || referenceImagePaths.length > 4) {
-    throw new Error("remixImage requires 1-4 reference images");
+  if (referenceImagePaths.length < 1 || referenceImagePaths.length > 6) {
+    throw new Error("remixImage requires 1-6 reference images");
   }
 
   const outputPath = options?.outputPath ?? "output.png";
