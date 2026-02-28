@@ -820,52 +820,33 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               return {
                 shotNumber: params.shotNumber,
                 skipped: true,
-                error: `RAI celebrity filter triggered ${attempts} times. Skipping this shot to avoid infinite loop.`,
+                error: `RAI celebrity filter triggered ${attempts} times. Skipping this shot.`,
               };
             }
 
-            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered (attempt ${attempts}). Regenerating frames...`);
+            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Rolling back to frame_generation stage.`);
 
-            // Find shot data from state
-            const shot = state.storyAnalysis!.scenes
-              .flatMap(s => s.shots || [])
-              .find(s => s.shotNumber === params.shotNumber);
-            if (!shot) throw error; // Can't regenerate without shot data
+            // Delete the offending frames from state so frame_generation will regenerate them
+            delete state.generatedFrames[params.shotNumber];
 
-            // Regenerate frames (no previousEndFramePath — we want completely fresh frames)
-            let frameResult;
-            try {
-              frameResult = await generateFrame({
-                shot,
-                artStyle: state.storyAnalysis!.artStyle,
-                assetLibrary: state.assetLibrary!,
-                outputDir: options.outputDir,
-                dryRun: options.dryRun,
-              });
-            } catch (frameError) {
-              console.warn(`[video_generation] Shot ${params.shotNumber}: Frame regeneration failed. Skipping shot.`, frameError);
-              return {
-                shotNumber: params.shotNumber,
-                skipped: true,
-                error: "Frame regeneration failed during RAI retry. Skipping this shot.",
-              };
+            // Remove frame_generation from completedStages so the pipeline re-runs it
+            const fgIdx = state.completedStages.indexOf("frame_generation");
+            if (fgIdx !== -1) {
+              state.completedStages.splice(fgIdx, 1);
+            }
+            // Also remove video_generation since we're rolling back
+            const vgIdx = state.completedStages.indexOf("video_generation");
+            if (vgIdx !== -1) {
+              state.completedStages.splice(vgIdx, 1);
             }
 
-            // Update state with new frame paths
-            state.generatedFrames[shot.shotNumber] = {
-              start: frameResult.startPath,
-              end: frameResult.endPath,
-            };
             await saveState({ state });
 
-            console.log(`[video_generation] Shot ${params.shotNumber}: Frames regenerated at ${frameResult.startPath} and ${frameResult.endPath}. Please retry generateVideo with the new frame paths from state.`);
-
-            // Return error info so Claude retries with updated frames
+            // Return a result that tells Claude to stop — the stage will be restarted
             return {
               shotNumber: params.shotNumber,
-              error: "RAI celebrity filter triggered. Frames have been regenerated. Retry this shot — use updated frame paths from state.generatedFrames.",
-              newStartFramePath: frameResult.startPath,
-              newEndFramePath: frameResult.endPath,
+              error: "RAI celebrity filter triggered. Rolling back to frame_generation to regenerate frames. Stage will restart.",
+              rolledBack: true,
             };
           }
           throw error;
