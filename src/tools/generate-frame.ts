@@ -185,16 +185,18 @@ async function generateSingleFrame(params: {
     for (let i = 0; i < limitedReferencePaths.length; i++) {
       const refPath = limitedReferencePaths[i];
       if (refPath === locationRef) {
-        imgTagParts.push(`<img>${i}</img> as location reference`);
+        imgTagParts.push(`<img>${i}</img> location`);
       } else if (characterRefPaths.has(refPath)) {
-        imgTagParts.push(`<img>${i}</img> as ${characterRefPaths.get(refPath)} character reference`);
+        imgTagParts.push(`<img>${i}</img> ${characterRefPaths.get(refPath)} ref`);
       } else {
-        imgTagParts.push(`<img>${i}</img> as style continuity reference (match art style and palette, NOT content)`);
+        imgTagParts.push(`<img>${i}</img> continuity (style only)`);
       }
     }
     const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
-    const MAX_PROMPT_LENGTH = 2560;
-    const remixPrompt = (imgPrefix + prompt).slice(0, MAX_PROMPT_LENGTH);
+    const remixPrompt = imgPrefix + prompt;
+    if (remixPrompt.length > 2560) {
+      console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
+    }
 
     return await remixImage(remixPrompt, limitedReferencePaths, {
       aspectRatio: "1:1",
@@ -202,7 +204,10 @@ async function generateSingleFrame(params: {
     });
   } else {
     // No reference images — use text-to-image generation
-    return await createImage(prompt.slice(0, 2560), {
+    if (prompt.length > 2560) {
+      console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
+    }
+    return await createImage(prompt, {
       aspectRatio: "1:1",
       outputPath,
     });
@@ -220,35 +225,17 @@ function buildFramePrompt(params: {
   framePrompt: string;
   cameraDirection: string;
 }): string {
-  const {
-    artStyle,
-    composition,
-    locationDescription,
-    charactersPresent,
+  const { artStyle, composition, locationDescription, charactersPresent, framePrompt, cameraDirection } = params;
+
+  const parts = [
+    `Style: ${artStyle}.`,
+    `${composition} shot, ${cameraDirection}.`,
+    `Location: ${locationDescription}.`,
+    charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}.` : "",
     framePrompt,
-    cameraDirection,
-  } = params;
+  ].filter(Boolean);
 
-  return `You are a professional cinematographer generating a keyframe image for a film scene.
-
-Art Style: ${artStyle}
-Composition Type: ${composition}
-Location: ${locationDescription}
-Characters: ${charactersPresent.join(", ")}
-Camera Direction: ${cameraDirection}
-
-Frame Description: ${framePrompt}
-
-Generate a high-quality, cinematic image that:
-1. Matches the specified composition type exactly
-2. Reflects the art style consistently
-3. Shows the location and characters as described
-4. Follows the camera direction and framing
-5. Is suitable as a keyframe for video generation
-6. Maintains visual continuity with reference images provided
-7. CONTINUITY REFERENCE: If a continuity reference from the previous shot is provided, maintain consistent art style, lighting, and color palette — but follow THIS frame's composition and subject description exactly. The continuity reference is for visual style consistency only, not for copying the previous shot's content. Generate what THIS shot's prompt describes, not what the reference image shows.
-
-Aspect ratio: 1:1`;
+  return parts.join(" ");
 }
 
 /**
