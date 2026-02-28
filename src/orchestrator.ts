@@ -788,6 +788,8 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
 
   const userPrompt = `Generate video clips for ${neededVideos.length} shots. Process them in order by shot number.`;
 
+  const raiRegenAttempts = new Map<number, number>();
+
   const videoTools: Record<string, any> = {
     generateVideo: {
       description: generateVideoTool.description,
@@ -810,7 +812,19 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
           return result;
         } catch (error: any) {
           if (error?.name === 'RaiCelebrityError') {
-            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Regenerating frames...`);
+            const attempts = (raiRegenAttempts.get(params.shotNumber) ?? 0) + 1;
+            raiRegenAttempts.set(params.shotNumber, attempts);
+
+            if (attempts >= 2) {
+              console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered ${attempts} times. Skipping shot.`);
+              return {
+                shotNumber: params.shotNumber,
+                skipped: true,
+                error: `RAI celebrity filter triggered ${attempts} times. Skipping this shot to avoid infinite loop.`,
+              };
+            }
+
+            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered (attempt ${attempts}). Regenerating frames...`);
 
             // Find shot data from state
             const shot = state.storyAnalysis!.scenes
@@ -819,13 +833,23 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             if (!shot) throw error; // Can't regenerate without shot data
 
             // Regenerate frames (no previousEndFramePath — we want completely fresh frames)
-            const frameResult = await generateFrame({
-              shot,
-              artStyle: state.storyAnalysis!.artStyle,
-              assetLibrary: state.assetLibrary!,
-              outputDir: options.outputDir,
-              dryRun: options.dryRun,
-            });
+            let frameResult;
+            try {
+              frameResult = await generateFrame({
+                shot,
+                artStyle: state.storyAnalysis!.artStyle,
+                assetLibrary: state.assetLibrary!,
+                outputDir: options.outputDir,
+                dryRun: options.dryRun,
+              });
+            } catch (frameError) {
+              console.warn(`[video_generation] Shot ${params.shotNumber}: Frame regeneration failed. Skipping shot.`, frameError);
+              return {
+                shotNumber: params.shotNumber,
+                skipped: true,
+                error: "Frame regeneration failed during RAI retry. Skipping this shot.",
+              };
+            }
 
             // Update state with new frame paths
             state.generatedFrames[shot.shotNumber] = {

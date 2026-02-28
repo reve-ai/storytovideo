@@ -193,7 +193,8 @@ async function generateSingleFrame(params: {
       }
     }
     const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
-    const remixPrompt = imgPrefix + prompt;
+    const MAX_PROMPT_LENGTH = 2560;
+    const remixPrompt = (imgPrefix + prompt).slice(0, MAX_PROMPT_LENGTH);
 
     return await remixImage(remixPrompt, limitedReferencePaths, {
       aspectRatio: "1:1",
@@ -201,7 +202,7 @@ async function generateSingleFrame(params: {
     });
   } else {
     // No reference images — use text-to-image generation
-    return await createImage(prompt, {
+    return await createImage(prompt.slice(0, 2560), {
       aspectRatio: "1:1",
       outputPath,
     });
