@@ -59,6 +59,13 @@ DIALOGUE PACING:
 - 4s clip: ~6-8 words
 - Not every shot needs dialogue — silence and reactions are valid
 
+DIALOGUE FORMATTING:
+- NEVER use ALL CAPS for normal words in dialogue — TTS engines will spell them out letter by letter (e.g. "STOP" becomes "S-T-O-P")
+- Only use ALL CAPS for actual acronyms (FBI, CIA, DNA, NASA, etc.)
+- For emphasis, use the word normally — the TTS will handle natural stress from context
+- Wrong: "We NEED to go NOW!" / Right: "We need to go now!"
+- Wrong: "STOP right there!" / Right: "Stop right there!"
+
 SCENE TRANSITIONS:
 - Scene 1 always uses "cut" (no transition before the first scene)
 - "cut" for immediate cuts between scenes (default, most common)
