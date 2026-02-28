@@ -105,5 +105,6 @@ export interface PipelineState {
   instructionHistory: StageInstructionRecord[];
   decisionHistory: StageDecisionRecord[];
   pendingJobs: Record<string, { jobId: string; outputPath: string }>;
+  rollbackTarget?: string;                          // stage to roll back to (set by RAI handler)
   lastSavedAt: string;                             // ISO timestamp of last state save
 }

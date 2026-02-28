@@ -851,11 +851,18 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               state.completedStages.splice(vgIdx, 1);
             }
 
+            // Signal rollback via state flag (can't throw — AI SDK swallows tool errors)
+            state.rollbackTarget = 'frame_generation';
             await saveState({ state });
 
-            // Throw to break out of the current stage and restart the pipeline loop
-            throw new StageRollbackError('frame_generation',
-              `Shot ${params.shotNumber}: RAI celebrity filter triggered. Rolling back to frame_generation.`);
+            console.log(`[video_generation] Shot ${params.shotNumber}: State saved with rollback target. Stage will restart.`);
+
+            // Return a result telling Claude to stop calling tools
+            return {
+              shotNumber: params.shotNumber,
+              error: "RAI celebrity filter triggered. Frames deleted. Pipeline will roll back to frame_generation. STOP generating videos — the stage is restarting.",
+              rolledBack: true,
+            };
           }
           throw error;
         }
@@ -1176,6 +1183,7 @@ export async function runPipeline(
           state = await stageRunners[stageName](state, options);
         } catch (error) {
           if (error instanceof StageRollbackError) {
+            // Legacy path — kept for safety but main rollback is via state flag
             console.log(`\n[Rollback] ${error.message}`);
             console.log(`[Rollback] Restarting pipeline from ${error.targetStage}`);
             rolledBack = true;
@@ -1192,7 +1200,17 @@ export async function runPipeline(
           throw error;
         }
 
-        if (rolledBack) break; // break inner while after StageRollbackError
+        // Check for rollback flag (set by tool handlers that can't throw through AI SDK)
+        if (state.rollbackTarget) {
+          const target = state.rollbackTarget;
+          delete state.rollbackTarget;
+          await saveState({ state });
+          console.log(`\n[Rollback] Rolling back to ${target} (triggered by state flag)`);
+          rolledBack = true;
+          break; // break inner while loop
+        }
+
+        if (rolledBack) break; // break inner while after StageRollbackError (legacy path)
 
         if (!state.completedStages.includes(stageName)) {
           console.log(`[${stageName}] Stage incomplete, re-running...`);
