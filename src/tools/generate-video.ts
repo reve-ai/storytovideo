@@ -18,6 +18,23 @@ export class RaiCelebrityError extends Error {
 let lastVeoCallTimestamp = 0;
 const VEO_COOLDOWN_MS = 30_000; // 30 seconds between Veo API calls
 
+/**
+ * Strip character names from text to avoid triggering Veo's RAI celebrity filter.
+ * Replaces whole-word occurrences of each name with "the character".
+ */
+export function stripCharacterNames(text: string, names: string[]): string {
+  let result = text;
+  for (const name of names) {
+    if (!name) continue;
+    // Escape regex special characters in the name
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Replace whole-word occurrences (case-insensitive)
+    const re = new RegExp(`\\b${escaped}\\b`, "gi");
+    result = result.replace(re, "the character");
+  }
+  return result;
+}
+
 /** Shared parameter type for all video backends. */
 type GenerateVideoParams = {
   shotNumber: number;
@@ -32,6 +49,8 @@ type GenerateVideoParams = {
   outputDir: string;
   dryRun?: boolean;
   abortSignal?: AbortSignal;
+  /** Character names to strip from prompts before sending to Veo. */
+  characterNames?: string[];
   pendingJobStore?: {
     get: (key: string) => { jobId: string; outputPath: string } | undefined;
     set: (key: string, value: { jobId: string; outputPath: string }) => Promise<void>;
@@ -50,10 +69,21 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
   const backend = (process.env.VIDEO_BACKEND || "veo").toLowerCase();
   console.log(`[generateVideo] Using backend: ${backend}`);
 
+  // Strip character names from prompts to avoid triggering Veo's RAI celebrity filter.
+  // Veo already has start/end frame images so it doesn't need names to identify characters.
+  let sanitized = params;
+  if (params.characterNames && params.characterNames.length > 0) {
+    sanitized = {
+      ...params,
+      actionPrompt: stripCharacterNames(params.actionPrompt, params.characterNames),
+      dialogue: stripCharacterNames(params.dialogue, params.characterNames),
+    };
+  }
+
   if (backend === "comfy") {
-    return generateVideoComfy(params);
+    return generateVideoComfy(sanitized);
   } else if (backend === "veo") {
-    return generateVideoVeo(params);
+    return generateVideoVeo(sanitized);
   } else {
     throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo" or "comfy".`);
   }

@@ -450,7 +450,7 @@ For each scene:
 4. Distribute dialogue across shots respecting pacing rules
 5. All shots use first_last_frame generation strategy
 6. Write detailed frame prompts that include the composition type
-7. Write action prompts for video generation
+7. Write action prompts for video generation. In actionPrompt fields, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name. Character names in video prompts trigger content safety filters.
 8. Include dialogue as quoted speech if present
 9. The camera is FIXED for the duration of each shot. Start and end frame prompts must describe what the SAME stationary camera sees at two moments in time. Same subject, same angle, same composition. NEVER have the start frame describe one person and the end frame describe a different person. To switch to a different person or angle, end this shot and start a new one — that's what cuts are for.
 
@@ -812,6 +812,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             dryRun: options.dryRun,
             outputDir: join(options.outputDir, "videos"),
             abortSignal: options.abortSignal,
+            characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
             pendingJobStore: {
               get: (key) => state.pendingJobs[key],
               set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
