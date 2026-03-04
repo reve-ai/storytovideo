@@ -100,7 +100,7 @@ CROSS-SHOT CONTINUITY:
 
 const perSceneShotSchema = z.object({
   shotInScene: z.number(),
-  durationSeconds: z.literal("8").transform(v => parseInt(v)),
+  durationSeconds: z.union([z.literal("8"), z.literal(8)]).transform(() => 8 as const),
   shotType: z.literal("first_last_frame"),
   composition: z.string(),
   startFramePrompt: z.string(),
