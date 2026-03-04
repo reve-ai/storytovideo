@@ -42,8 +42,10 @@ export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
 5. Scenes (numbered, with title, narrative summary, characters present, location, estimated duration)
 
 For each character, provide vivid physical descriptions that will help generate consistent reference images.
+IMPORTANT: NEVER describe any character as resembling a real celebrity or public figure. All characters must have completely original, unique appearances.
 For each location, describe the visual mood, lighting, and key objects.
 Estimate scene duration based on action density and dialogue length.
+Unless the story explicitly specifies an art style, default to "photorealistic" for the visual art style.
 
 Story:
 ${storyText}`;

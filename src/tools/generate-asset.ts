@@ -63,7 +63,7 @@ export async function generateAsset(params: {
 
     // Image editing prompt for consistency
     if (assetType === "character") {
-      prompt = `Edit this image to show the same character from a different angle/perspective. Keep their exact appearance, clothing, facial features, body proportions, and color palette identical. Only change the viewing angle to a 3/4 perspective. Character details: ${description}`;
+      prompt = `Edit this image to show the same character from a different angle/perspective. Keep their exact appearance, clothing, facial features, body proportions, and color palette identical. Only change the viewing angle to a 3/4 perspective. The character must have a completely original appearance (NOT resembling any real celebrity or public figure). Character details: ${description}`;
     } else {
       prompt = `Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ${description}`;
     }
@@ -71,7 +71,7 @@ export async function generateAsset(params: {
     // Generate new image
     prompt = `Generate a ${artStyle} style reference image of `;
     if (assetType === "character") {
-      prompt += `a character: ${description}`;
+      prompt += `a character with a completely original appearance (NOT resembling any real celebrity or public figure): ${description}`;
     } else {
       prompt += `a location: ${description}`;
     }

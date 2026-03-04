@@ -231,7 +231,7 @@ function buildFramePrompt(params: {
     `Style: ${artStyle}.`,
     `${composition} shot, ${cameraDirection}.`,
     `Location: ${locationDescription}.`,
-    charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}.` : "",
+    charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
     framePrompt,
   ].filter(Boolean);
 
