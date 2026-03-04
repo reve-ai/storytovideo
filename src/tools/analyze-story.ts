@@ -43,6 +43,7 @@ export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
 
 For each character, provide vivid physical descriptions that will help generate consistent reference images.
 IMPORTANT: NEVER describe any character as resembling a real celebrity or public figure. All characters must have completely original, unique appearances.
+IMPORTANT: If a character in the story is a real person or celebrity, rename them to an original fictional name inspired by their personality or role. For example, if the story features "Elon Musk" as a tech visionary, rename them to something like "Nova Sparks". Never use real people's names — always invent creative fictional names that reflect the character's personality or role.
 For each location, describe the visual mood, lighting, and key objects.
 Estimate scene duration based on action density and dialogue length.
 Unless the story explicitly specifies an art style, default to "photorealistic" for the visual art style.
