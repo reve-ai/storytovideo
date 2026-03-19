@@ -4,7 +4,7 @@ import { z } from "zod";
 import { writeFileSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 
-import type { PipelineOptions, PipelineState } from "./types";
+import type { PipelineOptions, PipelineState, Shot } from "./types";
 import { interrupted } from "./signals";
 import { analyzeStory, analyzeStoryTool } from "./tools/analyze-story";
 import { planShotsForScene, planShotsForSceneTool, CINEMATIC_RULES } from "./tools/plan-shots";
@@ -168,6 +168,76 @@ function buildInstructionInjectionBlock(instructions: string[]): string {
   return `\n\nAdditional user instructions for this stage:\n${numbered}\nApply these instructions when executing this stage unless they conflict with tool schemas or safety constraints.`;
 }
 
+/** Map directive target patterns to the stages they apply to. */
+const DIRECTIVE_STAGE_MAP: Record<string, string[]> = {
+  // shot:N:start_frame, shot:N:end_frame → frame_generation
+  "start_frame": ["frame_generation"],
+  "end_frame": ["frame_generation"],
+  // shot:N:video → video_generation
+  "video": ["video_generation"],
+  // Prompt-level fields are injected into the stage that *uses* the prompt
+  "start_frame_prompt": ["frame_generation", "shot_planning"],
+  "end_frame_prompt": ["frame_generation", "shot_planning"],
+  "action_prompt": ["video_generation", "shot_planning"],
+};
+
+function directiveMatchesStage(target: string, stageName: string): boolean {
+  // asset:* → asset_generation
+  if (target.startsWith("asset:")) return stageName === "asset_generation";
+  // analysis:* → analysis
+  if (target.startsWith("analysis:")) return stageName === "analysis";
+  // shot:N:field — extract the field suffix
+  const shotMatch = target.match(/^shot:\d+:(.+)$/);
+  if (shotMatch) {
+    const field = shotMatch[1];
+    const stages = DIRECTIVE_STAGE_MAP[field];
+    return stages ? stages.includes(stageName) : false;
+  }
+  return false;
+}
+
+function buildItemDirectiveBlock(state: PipelineState, stageName: string): string {
+  const relevant = Object.values(state.itemDirectives).filter(d =>
+    directiveMatchesStage(d.target, stageName)
+  );
+  if (relevant.length === 0) return "";
+  return "\n\n## DIRECTOR OVERRIDES\nThe director has provided specific instructions for certain items. You MUST follow these exactly:\n" +
+    relevant.map(d => `- **${d.target}**: ${d.directive}`).join("\n");
+}
+
+/**
+ * Apply prompt-level directives by modifying shot data in storyAnalysis.
+ * Targets like shot:N:action_prompt, shot:N:start_frame_prompt, shot:N:end_frame_prompt
+ * directly replace the corresponding field on the shot object so Claude sees the
+ * edited prompt in the data rather than needing a separate instruction.
+ */
+function applyPromptLevelDirectives(state: PipelineState): void {
+  if (!state.storyAnalysis) return;
+  const allShots = state.storyAnalysis.scenes.flatMap(s => s.shots || []);
+  for (const directive of Object.values(state.itemDirectives)) {
+    const match = directive.target.match(/^shot:(\d+):(action_prompt|start_frame_prompt|end_frame_prompt)$/);
+    if (!match) continue;
+    const shotNumber = parseInt(match[1], 10);
+    const field = match[2];
+    const shot = allShots.find(s => s.shotNumber === shotNumber);
+    if (!shot) continue;
+    const fieldMap: Record<string, keyof Shot> = {
+      action_prompt: "actionPrompt",
+      start_frame_prompt: "startFramePrompt",
+      end_frame_prompt: "endFramePrompt",
+    };
+    const key = fieldMap[field];
+    if (key) {
+      console.log(`[directive] Applying prompt-level directive to shot ${shotNumber}.${key}: "${directive.directive.substring(0, 80)}..."`);
+      (shot as any)[key] = directive.directive;
+    }
+  }
+}
+
+function hasItemDirectivesForStage(state: PipelineState, stageName: string): boolean {
+  return Object.values(state.itemDirectives).some(d => directiveMatchesStage(d.target, stageName));
+}
+
 /**
  * Delete generated files from disk for a given stage and all downstream stages.
  * Each stage clears its own files plus all later stages' files (cumulative).
@@ -311,8 +381,16 @@ async function runStage(
       `[${stageName}] Applying ${stageInstructions.length} user instruction(s)`,
     );
   }
+  // Apply prompt-level directives (modifies shot data in-place before the stage sees it)
+  applyPromptLevelDirectives(state);
+
+  // Build the system prompt with stage instructions + item directive overrides
+  const directiveBlock = buildItemDirectiveBlock(state, stageName);
+  if (directiveBlock) {
+    console.log(`[${stageName}] Injecting item directive overrides`);
+  }
   const injectedSystemPrompt =
-    systemPrompt + buildInstructionInjectionBlock(stageInstructions);
+    systemPrompt + buildInstructionInjectionBlock(stageInstructions) + directiveBlock;
 
   const localAbort = new AbortController();
   if (_options.abortSignal) {
@@ -521,7 +599,8 @@ async function runAssetGenerationStage(
   }
 
   const hasPendingInstructions = (state.pendingStageInstructions["asset_generation"]?.length ?? 0) > 0;
-  if (neededAssets.length === 0 && !hasPendingInstructions) {
+  const hasDirectives = hasItemDirectivesForStage(state, "asset_generation");
+  if (neededAssets.length === 0 && !hasPendingInstructions && !hasDirectives) {
     console.log("[asset_generation] All assets already generated, skipping.");
     state.completedStages.push("asset_generation");
     state.currentStage = "frame_generation";
@@ -655,7 +734,8 @@ async function runFrameGenerationStage(
   });
 
   const hasPendingInstructions = (state.pendingStageInstructions["frame_generation"]?.length ?? 0) > 0;
-  if (neededFrames.length === 0 && !hasPendingInstructions) {
+  const hasDirectives = hasItemDirectivesForStage(state, "frame_generation");
+  if (neededFrames.length === 0 && !hasPendingInstructions && !hasDirectives) {
     console.log("[frame_generation] All frames already generated, skipping.");
     state.completedStages.push("frame_generation");
     state.currentStage = "video_generation";
@@ -767,7 +847,8 @@ async function runVideoGenerationStage(
   const neededVideos = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
 
   const hasPendingInstructions = (state.pendingStageInstructions["video_generation"]?.length ?? 0) > 0;
-  if (neededVideos.length === 0 && !hasPendingInstructions) {
+  const hasDirectives = hasItemDirectivesForStage(state, "video_generation");
+  if (neededVideos.length === 0 && !hasPendingInstructions && !hasDirectives) {
     console.log("[video_generation] All videos already generated, skipping.");
     state.completedStages.push("video_generation");
     state.currentStage = "assembly";
