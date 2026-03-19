@@ -34,8 +34,36 @@ import {
 import { loadState, saveState } from "./tools/state";
 import { setInterrupted } from "./signals";
 import type { ItemDirective, PipelineOptions, PipelineState } from "./types";
+import { generateText } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
 
+/**
+ * Generate a short, descriptive name for a run using Claude Haiku.
+ * Fire-and-forget — patches the run record when done.
+ */
+function autoNameRun(runId: string, storyText: string, mode?: string): void {
+  const snippet = storyText.slice(0, 500);
+  const prompt = mode === "import"
+    ? `Give this imported video project a short creative name (2-5 words, no quotes). The source was described as: "${snippet}"`
+    : `Give this story a short creative name (2-5 words, no quotes). Story begins: "${snippet}"`;
 
+  generateText({
+    model: anthropic("claude-haiku-3-5-20241022"),
+    prompt,
+    maxTokens: 20,
+  } as any).then(({ text }: { text: string }) => {
+    const name = text.trim().replace(/^["']|["']$/g, "").slice(0, 60);
+    if (name) {
+      const run = runStore.get(runId);
+      if (run && !run.name) {
+        runStore.patch(runId, { name });
+        console.log(`[autoName] Run ${runId.slice(0, 8)} named: "${name}"`);
+      }
+    }
+  }).catch((err) => {
+    console.warn(`[autoName] Failed for run ${runId.slice(0, 8)}:`, err.message);
+  });
+}
 
 const STATE_POLL_INTERVAL_MS = 750;
 
@@ -43,6 +71,7 @@ type RunStatus = "queued" | "running" | "awaiting_review" | "completed" | "faile
 
 interface RunRecord {
   id: string;
+  name?: string;
   storyText: string;
   outputDir: string;
   options: PipelineOptions;
@@ -71,6 +100,7 @@ interface ReviewState {
 
 interface RunResponse {
   id: string;
+  name?: string;
   status: RunStatus;
   outputDir: string;
   currentStage: string;
@@ -468,6 +498,7 @@ function toRunResponse(record: RunRecord): RunResponse {
 
   return {
     id: record.id,
+    name: record.name,
     status: record.status,
     outputDir: record.outputDir,
     currentStage,
@@ -907,6 +938,7 @@ async function handleCreateRun(req: IncomingMessage, res: ServerResponse): Promi
   };
 
   runStore.upsert(record);
+  autoNameRun(runId, request.storyText);
   emitRunStatusEvent(runId, "queued");
   startRunStateMonitor(runId);
   setImmediate(() => {
@@ -2003,6 +2035,7 @@ async function handleImportRun(req: IncomingMessage, res: ServerResponse): Promi
   };
 
   runStore.upsert(record);
+  autoNameRun(runId, videoSource, "import");
   emitRunStatusEvent(runId, "queued");
   startRunStateMonitor(runId);
 
@@ -2168,6 +2201,7 @@ async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Pr
   };
 
   runStore.upsert(record);
+  autoNameRun(runId, "(uploaded video)", "import");
   emitRunStatusEvent(runId, "queued");
   startRunStateMonitor(runId);
 
@@ -2241,6 +2275,24 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "continue") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleContinueRun(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "rename") {
+      const runId = decodeURIComponent(pathParts[1]);
+      const run = runStore.get(runId);
+      if (!run) {
+        sendJson(res, 404, { error: `Run not found: ${runId}` });
+        return;
+      }
+      const body = await readJsonBody(req) as Record<string, unknown> | null;
+      const name = typeof body?.name === "string" ? body.name.trim().slice(0, 60) : "";
+      if (!name) {
+        sendJson(res, 400, { error: "name is required (string, max 60 chars)" });
+        return;
+      }
+      const updated = runStore.patch(runId, { name });
+      sendJson(res, 200, { run: toRunResponse(updated ?? run) });
       return;
     }
 

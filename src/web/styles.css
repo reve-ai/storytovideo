@@ -381,6 +381,31 @@ dt {
   color: var(--muted);
 }
 
+.run-name-display {
+  font-weight: 600;
+  border-bottom: 1px dashed var(--border);
+}
+
+.run-name-display:hover {
+  color: var(--accent, #4a7c59);
+}
+
+.run-id-small {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.run-name-input {
+  font-size: 0.88rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--accent, #4a7c59);
+  border-radius: 4px;
+  outline: none;
+  width: 180px;
+  font-family: inherit;
+}
+
 dd {
   margin: 0;
   font-size: 0.9rem;

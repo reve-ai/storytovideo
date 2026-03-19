@@ -217,7 +217,8 @@ function renderRunSelect() {
   for (const run of state.runs) {
     const option = document.createElement("option");
     option.value = run.id;
-    option.textContent = `${run.id.slice(0, 8)}... (${run.status})`;
+    const label = run.name || run.id.slice(0, 8) + "...";
+    option.textContent = `${label} (${run.status})`;
     elements.runSelect.append(option);
   }
 
@@ -297,6 +298,65 @@ function renderStatusBadge(status) {
   elements.runStatus.replaceChildren(badge);
 }
 
+function renderRunName(run) {
+  const container = elements.runId;
+  container.replaceChildren();
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "run-name-display";
+  nameSpan.textContent = run.name || run.id.slice(0, 8) + "...";
+  nameSpan.title = "Click to rename";
+  nameSpan.style.cursor = "pointer";
+
+  const idSpan = document.createElement("span");
+  idSpan.className = "run-id-small";
+  idSpan.textContent = ` (${run.id.slice(0, 8)})`;
+
+  nameSpan.addEventListener("click", () => {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "run-name-input";
+    input.value = run.name || "";
+    input.placeholder = "Enter run name...";
+    input.maxLength = 60;
+
+    const save = async () => {
+      const newName = input.value.trim();
+      if (!newName || newName === run.name) {
+        renderRunName(run);
+        return;
+      }
+      try {
+        await requestJson(`/runs/${encodeURIComponent(run.id)}/rename`, {
+          method: "POST",
+          body: JSON.stringify({ name: newName }),
+        });
+        run.name = newName;
+        // Update the select dropdown too
+        const matchingRun = state.runs.find(r => r.id === run.id);
+        if (matchingRun) matchingRun.name = newName;
+        renderRunSelect();
+        renderRunName(run);
+      } catch (error) {
+        setGlobalError(`Failed to rename: ${error.message}`);
+        renderRunName(run);
+      }
+    };
+
+    input.addEventListener("blur", () => save());
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); save(); }
+      if (e.key === "Escape") { renderRunName(run); }
+    });
+
+    container.replaceChildren(input, idSpan);
+    input.focus();
+    input.select();
+  });
+
+  container.append(nameSpan, idSpan);
+}
+
 function renderRunDetails() {
   const run = state.activeRun;
   if (!run) {
@@ -326,7 +386,7 @@ function renderRunDetails() {
   elements.reviewModeCheckbox.disabled = false;
 
   renderStatusBadge(run.status);
-  elements.runId.textContent = run.id;
+  renderRunName(run);
   elements.runStage.textContent = formatStageLabel(run.currentStage);
   elements.runProgress.textContent = `${run.progress.completed} / ${run.progress.total} (${run.progress.percent}%)`;
   elements.runOutput.textContent = run.outputDir;
