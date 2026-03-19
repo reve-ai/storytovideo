@@ -23,6 +23,7 @@ const state = {
   eventSource: null,
   pollTimer: null,
   refreshTimer: null,
+  directives: {},  // { [target]: { target, directive, createdAt, updatedAt } }
 };
 
 const elements = {
@@ -439,6 +440,7 @@ async function refreshRun({ silent = false } = {}) {
     }
     state.activeRun = run;
     renderRunDetails();
+    void fetchDirectives();
     void fetchAndRenderStageOutput({ silent });
   } catch (error) {
     if (!silent) {
@@ -510,9 +512,12 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<thead><tr><th>Name</th><th>Description</th><th>Age Range</th><th>Images</th></tr></thead>`;
       html += `<tbody>`;
       for (const char of storyAnalysis.characters) {
+        const charDescTarget = `character:${char.name}:description`;
+        const charDescDirective = state.directives[charDescTarget];
+        const descClass = charDescDirective ? " desc-edited" : "";
         html += `<tr>`;
         html += `<td><strong>${escapeHtml(char.name)}</strong></td>`;
-        html += `<td>${escapeHtml(char.physicalDescription)}</td>`;
+        html += `<td><span class="${descClass}">${escapeHtml(char.physicalDescription)}</span><button class="editable-desc-btn" data-edit-target="${escapeHtml(charDescTarget)}" data-edit-current="${escapeHtml(char.physicalDescription)}" title="Edit description">✏️</button></td>`;
         html += `<td>${escapeHtml(char.ageRange)}</td>`;
 
         // Look up character images
@@ -536,6 +541,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
           }
           if ((frontAsset && frontAsset.previewUrl) || (angleAsset && angleAsset.previewUrl)) {
             imagesHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="character:${escapeHtml(char.name)}:front"${charRedoItemDisabled} title="Retry images for ${escapeHtml(char.name)}">↻</button>`;
+            imagesHtml += buildDirectiveControls(`asset:character:${char.name}:front`, isRunActivelyExecuting(state.activeRun));
           }
           imagesHtml += `</div>`;
         }
@@ -554,9 +560,12 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<thead><tr><th>Name</th><th>Description</th><th>Image</th></tr></thead>`;
       html += `<tbody>`;
       for (const loc of storyAnalysis.locations) {
+        const locDescTarget = `location:${loc.name}:description`;
+        const locDescDirective = state.directives[locDescTarget];
+        const locDescClass = locDescDirective ? " desc-edited" : "";
         html += `<tr>`;
         html += `<td><strong>${escapeHtml(loc.name)}</strong></td>`;
-        html += `<td>${escapeHtml(loc.visualDescription)}</td>`;
+        html += `<td><span class="${locDescClass}">${escapeHtml(loc.visualDescription)}</span><button class="editable-desc-btn" data-edit-target="${escapeHtml(locDescTarget)}" data-edit-current="${escapeHtml(loc.visualDescription)}" title="Edit description">✏️</button></td>`;
 
         // Look up location image
         const locAsset = findAsset(`location:${loc.name}:front`);
@@ -565,6 +574,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         if (locAsset && locAsset.previewUrl) {
           locImageHtml = `<img src="${escapeHtml(locAsset.previewUrl)}" alt="Location" class="inline-thumbnail" />`;
           locImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="location:${escapeHtml(loc.name)}:front"${locRedoItemDisabled} title="Retry image for ${escapeHtml(loc.name)}">↻</button>`;
+          locImageHtml += buildDirectiveControls(`asset:location:${loc.name}:front`, isRunActivelyExecuting(state.activeRun));
         } else if (isStageGenerating("asset_generation")) {
           locImageHtml = `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
         }
@@ -601,11 +611,11 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
 
             // Add collapsible prompts row
             const promptFields = [
-              { label: "Start Frame Prompt", value: shot.startFramePrompt },
-              { label: "End Frame Prompt", value: shot.endFramePrompt },
-              { label: "Action Prompt", value: shot.actionPrompt },
-              { label: "Camera Direction", value: shot.cameraDirection },
-              { label: "Sound Effects", value: shot.soundEffects },
+              { label: "Start Frame Prompt", value: shot.startFramePrompt, targetKey: `shot:${shot.shotNumber}:start_frame_prompt` },
+              { label: "End Frame Prompt", value: shot.endFramePrompt, targetKey: `shot:${shot.shotNumber}:end_frame_prompt` },
+              { label: "Action Prompt", value: shot.actionPrompt, targetKey: `shot:${shot.shotNumber}:action_prompt` },
+              { label: "Camera Direction", value: shot.cameraDirection, targetKey: `shot:${shot.shotNumber}:camera_direction` },
+              { label: "Sound Effects", value: shot.soundEffects, targetKey: `shot:${shot.shotNumber}:sound_effects` },
             ];
             const hasAnyPrompt = promptFields.some(f => f.value);
             if (hasAnyPrompt) {
@@ -615,9 +625,11 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
               html += `<div class="shot-prompts-content">`;
               for (const field of promptFields) {
                 const val = field.value ? escapeHtml(field.value) : "—";
+                const promptDirective = state.directives[field.targetKey];
+                const editedClass = promptDirective ? " shot-prompt-value-edited" : "";
                 html += `<div class="shot-prompt-field">`;
-                html += `<span class="shot-prompt-label">${field.label}</span>`;
-                html += `<span class="shot-prompt-value">${val}</span>`;
+                html += `<span class="shot-prompt-label">${field.label}<button class="shot-prompt-edit-btn" data-prompt-target="${escapeHtml(field.targetKey)}" data-prompt-current="${escapeHtml(field.value || "")}" title="Edit ${field.label}">✏️</button></span>`;
+                html += `<span class="shot-prompt-value${editedClass}">${val}</span>`;
                 html += `</div>`;
               }
               html += `</div>`;
@@ -642,6 +654,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<p class="shot-asset-label">Start Frame</p>`;
                 html += `<img src="${escapeHtml(startFrameAsset.previewUrl)}" alt="Start Frame" class="inline-thumbnail" />`;
                 html += `<button class="redo-item-button" data-redo-type="start_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry start frame for shot ${shot.shotNumber}">↻</button>`;
+                html += buildDirectiveControls(`shot:${shot.shotNumber}:start_frame`, isRunActivelyExecuting(state.activeRun));
                 html += `</div>`;
               } else if (showFrameSpinners) {
                 html += `<div class="shot-asset-item">`;
@@ -654,6 +667,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<p class="shot-asset-label">End Frame</p>`;
                 html += `<img src="${escapeHtml(endFrameAsset.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
                 html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame for shot ${shot.shotNumber}">↻</button>`;
+                html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunActivelyExecuting(state.activeRun));
                 html += `</div>`;
               } else if (showFrameSpinners) {
                 html += `<div class="shot-asset-item">`;
@@ -666,6 +680,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<p class="shot-asset-label">Video</p>`;
                 html += `<video src="${escapeHtml(videoAsset.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
                 html += `<button class="redo-item-button" data-redo-type="video" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry video for shot ${shot.shotNumber}">↻</button>`;
+                html += buildDirectiveControls(`shot:${shot.shotNumber}:video`, isRunActivelyExecuting(state.activeRun));
                 html += `</div>`;
               } else if (showVideoSpinners) {
                 html += `<div class="shot-asset-item">`;
@@ -928,12 +943,13 @@ async function setActiveRun(runId) {
   if (changed) {
     state.assetsById = new Map();
     state.events = [];
+    state.directives = {};
     lastStageOutputHtml = null; // Clear cached HTML when switching runs
     renderStoryDocument();
     renderEvents();
   }
 
-  await Promise.all([refreshRun(), refreshAssets()]);
+  await Promise.all([refreshRun(), refreshAssets(), fetchDirectives()]);
   connectEventStream();
 }
 
@@ -1197,6 +1213,81 @@ async function handleRedoItem(type, shotNumber, assetKey) {
   }
 }
 
+async function fetchDirectives() {
+  if (!state.activeRunId) return;
+  try {
+    const response = await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/directives`);
+    state.directives = response.directives || {};
+  } catch {
+    state.directives = {};
+  }
+}
+
+async function handleSetDirective(target, directive) {
+  if (!state.activeRunId) {
+    setGlobalError("No active run selected.");
+    return;
+  }
+  try {
+    await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/directive`, {
+      method: "POST",
+      body: JSON.stringify({ target, directive }),
+    });
+    appendEvent(
+      createEventEntry({
+        title: "Directive set",
+        message: `${target}: ${directive}`,
+      }),
+    );
+    setGlobalError("");
+    await fetchDirectives();
+    await refreshRun();
+  } catch (error) {
+    setGlobalError(`Failed to set directive: ${error.message}`);
+  }
+}
+
+async function handleClearDirective(target) {
+  if (!state.activeRunId) {
+    setGlobalError("No active run selected.");
+    return;
+  }
+  try {
+    await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/directive`, {
+      method: "DELETE",
+      body: JSON.stringify({ target }),
+    });
+    appendEvent(
+      createEventEntry({
+        title: "Directive cleared",
+        message: target,
+      }),
+    );
+    setGlobalError("");
+    await fetchDirectives();
+    lastStageOutputHtml = null;
+    void fetchAndRenderStageOutput({ silent: true });
+  } catch (error) {
+    setGlobalError(`Failed to clear directive: ${error.message}`);
+  }
+}
+
+function buildDirectiveControls(target, disabled) {
+  const existing = state.directives[target];
+  let html = "";
+  const disabledAttr = disabled ? " disabled" : "";
+
+  // Directive button (✏️)
+  html += `<button class="directive-button" data-directive-target="${escapeHtml(target)}"${disabledAttr} title="Add directive for ${escapeHtml(target)}">✏️</button>`;
+
+  // Badge if directive exists
+  if (existing) {
+    html += `<span class="directive-badge" data-directive-target="${escapeHtml(target)}" title="${escapeHtml(existing.directive)}">📝</span>`;
+  }
+
+  return html;
+}
+
 function handleStopClick() {
   if (!state.activeRunId) {
     setGlobalError("No active run selected.");
@@ -1341,6 +1432,192 @@ function bindEvents() {
         }
       }
     }
+  });
+
+  // Directive button: open inline input
+  document.body.addEventListener("click", (event) => {
+    const btn = event.target.closest(".directive-button");
+    if (!btn || btn.disabled) return;
+    const target = btn.dataset.directiveTarget;
+    if (!target) return;
+
+    // Check if input already exists next to this button
+    const parent = btn.parentElement;
+    if (parent.querySelector(".directive-inline")) return;
+
+    const existing = state.directives[target];
+    const wrapper = document.createElement("div");
+    wrapper.className = "directive-inline";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "e.g. darker lighting, more ominous";
+    if (existing) input.value = existing.directive;
+
+    const applyBtn = document.createElement("button");
+    applyBtn.className = "directive-apply";
+    applyBtn.textContent = "Apply";
+    applyBtn.type = "button";
+
+    wrapper.append(input);
+    wrapper.append(applyBtn);
+
+    if (existing) {
+      const clearBtn = document.createElement("button");
+      clearBtn.className = "directive-clear";
+      clearBtn.textContent = "×";
+      clearBtn.type = "button";
+      clearBtn.title = "Clear directive";
+      clearBtn.addEventListener("click", () => {
+        wrapper.remove();
+        void handleClearDirective(target);
+      });
+      wrapper.append(clearBtn);
+    }
+
+    const submitDirective = () => {
+      const val = input.value.trim();
+      if (!val) return;
+      wrapper.remove();
+      void handleSetDirective(target, val);
+    };
+
+    applyBtn.addEventListener("click", submitDirective);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitDirective();
+      }
+      if (e.key === "Escape") {
+        wrapper.remove();
+      }
+    });
+
+    parent.append(wrapper);
+    input.focus();
+  });
+
+  // Directive badge: click to edit existing directive
+  document.body.addEventListener("click", (event) => {
+    const badge = event.target.closest(".directive-badge");
+    if (!badge) return;
+    const target = badge.dataset.directiveTarget;
+    if (!target) return;
+    // Trigger the directive button click to open the input
+    const parent = badge.parentElement;
+    const directiveBtn = parent.querySelector(`.directive-button[data-directive-target="${target}"]`);
+    if (directiveBtn) directiveBtn.click();
+  });
+
+  // Shot prompt edit button: make prompt editable
+  document.body.addEventListener("click", (event) => {
+    const btn = event.target.closest(".shot-prompt-edit-btn");
+    if (!btn) return;
+    const target = btn.dataset.promptTarget;
+    const current = btn.dataset.promptCurrent || "";
+    const field = btn.closest(".shot-prompt-field");
+    if (!field) return;
+
+    const valueSpan = field.querySelector(".shot-prompt-value");
+    if (!valueSpan || valueSpan.querySelector("textarea")) return;
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "shot-prompt-textarea";
+    textarea.value = current;
+    valueSpan.textContent = "";
+    valueSpan.append(textarea);
+    textarea.focus();
+
+    const save = () => {
+      const val = textarea.value.trim();
+      if (val && val !== current) {
+        void handleSetDirective(target, val);
+      } else {
+        lastStageOutputHtml = null;
+        void fetchAndRenderStageOutput({ silent: true });
+      }
+    };
+
+    textarea.addEventListener("blur", save);
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        textarea.removeEventListener("blur", save);
+        save();
+      }
+      if (e.key === "Escape") {
+        textarea.removeEventListener("blur", save);
+        lastStageOutputHtml = null;
+        void fetchAndRenderStageOutput({ silent: true });
+      }
+    });
+  });
+
+  // Editable description button: click to edit character/location descriptions
+  document.body.addEventListener("click", (event) => {
+    const btn = event.target.closest(".editable-desc-btn");
+    if (!btn) return;
+    const target = btn.dataset.editTarget;
+    const current = btn.dataset.editCurrent || "";
+    const td = btn.closest("td");
+    if (!td) return;
+
+    // Check if already editing
+    if (td.querySelector(".directive-inline")) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "directive-inline";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = current;
+    input.placeholder = "New description...";
+
+    const applyBtn = document.createElement("button");
+    applyBtn.className = "directive-apply";
+    applyBtn.textContent = "Apply";
+    applyBtn.type = "button";
+
+    wrapper.append(input);
+    wrapper.append(applyBtn);
+
+    const existing = state.directives[target];
+    if (existing) {
+      const clearBtn = document.createElement("button");
+      clearBtn.className = "directive-clear";
+      clearBtn.textContent = "×";
+      clearBtn.type = "button";
+      clearBtn.title = "Clear directive";
+      clearBtn.addEventListener("click", () => {
+        wrapper.remove();
+        void handleClearDirective(target);
+      });
+      wrapper.append(clearBtn);
+    }
+
+    const submitDesc = () => {
+      const val = input.value.trim();
+      if (!val || val === current) {
+        wrapper.remove();
+        return;
+      }
+      wrapper.remove();
+      void handleSetDirective(target, val);
+    };
+
+    applyBtn.addEventListener("click", submitDesc);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitDesc();
+      }
+      if (e.key === "Escape") {
+        wrapper.remove();
+      }
+    });
+
+    td.append(wrapper);
+    input.focus();
   });
 }
 

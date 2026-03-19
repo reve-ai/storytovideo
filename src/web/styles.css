@@ -877,3 +877,187 @@ dd {
   background: rgba(255, 255, 255, 0.3);
   transform: none;
 }
+
+/* Director controls */
+.directive-button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0 0 0 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  background: var(--panel-alt);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.directive-button:hover:not(:disabled) {
+  background: #e8d44d;
+  color: #333;
+  border-color: #d4c030;
+  transform: translateY(-1px);
+}
+
+.directive-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.directive-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  margin-left: 0.2rem;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--warning);
+  title: "Has directive";
+}
+
+.directive-badge:hover {
+  transform: scale(1.2);
+}
+
+.directive-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  animation: card-enter 180ms ease;
+}
+
+.directive-inline input[type="text"] {
+  flex: 1;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+
+.directive-inline input[type="text"]:focus {
+  box-shadow: 0 0 0 2px rgba(14, 141, 114, 0.25);
+}
+
+.directive-inline button {
+  width: auto;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+
+.directive-inline .directive-apply {
+  background: var(--accent);
+  color: #fff;
+}
+
+.directive-inline .directive-clear {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.45rem;
+}
+
+.directive-inline .directive-clear:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* Editable prompt fields */
+.shot-prompt-edit-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0 0 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.shot-prompt-edit-btn:hover {
+  background: var(--panel-alt);
+  color: var(--accent);
+  border-color: var(--border);
+  transform: none;
+}
+
+.shot-prompt-value-edited {
+  background: #fffbe6;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
+.shot-prompt-textarea {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+}
+
+.shot-prompt-textarea:focus {
+  box-shadow: 0 0 0 2px rgba(14, 141, 114, 0.25);
+}
+
+/* Editable description in tables */
+.editable-desc-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin: 0 0 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  transition: background 0.15s, color 0.15s;
+}
+
+.editable-desc-btn:hover {
+  background: var(--panel-alt);
+  color: var(--accent);
+  border-color: var(--border);
+  transform: none;
+}
+
+.desc-edited {
+  background: #fffbe6;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
