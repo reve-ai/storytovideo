@@ -270,7 +270,7 @@ export const generateVideoTool = {
     dialogue: z.string().describe("Character dialogue (empty if none)"),
     soundEffects: z.string().describe("Sound effects description"),
     cameraDirection: z.string().describe("Camera movement and angle"),
-    durationSeconds: z.number().min(2).max(8).describe("Video duration in seconds (2-8). Veo always uses 8; ComfyUI supports arbitrary."),
+    durationSeconds: z.number().min(0.5).max(10).describe("Video duration in seconds (0.5-10). Veo always uses 8; ComfyUI supports arbitrary."),
     startFramePath: z.string().describe("Path to start frame image"),
     endFramePath: z.string().describe("Path to end frame image"),
     outputDir: z.string().describe("Output directory for video file"),

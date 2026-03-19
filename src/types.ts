@@ -14,7 +14,7 @@ export interface Shot {
   shotNumber: number;          // global shot number across entire video
   sceneNumber: number;         // which scene this belongs to
   shotInScene: number;         // shot index within the scene (1, 2, 3...)
-  durationSeconds: number;         // seconds (2-8). Veo always uses 8; ComfyUI supports arbitrary.
+  durationSeconds: number;         // seconds (0.5-10). Veo always uses 8; ComfyUI supports arbitrary.
   shotType: "first_last_frame";
   composition: string;         // "wide_establishing" | "over_the_shoulder" | "two_shot" | "close_up" | "medium_shot" | "tracking" | "pov" | "insert_cutaway" | "low_angle" | "high_angle"
   startFramePrompt: string;

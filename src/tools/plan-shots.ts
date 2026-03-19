@@ -53,11 +53,13 @@ Typical dialogue scene pattern (2 characters, ~26s):
 4. OTS on A from behind B's shoulder (6s) — A continues speaking, small gesture between start and end.
 
 SHOT DURATION:
-- Shots can be 2-8 seconds long. Default to 8s unless a shorter duration better fits the action.
+- Shots can be 0.5-10 seconds long. Default to 8s unless a shorter/longer duration better fits the action.
 - When using Veo backend, all shots are rendered as 8s regardless of the specified duration.
-- When using ComfyUI backend, the actual duration is used.
-- Shorter shots (2-4s) work well for: quick reaction shots, insert cutaways, rapid montage sequences.
-- Longer shots (6-8s) work well for: establishing shots, dialogue, tracking shots, emotional beats.
+- When using ComfyUI backend, the actual duration is used (supports fractional seconds).
+- Very short shots (0.5-2s) work well for: flash cuts, inserts, whip pans, rapid montage.
+- Short shots (2-4s) work well for: quick reaction shots, insert cutaways, snappy dialogue.
+- Medium shots (4-8s) work well for: establishing shots, dialogue, tracking shots, emotional beats.
+- Long shots (8-10s) work well for: slow reveals, extended action, lingering moments.
 
 DIALOGUE PACING:
 - ~2.5 words/second in film
@@ -108,7 +110,7 @@ CROSS-SHOT CONTINUITY:
 
 const perSceneShotSchema = z.object({
   shotInScene: z.number(),
-  durationSeconds: z.number().min(2).max(8),
+  durationSeconds: z.number().min(0.5).max(10),
   shotType: z.literal("first_last_frame"),
   composition: z.string(),
   startFramePrompt: z.string(),
