@@ -489,6 +489,74 @@ async function refreshAssets({ silent = false } = {}) {
   }
 }
 
+
+function buildPartialImportHtml() {
+  // Collect frame and video assets from the asset map
+  const shotMap = new Map(); // shotNumber → { start, end, video }
+  for (const asset of state.assetsById.values()) {
+    const key = asset.key;
+    if (!key) continue;
+    let match;
+    match = key.match(/^frame:([0-9]+):(start|end)$/);
+    if (match) {
+      const num = Number(match[1]);
+      const entry = shotMap.get(num) || {};
+      entry[match[2]] = asset;
+      shotMap.set(num, entry);
+      continue;
+    }
+    match = key.match(/^video:([0-9]+)$/);
+    if (match) {
+      const num = Number(match[1]);
+      const entry = shotMap.get(num) || {};
+      entry.video = asset;
+      shotMap.set(num, entry);
+    }
+  }
+
+  if (shotMap.size === 0) return "";
+
+  let html = `<div class="stage-output-header">`;
+  html += `<h3>Import in Progress</h3>`;
+  html += `<p class="muted">Extracted ${shotMap.size} shot${shotMap.size !== 1 ? "s" : ""} — analyzing…</p>`;
+  html += `</div>`;
+
+  const sorted = [...shotMap.entries()].sort((a, b) => a[0] - b[0]);
+  html += `<div class="stage-output-section">`;
+  html += `<h4>Extracted Frames</h4>`;
+  html += `<div class="import-shots-grid">`;
+  for (const [shotNum, assets] of sorted) {
+    html += `<div class="import-shot-card">`;
+    html += `<p class="shot-asset-label">Shot ${shotNum}</p>`;
+    html += `<div class="shot-assets">`;
+    if (assets.start && assets.start.previewUrl) {
+      html += `<div class="shot-asset-item">`;
+      html += `<p class="shot-asset-label">Start</p>`;
+      html += `<img src="${escapeHtml(assets.start.previewUrl)}" alt="Start Frame" class="inline-thumbnail" />`;
+      html += `</div>`;
+    }
+    if (assets.end && assets.end.previewUrl) {
+      html += `<div class="shot-asset-item">`;
+      html += `<p class="shot-asset-label">End</p>`;
+      html += `<img src="${escapeHtml(assets.end.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
+      html += `</div>`;
+    }
+    if (assets.video && assets.video.previewUrl) {
+      html += `<div class="shot-asset-item">`;
+      html += `<p class="shot-asset-label">Video</p>`;
+      html += `<video src="${escapeHtml(assets.video.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `</div>`;
+
+  return html;
+}
+
+
 async function fetchAndRenderStageOutput({ silent = false } = {}) {
   if (!state.activeRunId) {
     elements.stageOutputSection.style.display = "none";
@@ -507,13 +575,23 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
     if (itemDirectives) {
       state.directives = itemDirectives;
     }
-    if (!storyAnalysis) {
-      elements.stageOutputSection.style.display = "none";
-      return;
-    }
-
     // Build the unified story document HTML
     let html = "";
+
+    if (!storyAnalysis) {
+      // No story analysis yet — render any available assets (import progress)
+      html = buildPartialImportHtml();
+      if (!html) {
+        elements.stageOutputSection.style.display = "none";
+        return;
+      }
+      if (html !== lastStageOutputHtml) {
+        elements.stageOutput.innerHTML = html;
+        lastStageOutputHtml = html;
+      }
+      elements.stageOutputSection.style.display = "";
+      return;
+    }
 
     // Title and art style
     html += `<div class="stage-output-header">`;

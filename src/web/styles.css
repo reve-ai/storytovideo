@@ -186,6 +186,21 @@ body {
   margin-top: 0.2rem;
 }
 
+.import-shots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.import-shot-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem;
+  background: var(--panel-alt);
+}
+
+
 .panel {
   display: flex;
   flex-direction: column;
