@@ -258,13 +258,19 @@ function renderStageProgress() {
       item.classList.add("stage-current");
       item.textContent += " - current";
 
-      // Show Stop button when actively executing
+      // Show Stop button when actively executing, Resume button when stopped
       if (isRunActivelyExecuting(run)) {
         const stopBtn = document.createElement("button");
         stopBtn.className = "stop-button";
         stopBtn.textContent = "Stop";
         stopBtn.onclick = () => handleStopClick();
         item.append(" ", stopBtn);
+      } else if (run.status === "stopped" || run.status === "failed") {
+        const resumeBtn = document.createElement("button");
+        resumeBtn.className = "resume-button";
+        resumeBtn.textContent = "Resume";
+        resumeBtn.onclick = () => handleRetryClick();
+        item.append(" ", resumeBtn);
       }
 
       // Allow redo for current stage (hidden for import-protected stages)
@@ -1336,8 +1342,8 @@ async function handleRetryClick() {
     setGlobalError("No active run selected.");
     return;
   }
-  if (!state.activeRun || state.activeRun.status !== "failed") {
-    setGlobalError("Only failed runs can be retried.");
+  if (!state.activeRun || (state.activeRun.status !== "failed" && state.activeRun.status !== "stopped")) {
+    setGlobalError("Only failed or stopped runs can be resumed.");
     return;
   }
 

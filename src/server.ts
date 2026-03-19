@@ -1008,8 +1008,8 @@ async function handleRetryRun(
     return;
   }
 
-  if (run.status !== "failed") {
-    sendJson(res, 409, { error: "Only failed runs can be retried" });
+  if (run.status !== "failed" && run.status !== "stopped") {
+    sendJson(res, 409, { error: "Only failed or stopped runs can be resumed" });
     return;
   }
 
