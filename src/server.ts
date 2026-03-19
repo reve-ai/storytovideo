@@ -1493,9 +1493,9 @@ async function handleSetDirective(
     }
   } else if (trimmedTarget.startsWith("analysis:")) {
     // analysis:art_style, analysis:character:Name — clear from analysis stage
-    state.completedStages = state.completedStages.filter(
-      s => s !== "analysis" && s !== "shot_planning" && s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
-    );
+    // Use clearStageData to also wipe generatedAssets/Frames/Videos/assetLibrary/storyAnalysis
+    // so downstream stages don't skip regeneration based on stale outputs
+    clearStageData(state, "analysis" as any, run.outputDir);
     earliestStage = "analysis";
   }
 
