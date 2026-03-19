@@ -1016,9 +1016,23 @@ async function handleRetryRun(
     return;
   }
 
-  if (run.status !== "failed" && run.status !== "stopped") {
-    sendJson(res, 409, { error: "Only failed or stopped runs can be resumed" });
+  if (run.status !== "failed" && run.status !== "stopped" && run.status !== "completed") {
+    sendJson(res, 409, { error: "Only failed, stopped, or completed runs can be resumed" });
     return;
+  }
+
+  // For completed runs, only allow retry if there are actually incomplete stages
+  if (run.status === "completed") {
+    const state = loadState(run.outputDir);
+    if (!state) {
+      sendJson(res, 409, { error: "No saved state available" });
+      return;
+    }
+    const allComplete = STAGE_ORDER.every(s => state.completedStages.includes(s));
+    if (allComplete) {
+      sendJson(res, 409, { error: "Run is fully complete — nothing to resume" });
+      return;
+    }
   }
 
   const state = loadState(run.outputDir);
@@ -1034,11 +1048,9 @@ async function handleRetryRun(
   }) ?? run;
 
   emitRunStatusEvent(runId, "queued");
-  emitLogEvent(runId, "Retrying run from last checkpoint");
+  emitLogEvent(runId, `Resuming ${run.mode === "import" ? "import pipeline" : "run"} from last checkpoint`);
   startRunStateMonitor(runId);
-  setImmediate(() => {
-    void runInBackground(runId, true);
-  });
+  setImmediate(() => resumeRunInBackground(run));
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord) });
 }
@@ -1871,6 +1883,18 @@ async function downloadWithHttp(url: string, outputDir: string): Promise<string>
   return outputPath;
 }
 
+/**
+ * Resume a run using the correct pipeline based on its mode.
+ */
+function resumeRunInBackground(run: RunRecord): void {
+  if (run.mode === "import") {
+    const sourcePath = join(run.outputDir, "source.mp4");
+    void runImportInBackground(run.id, sourcePath);
+  } else {
+    void runInBackground(run.id, true);
+  }
+}
+
 async function runImportInBackground(runId: string, localPath: string): Promise<void> {
   const record = runStore.get(runId);
   if (!record) {
@@ -1906,6 +1930,12 @@ async function runImportInBackground(runId: string, localPath: string): Promise<
       const state = loadState(record.outputDir);
       const currentStage = state?.currentStage ?? record.currentStage;
       const completedStages = state?.completedStages ?? record.completedStages;
+
+      // If the pipeline was aborted (user clicked Stop), don't overwrite the "stopped" status
+      if (abortController.signal.aborted) {
+        runStore.patch(runId, { currentStage, completedStages });
+        return;
+      }
 
       runStore.patch(runId, {
         status: "completed",
@@ -2587,9 +2617,7 @@ async function resumeStaleRuns(): Promise<void> {
           completedStages: state.completedStages,
         });
         startRunStateMonitor(run.id);
-        setImmediate(() => {
-          void runInBackground(run.id, true);
-        });
+        setImmediate(() => resumeRunInBackground(run));
         console.log(`[Recovery] Run ${run.id} auto-resuming after continue request`);
         appendServerDiagnostic("run_recovery_resumed_after_continue", {
           runId: run.id,
@@ -2627,9 +2655,7 @@ async function resumeStaleRuns(): Promise<void> {
           completedStages: state.completedStages,
         });
         startRunStateMonitor(run.id);
-        setImmediate(() => {
-          void runInBackground(run.id, true);
-        });
+        setImmediate(() => resumeRunInBackground(run));
         console.log(`[Recovery] Run ${run.id} auto-resuming ${run.status} run from ${state.currentStage}`);
         appendServerDiagnostic("run_recovery_resumed_failed", {
           runId: run.id,
@@ -2646,9 +2672,7 @@ async function resumeStaleRuns(): Promise<void> {
           completedStages: state.completedStages,
         });
         startRunStateMonitor(run.id);
-        setImmediate(() => {
-          void runInBackground(run.id, true);
-        });
+        setImmediate(() => resumeRunInBackground(run));
         console.log(`[Recovery] Run ${run.id} auto-resuming from last checkpoint`);
         appendServerDiagnostic("run_recovery_resumed", {
           runId: run.id,

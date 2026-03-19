@@ -32,7 +32,7 @@ async function ensureFfmpeg(): Promise<void> {
 /**
  * Get duration of a media file in seconds via ffprobe.
  */
-async function probeDuration(filePath: string): Promise<number> {
+export async function probeDuration(filePath: string): Promise<number> {
   const { stdout } = await execFileAsync("ffprobe", [
     "-v", "error",
     "-show_entries", "format=duration",
@@ -155,12 +155,13 @@ export async function splitVideo(params: {
       clipPath,
     ]);
 
-    // 2. First frame
+    // 2. First frame (-strict unofficial handles non-full-range YUV → MJPEG)
     await execFileAsync("ffmpeg", [
       "-y", "-ss", String(seg.start),
       "-i", videoPath,
       "-frames:v", "1",
       "-q:v", "2",
+      "-strict", "unofficial",
       firstFramePath,
     ]);
 
@@ -170,6 +171,7 @@ export async function splitVideo(params: {
       "-i", clipPath,
       "-frames:v", "1",
       "-q:v", "2",
+      "-strict", "unofficial",
       lastFramePath,
     ]);
 
