@@ -165,15 +165,25 @@ export async function splitVideo(params: {
       firstFramePath,
     ]);
 
-    // 3. Last frame using -sseof trick on the clip
-    await execFileAsync("ffmpeg", [
-      "-y", "-sseof", "-0.1",
-      "-i", clipPath,
-      "-frames:v", "1",
-      "-q:v", "2",
-      "-strict", "unofficial",
-      lastFramePath,
-    ]);
+    // 3. Last frame using -sseof trick on the clip (fallback: copy first frame)
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y", "-sseof", "-0.1",
+        "-i", clipPath,
+        "-frames:v", "1",
+        "-q:v", "2",
+        "-strict", "unofficial",
+        lastFramePath,
+      ]);
+      // ffmpeg may exit 0 but produce no output for very short clips
+      if (!fs.existsSync(lastFramePath) || fs.statSync(lastFramePath).size === 0) {
+        throw new Error("Empty or missing output");
+      }
+    } catch {
+      // Clip too short for -sseof — duplicate the first frame
+      console.log(`[split-video] Last frame extraction failed for scene_${num}, copying first frame`);
+      fs.copyFileSync(firstFramePath, lastFramePath);
+    }
 
     // 4. Audio extraction
     let finalAudioPath: string | null = null;
