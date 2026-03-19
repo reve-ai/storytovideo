@@ -1663,6 +1663,10 @@ async function handleStopRun(
   console.log('[handleStopRun] Aborting pipeline for ' + runId + '...');
   existing.abortController.abort();
 
+  // Remove from runningPipelines immediately so resume isn't blocked by a stale entry
+  runningPipelines.delete(runId);
+  stopRunStateMonitor(runId);
+
   // Update run status and respond immediately
   runStore.patch(runId, {
     status: "stopped" as RunStatus,
@@ -1673,26 +1677,10 @@ async function handleStopRun(
 
   sendJson(res, 200, { message: "Pipeline stopped" });
 
-  // Fire-and-forget: wait for pipeline to finish in the background
-  void (async () => {
-    try {
-      const timeoutPromise = new Promise<'timeout'>(r => setTimeout(() => r('timeout'), 30_000));
-      const result = await Promise.race([
-        existing.promise.then(() => 'done' as const),
-        timeoutPromise,
-      ]);
-
-      if (result === 'timeout') {
-        console.warn('[handleStopRun] Pipeline for ' + runId + ' did not stop within 30s, force-removing');
-        runningPipelines.delete(runId);
-        stopRunStateMonitor(runId);
-      } else {
-        console.log('[handleStopRun] Pipeline for ' + runId + ' stopped successfully');
-      }
-    } catch (err) {
-      console.error('[handleStopRun] Error during background cleanup for ' + runId + ':', err);
-    }
-  })();
+  // Fire-and-forget: wait for pipeline promise to settle (cleanup only)
+  void existing.promise.catch((err) => {
+    console.error('[handleStopRun] Pipeline error during stop for ' + runId + ':', err);
+  });
 }
 
 async function handleSetReviewMode(
