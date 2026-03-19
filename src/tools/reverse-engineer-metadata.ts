@@ -115,13 +115,21 @@ export async function reverseEngineerMetadata(params: {
   }
 
   try {
+    const imageCount = contentParts.length - 1;
+    console.log(`[reverse-engineer] Calling Claude with ${shotDescriptions.length} shots and ${imageCount} images...`);
+    const startTime = Date.now();
+
     const { object } = await generateObject({
       model: anthropic("claude-opus-4-6"),
       schema: storyAnalysisSchema,
       messages: [{ role: "user" as const, content: contentParts as any }],
     } as any);
 
-    return object as any as StoryAnalysis;
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const result = object as any as StoryAnalysis;
+    console.log(`[reverse-engineer] Done in ${elapsed}s — ${result.characters?.length ?? 0} characters, ${result.locations?.length ?? 0} locations, ${result.scenes?.length ?? 0} scenes`);
+
+    return result;
   } catch (error) {
     console.error("Error in reverseEngineerMetadata:", error);
     throw error;
