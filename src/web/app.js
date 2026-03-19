@@ -281,7 +281,8 @@ function renderRunDetails() {
     elements.runStage.textContent = "-";
     elements.runProgress.textContent = "0 / 6 (0%)";
     elements.runOutput.textContent = "-";
-    elements.runVideoBackend.textContent = "-";
+    elements.runVideoBackend.value = "veo";
+    elements.runVideoBackend.disabled = true;
     elements.reviewAwaiting.textContent = "no";
     elements.reviewContinueState.textContent = "no";
     elements.reviewPendingCount.textContent = "0";
@@ -305,7 +306,8 @@ function renderRunDetails() {
   elements.runStage.textContent = formatStageLabel(run.currentStage);
   elements.runProgress.textContent = `${run.progress.completed} / ${run.progress.total} (${run.progress.percent}%)`;
   elements.runOutput.textContent = run.outputDir;
-  elements.runVideoBackend.textContent = run.options?.videoBackend || "veo";
+  elements.runVideoBackend.value = run.options?.videoBackend || "veo";
+  elements.runVideoBackend.disabled = false;
   setGlobalError(run.error ? `Run error: ${run.error}` : "");
 
   const awaiting = Boolean(run.review?.awaitingUserReview);
@@ -1387,6 +1389,20 @@ function bindEvents() {
       setGlobalError(`Failed to update review mode: ${error.message}`);
       // Revert checkbox on failure
       elements.reviewModeCheckbox.checked = !elements.reviewModeCheckbox.checked;
+    }
+  });
+
+  elements.runVideoBackend.addEventListener("change", async () => {
+    if (!state.activeRunId) return;
+    const previous = state.activeRun?.options?.videoBackend || "veo";
+    try {
+      await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/video-backend`, {
+        method: "POST",
+        body: JSON.stringify({ videoBackend: elements.runVideoBackend.value }),
+      });
+    } catch (error) {
+      setGlobalError(`Failed to update video backend: ${error.message}`);
+      elements.runVideoBackend.value = previous;
     }
   });
 

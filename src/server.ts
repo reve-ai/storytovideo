@@ -1674,6 +1674,30 @@ async function handleSetReviewMode(
   sendJson(res, 200, { run: toRunResponse(updatedRecord ?? run) });
 }
 
+async function handleSetVideoBackend(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const body = (await readJsonBody(req)) as Record<string, unknown> | null;
+  const videoBackend = body?.videoBackend;
+  if (videoBackend !== "veo" && videoBackend !== "comfy") {
+    sendJson(res, 400, { error: 'videoBackend must be "veo" or "comfy"' });
+    return;
+  }
+
+  const updatedOptions = { ...run.options, videoBackend: videoBackend as "veo" | "comfy" };
+  const updatedRecord = runStore.patch(runId, { options: updatedOptions });
+
+  sendJson(res, 200, { run: toRunResponse(updatedRecord ?? run) });
+}
+
 async function handleContinueRun(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1851,6 +1875,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "review-mode") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleSetReviewMode(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "video-backend") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleSetVideoBackend(req, res, runId);
       return;
     }
 
