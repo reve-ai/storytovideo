@@ -817,6 +817,14 @@ async function runInBackground(runId: string, resume = false): Promise<void> {
       const state = loadState(record.outputDir);
       const currentStage = state?.currentStage ?? record.currentStage;
       const completedStages = state?.completedStages ?? record.completedStages;
+
+      // If the pipeline was aborted (user clicked Stop), don't overwrite the "stopped" status
+      if (abortController.signal.aborted) {
+        // Just update stage tracking, preserve "stopped" status set by handleStopRun
+        runStore.patch(runId, { currentStage, completedStages });
+        return;
+      }
+
       const isAwaitingReview = Boolean(record.options.reviewMode && state?.awaitingUserReview);
 
       if (isAwaitingReview) {
