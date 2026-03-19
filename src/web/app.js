@@ -516,7 +516,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<thead><tr><th>Name</th><th>Description</th><th>Age Range</th><th>Images</th></tr></thead>`;
       html += `<tbody>`;
       for (const char of storyAnalysis.characters) {
-        const charDescTarget = `character:${char.name}:description`;
+        const charDescTarget = `analysis:character:${char.name}`;
         const charDescDirective = state.directives[charDescTarget];
         const descClass = charDescDirective ? " desc-edited" : "";
         html += `<tr>`;
@@ -564,7 +564,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<thead><tr><th>Name</th><th>Description</th><th>Image</th></tr></thead>`;
       html += `<tbody>`;
       for (const loc of storyAnalysis.locations) {
-        const locDescTarget = `location:${loc.name}:description`;
+        const locDescTarget = `analysis:location:${loc.name}`;
         const locDescDirective = state.directives[locDescTarget];
         const locDescClass = locDescDirective ? " desc-edited" : "";
         html += `<tr>`;

@@ -1476,6 +1476,20 @@ async function handleSetDirective(
         s => s !== "video_generation" && s !== "assembly"
       );
       earliestStage = "video_generation";
+    } else if (itemType === "camera_direction") {
+      // Camera direction edit → regenerate video (and downstream assembly)
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "video_generation";
+    } else if (itemType === "sound_effects") {
+      // Sound effects edit → regenerate video and assembly
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "video_generation";
     }
   } else if (trimmedTarget.startsWith("analysis:")) {
     // analysis:art_style, analysis:character:Name — clear from analysis stage

@@ -179,6 +179,9 @@ const DIRECTIVE_STAGE_MAP: Record<string, string[]> = {
   "start_frame_prompt": ["frame_generation", "shot_planning"],
   "end_frame_prompt": ["frame_generation", "shot_planning"],
   "action_prompt": ["video_generation", "shot_planning"],
+  // Shot metadata fields
+  "camera_direction": ["video_generation", "shot_planning"],
+  "sound_effects": ["video_generation", "assembly", "shot_planning"],
 };
 
 function directiveMatchesStage(target: string, stageName: string): boolean {
@@ -215,7 +218,7 @@ function applyPromptLevelDirectives(state: PipelineState): void {
   if (!state.storyAnalysis) return;
   const allShots = state.storyAnalysis.scenes.flatMap(s => s.shots || []);
   for (const directive of Object.values(state.itemDirectives)) {
-    const match = directive.target.match(/^shot:(\d+):(action_prompt|start_frame_prompt|end_frame_prompt)$/);
+    const match = directive.target.match(/^shot:(\d+):(action_prompt|start_frame_prompt|end_frame_prompt|camera_direction|sound_effects)$/);
     if (!match) continue;
     const shotNumber = parseInt(match[1], 10);
     const field = match[2];
@@ -225,6 +228,8 @@ function applyPromptLevelDirectives(state: PipelineState): void {
       action_prompt: "actionPrompt",
       start_frame_prompt: "startFramePrompt",
       end_frame_prompt: "endFramePrompt",
+      camera_direction: "cameraDirection",
+      sound_effects: "soundEffects",
     };
     const key = fieldMap[field];
     if (key) {
