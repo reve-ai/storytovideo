@@ -1,7 +1,9 @@
 import "dotenv/config";
+import { execFile } from "child_process";
 import { randomUUID } from "crypto";
 import {
   createReadStream,
+  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -9,8 +11,12 @@ import {
   writeFileSync,
 } from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { get as httpsGet } from "https";
+import { get as httpGet } from "http";
 import { join, resolve } from "path";
+import { pipeline as streamPipeline } from "stream/promises";
 
+import { runImportPipeline } from "./import-orchestrator";
 import { runPipeline, clearStageData, STAGE_ORDER } from "./orchestrator";
 import {
   buildAssetFeed as buildAssetFeedFromState,
@@ -47,6 +53,7 @@ interface RunRecord {
   error?: string;
   currentStage: string;
   completedStages: string[];
+  mode?: "import" | "generate";
 }
 
 interface Progress {
@@ -1773,6 +1780,361 @@ async function handleContinueRun(
   });
 }
 
+const YOUTUBE_URL_REGEX = /(?:youtube\.com\/(?:watch\?.*v=|shorts\/)|youtu\.be\/)/i;
+
+function isYouTubeUrl(url: string): boolean {
+  return YOUTUBE_URL_REGEX.test(url);
+}
+
+function isHttpUrl(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("https://");
+}
+
+function downloadWithYtDlp(url: string, outputDir: string): Promise<string> {
+  const outputPath = join(outputDir, "source.mp4");
+  return new Promise((resolve, reject) => {
+    execFile(
+      "yt-dlp",
+      [
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--output", outputPath,
+        url,
+      ],
+      { timeout: 600_000 },
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(new Error(`yt-dlp failed: ${stderr || error.message}`));
+          return;
+        }
+        if (!existsSync(outputPath)) {
+          reject(new Error("yt-dlp completed but output file not found"));
+          return;
+        }
+        resolve(outputPath);
+      },
+    );
+  });
+}
+
+async function downloadWithHttp(url: string, outputDir: string): Promise<string> {
+  const outputPath = join(outputDir, "source.mp4");
+  const getter = url.startsWith("https://") ? httpsGet : httpGet;
+
+  const response = await new Promise<import("http").IncomingMessage>((resolveResp, reject) => {
+    const req = getter(url, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // Follow redirect
+        const redirectGetter = res.headers.location.startsWith("https://") ? httpsGet : httpGet;
+        redirectGetter(res.headers.location, (redirectRes) => resolveResp(redirectRes)).on("error", reject);
+        return;
+      }
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP download failed with status ${res.statusCode}`));
+        return;
+      }
+      resolveResp(res);
+    });
+    req.on("error", reject);
+  });
+
+  const writeStream = createWriteStream(outputPath);
+  await streamPipeline(response, writeStream);
+
+  if (!existsSync(outputPath)) {
+    throw new Error("HTTP download completed but output file not found");
+  }
+  return outputPath;
+}
+
+async function runImportInBackground(runId: string, localPath: string): Promise<void> {
+  const record = runStore.get(runId);
+  if (!record) {
+    return;
+  }
+
+  if (runningPipelines.has(runId)) {
+    console.warn(`[runImportInBackground] Pipeline already running for ${runId}, skipping`);
+    return;
+  }
+
+  setInterrupted(false);
+  const abortController = new AbortController();
+
+  runStore.patch(runId, {
+    status: "running",
+    startedAt: new Date().toISOString(),
+    completedAt: undefined,
+    error: undefined,
+  });
+  emitRunStatusEvent(runId, "running");
+  startRunStateMonitor(runId);
+
+  const pipeline = (async () => {
+    try {
+      await runImportPipeline(localPath, {
+        outputDir: record.outputDir,
+        onProgress: (phase: string, detail: string) => {
+          emitLogEvent(runId, `[import:${phase}] ${detail}`);
+        },
+      });
+      pollRunState(runId);
+      const state = loadState(record.outputDir);
+      const currentStage = state?.currentStage ?? record.currentStage;
+      const completedStages = state?.completedStages ?? record.completedStages;
+
+      runStore.patch(runId, {
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        currentStage,
+        completedStages,
+      });
+      emitRunStatusEvent(runId, "completed");
+    } catch (error) {
+      pollRunState(runId);
+      const message = error instanceof Error ? error.message : String(error);
+      const state = loadState(record.outputDir);
+      const failedStage = state?.currentStage ?? record.currentStage;
+      const completedStages = state?.completedStages ?? record.completedStages;
+      runStore.patch(runId, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: message,
+        currentStage: failedStage,
+        completedStages,
+      });
+      emitRunStatusEvent(runId, "failed", message);
+      emitLogEvent(runId, `Import failed at ${failedStage}: ${message}`, "error");
+    } finally {
+      runningPipelines.delete(runId);
+      stopRunStateMonitor(runId);
+    }
+  })();
+
+  runningPipelines.set(runId, { promise: pipeline, abortController });
+}
+
+async function handleImportRun(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const videoSource = body.videoSource;
+  if (typeof videoSource !== "string" || videoSource.trim().length === 0) {
+    sendJson(res, 400, { error: "videoSource is required and must be a non-empty string" });
+    return;
+  }
+
+  const runId = randomUUID();
+  const outputDir = resolve(join(RUN_OUTPUT_ROOT, runId));
+  const createdAt = new Date().toISOString();
+
+  mkdirSync(outputDir, { recursive: true });
+  await saveState({ state: createInitialApiState(outputDir) });
+
+  const pipelineOptions: PipelineOptions = {
+    outputDir,
+    dryRun: false,
+    verify: false,
+    maxRetries: 2,
+    resume: false,
+    verbose: false,
+    reviewMode: false,
+    videoBackend: "comfy",
+    onToolError: (stage: string, tool: string, error: string) => {
+      emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
+    },
+  };
+
+  const record: RunRecord = {
+    id: runId,
+    storyText: "(imported video)",
+    outputDir,
+    options: pipelineOptions,
+    status: "queued",
+    createdAt,
+    currentStage: "analysis",
+    completedStages: [],
+    mode: "import",
+  };
+
+  runStore.upsert(record);
+  emitRunStatusEvent(runId, "queued");
+  startRunStateMonitor(runId);
+
+  // Determine source type and start import in background
+  const trimmedSource = videoSource.trim();
+
+  setImmediate(() => {
+    void (async () => {
+      try {
+        let localPath: string;
+
+        if (isYouTubeUrl(trimmedSource)) {
+          emitLogEvent(runId, `Downloading YouTube video: ${trimmedSource}`);
+          localPath = await downloadWithYtDlp(trimmedSource, outputDir);
+          emitLogEvent(runId, "YouTube download complete");
+        } else if (isHttpUrl(trimmedSource)) {
+          emitLogEvent(runId, `Downloading video from URL: ${trimmedSource}`);
+          localPath = await downloadWithHttp(trimmedSource, outputDir);
+          emitLogEvent(runId, "HTTP download complete");
+        } else {
+          // Local file path
+          if (!existsSync(trimmedSource)) {
+            const message = `Local file not found: ${trimmedSource}`;
+            runStore.patch(runId, {
+              status: "failed",
+              completedAt: new Date().toISOString(),
+              error: message,
+            });
+            emitRunStatusEvent(runId, "failed", message);
+            emitLogEvent(runId, message, "error");
+            stopRunStateMonitor(runId);
+            return;
+          }
+          localPath = resolve(trimmedSource);
+        }
+
+        await runImportInBackground(runId, localPath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        runStore.patch(runId, {
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error: message,
+        });
+        emitRunStatusEvent(runId, "failed", message);
+        emitLogEvent(runId, `Import source acquisition failed: ${message}`, "error");
+        stopRunStateMonitor(runId);
+      }
+    })();
+  });
+
+  sendJson(res, 201, toRunResponse(record));
+}
+
+async function readRawBody(req: IncomingMessage, maxSize: number): Promise<Buffer> {
+  let total = 0;
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of req) {
+    const asBuffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    total += asBuffer.length;
+    if (total > maxSize) {
+      throw new Error(`Request body exceeds ${Math.round(maxSize / 1_000_000)}MB limit`);
+    }
+    chunks.push(asBuffer);
+  }
+
+  return Buffer.concat(chunks);
+}
+
+async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const contentType = req.headers["content-type"] ?? "";
+  const boundaryMatch = contentType.match(/boundary=(.+)/i);
+  if (!boundaryMatch) {
+    sendJson(res, 400, { error: "Missing multipart boundary in Content-Type header" });
+    return;
+  }
+
+  const boundary = boundaryMatch[1].trim();
+  const rawBody = await readRawBody(req, 500_000_000); // 500MB limit for video uploads
+
+  // Simple multipart parser: find the file content between boundaries
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  const crlfCrlf = Buffer.from("\r\n\r\n");
+
+  let fileContent: Buffer | null = null;
+
+  let searchStart = 0;
+  while (searchStart < rawBody.length) {
+    const boundaryPos = rawBody.indexOf(boundaryBuffer, searchStart);
+    if (boundaryPos === -1) break;
+
+    const afterBoundary = boundaryPos + boundaryBuffer.length;
+    // Check for closing boundary (--boundary--)
+    if (rawBody[afterBoundary] === 0x2d && rawBody[afterBoundary + 1] === 0x2d) {
+      break;
+    }
+
+    // Find the header/body separator
+    const headerEnd = rawBody.indexOf(crlfCrlf, afterBoundary);
+    if (headerEnd === -1) break;
+
+    const headers = rawBody.subarray(afterBoundary, headerEnd).toString("utf-8");
+
+    // Check if this part has a filename (it's a file upload)
+    if (headers.includes("filename=")) {
+      const bodyStart = headerEnd + crlfCrlf.length;
+
+      // Find the next boundary
+      const nextBoundary = rawBody.indexOf(boundaryBuffer, bodyStart);
+      if (nextBoundary === -1) break;
+
+      // Content ends 2 bytes before next boundary (\r\n before boundary)
+      const bodyEnd = nextBoundary - 2;
+      fileContent = rawBody.subarray(bodyStart, bodyEnd);
+      break;
+    }
+
+    searchStart = headerEnd + crlfCrlf.length;
+  }
+
+  if (!fileContent || fileContent.length === 0) {
+    sendJson(res, 400, { error: "No file found in multipart upload" });
+    return;
+  }
+
+  const runId = randomUUID();
+  const outputDir = resolve(join(RUN_OUTPUT_ROOT, runId));
+  const createdAt = new Date().toISOString();
+
+  mkdirSync(outputDir, { recursive: true });
+
+  // Write uploaded file
+  const localPath = join(outputDir, "source.mp4");
+  writeFileSync(localPath, fileContent);
+
+  await saveState({ state: createInitialApiState(outputDir) });
+
+  const pipelineOptions: PipelineOptions = {
+    outputDir,
+    dryRun: false,
+    verify: false,
+    maxRetries: 2,
+    resume: false,
+    verbose: false,
+    reviewMode: false,
+    videoBackend: "comfy",
+    onToolError: (stage: string, tool: string, error: string) => {
+      emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
+    },
+  };
+
+  const record: RunRecord = {
+    id: runId,
+    storyText: "(uploaded video)",
+    outputDir,
+    options: pipelineOptions,
+    status: "queued",
+    createdAt,
+    currentStage: "analysis",
+    completedStages: [],
+    mode: "import",
+  };
+
+  runStore.upsert(record);
+  emitRunStatusEvent(runId, "queued");
+  startRunStateMonitor(runId);
+
+  setImmediate(() => {
+    void runImportInBackground(runId, localPath);
+  });
+
+  sendJson(res, 201, toRunResponse(record));
+}
+
 async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCorsHeaders(res);
 
@@ -1804,6 +2166,16 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
       }
+    }
+
+    if (method === "POST" && url.pathname === "/runs/import/upload") {
+      await handleImportUpload(req, res);
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/runs/import") {
+      await handleImportRun(req, res);
+      return;
     }
 
     if (method === "POST" && url.pathname === "/runs") {
