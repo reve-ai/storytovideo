@@ -134,18 +134,26 @@ export async function runImportPipeline(
   let shots: ShotInfo[];
   const existingShots = await reconstructShotsFromDisk(outputDir);
   if (existingShots && existingShots.length > 0) {
-    // Check that all clips have their frame images extracted
-    const missingFrames = existingShots.filter(
-      s => !fs.existsSync(s.firstFramePath) || !fs.existsSync(s.lastFramePath)
-    );
-    if (missingFrames.length === 0) {
-      progress("split", `Resuming — found ${existingShots.length} existing shots`);
-      shots = existingShots;
-    } else {
-      progress("split", `Found ${existingShots.length} clips but ${missingFrames.length} missing frames — re-splitting`);
-      shots = await splitVideo({ videoPath, outputDir, sceneThreshold });
-      progress("split", `Split into ${shots.length} shots`);
+    // Fix any missing frame images by copying from the other frame
+    let fixed = 0;
+    for (const s of existingShots) {
+      const hasFirst = fs.existsSync(s.firstFramePath);
+      const hasLast = fs.existsSync(s.lastFramePath);
+      if (hasFirst && !hasLast) {
+        fs.copyFileSync(s.firstFramePath, s.lastFramePath);
+        fixed++;
+      } else if (!hasFirst && hasLast) {
+        fs.copyFileSync(s.lastFramePath, s.firstFramePath);
+        fixed++;
+      }
+      // If both missing, the clip is broken — will be caught downstream
     }
+    if (fixed > 0) {
+      progress("split", `Resuming — found ${existingShots.length} existing shots (fixed ${fixed} missing frames)`);
+    } else {
+      progress("split", `Resuming — found ${existingShots.length} existing shots`);
+    }
+    shots = existingShots;
   } else {
     progress("split", "Splitting video into shots...");
     shots = await splitVideo({ videoPath, outputDir, sceneThreshold });
