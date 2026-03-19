@@ -1454,9 +1454,29 @@ async function handleSetDirective(
         s => s !== "video_generation" && s !== "assembly"
       );
       earliestStage = "video_generation";
+    } else if (itemType === "start_frame_prompt" || itemType === "end_frame_prompt") {
+      // Prompt edit → regenerate frames (and downstream video/assembly)
+      if (state.generatedFrames[shotNum]) {
+        if (itemType === "start_frame_prompt") {
+          state.generatedFrames[shotNum].start = undefined;
+          state.generatedFrames[shotNum].end = undefined;
+        } else {
+          state.generatedFrames[shotNum].end = undefined;
+        }
+      }
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "frame_generation";
+    } else if (itemType === "action_prompt") {
+      // Action prompt edit → regenerate video (and downstream assembly)
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "video_generation";
     }
-    // For prompt-type targets (start_frame_prompt, end_frame_prompt, action_prompt),
-    // we just save the directive without clearing generated artifacts
   } else if (trimmedTarget.startsWith("analysis:")) {
     // analysis:art_style, analysis:character:Name — clear from analysis stage
     state.completedStages = state.completedStages.filter(
@@ -1490,7 +1510,7 @@ async function handleSetDirective(
 
     sendJson(res, 200, { directive: directiveObj, run: toRunResponse(updatedRecord) });
   } else {
-    // Directive saved but no cascade needed (e.g. prompt-type targets)
+    // Directive saved but no cascade needed (e.g. unrecognized target type)
     sendJson(res, 200, { directive: directiveObj, run: toRunResponse(run) });
   }
 }
