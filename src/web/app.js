@@ -33,6 +33,14 @@ const elements = {
   createRunForm: getElement("create-run-form"),
   storyText: getElement("story-text"),
   createRunButton: getElement("create-run-button"),
+  tabNewStory: getElement("tab-new-story"),
+  tabImportVideo: getElement("tab-import-video"),
+  panelNewStory: getElement("panel-new-story"),
+  panelImportVideo: getElement("panel-import-video"),
+  importVideoForm: getElement("import-video-form"),
+  importVideoUrl: getElement("import-video-url"),
+  importVideoFile: getElement("import-video-file"),
+  importVideoButton: getElement("import-video-button"),
   reviewModeCheckbox: getElement("review-mode-checkbox"),
   runSelect: getElement("run-select"),
   refreshRunsButton: getElement("refresh-runs-button"),
@@ -1002,6 +1010,61 @@ async function handleCreateRunSubmit(event) {
   }
 }
 
+async function handleImportVideoSubmit(event) {
+  event.preventDefault();
+  const url = elements.importVideoUrl.value.trim();
+  const file = elements.importVideoFile.files[0];
+
+  if (!url && !file) {
+    setGlobalError("Provide a video URL or select a file to import.");
+    return;
+  }
+
+  elements.importVideoButton.disabled = true;
+  try {
+    let run;
+    if (url) {
+      run = await requestJson("/runs/import", {
+        method: "POST",
+        body: JSON.stringify({ videoSource: url }),
+      });
+    } else {
+      const formData = new FormData();
+      formData.append("file", file);
+      // Use fetch directly for FormData (no Content-Type header — browser sets boundary)
+      const response = await fetch("/runs/import/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const raw = await response.text();
+      if (!response.ok) {
+        let msg = `${response.status} ${response.statusText}`;
+        try { const parsed = JSON.parse(raw); if (parsed.error) msg = parsed.error; } catch {}
+        throw new Error(msg);
+      }
+      run = raw.trim().length > 0 ? JSON.parse(raw) : {};
+    }
+
+    elements.importVideoUrl.value = "";
+    elements.importVideoFile.value = "";
+    await loadRuns();
+    await setActiveRun(run.id);
+    appendEvent(
+      createEventEntry({
+        title: "Video imported",
+        message: run.id,
+      }),
+    );
+    setGlobalError("");
+    showRunView();
+  } catch (error) {
+    setGlobalError(`Failed to import video: ${error.message}`);
+  } finally {
+    elements.importVideoButton.disabled = false;
+  }
+}
+
+
 async function handleSubmitInstruction(event) {
   event.preventDefault();
   if (!state.activeRunId) {
@@ -1351,6 +1414,25 @@ function bindEvents() {
 
   elements.createRunForm.addEventListener("submit", (event) => {
     void handleCreateRunSubmit(event);
+  });
+
+  elements.importVideoForm.addEventListener("submit", (event) => {
+    void handleImportVideoSubmit(event);
+  });
+
+  // Tab switching between New Story and Import Video
+  elements.tabNewStory.addEventListener("click", () => {
+    elements.tabNewStory.classList.add("create-tab-active");
+    elements.tabImportVideo.classList.remove("create-tab-active");
+    elements.panelNewStory.style.display = "";
+    elements.panelImportVideo.style.display = "none";
+  });
+
+  elements.tabImportVideo.addEventListener("click", () => {
+    elements.tabImportVideo.classList.add("create-tab-active");
+    elements.tabNewStory.classList.remove("create-tab-active");
+    elements.panelImportVideo.style.display = "";
+    elements.panelNewStory.style.display = "none";
   });
 
   elements.runSelect.addEventListener("change", (event) => {

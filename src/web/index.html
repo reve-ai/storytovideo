@@ -95,24 +95,54 @@
     <div id="create-view" class="view-container" style="display: none;">
       <section class="create-view-content">
         <div class="card create-run-card">
-          <h2>Create New Run</h2>
-          <p class="muted">Submit a story to start a new video generation run.</p>
-          <form id="create-run-form">
-            <label for="story-text">Story text</label>
-            <textarea
-              id="story-text"
-              name="storyText"
-              rows="12"
-              placeholder="Paste a short story here..."
-              required
-            ></textarea>
-            <label for="video-backend">Video Backend</label>
-            <select id="video-backend" name="videoBackend">
-              <option value="veo" selected>Veo 3.1 (Google)</option>
-              <option value="comfy">ComfyUI</option>
-            </select>
-            <button id="create-run-button" type="submit">Start run</button>
-          </form>
+          <div class="create-tabs">
+            <button id="tab-new-story" class="create-tab create-tab-active" type="button">New Story</button>
+            <button id="tab-import-video" class="create-tab" type="button">Import Video</button>
+          </div>
+
+          <!-- New Story panel -->
+          <div id="panel-new-story" class="create-panel">
+            <h2>Create New Run</h2>
+            <p class="muted">Submit a story to start a new video generation run.</p>
+            <form id="create-run-form">
+              <label for="story-text">Story text</label>
+              <textarea
+                id="story-text"
+                name="storyText"
+                rows="12"
+                placeholder="Paste a short story here..."
+                required
+              ></textarea>
+              <label for="video-backend">Video Backend</label>
+              <select id="video-backend" name="videoBackend">
+                <option value="veo" selected>Veo 3.1 (Google)</option>
+                <option value="comfy">ComfyUI</option>
+              </select>
+              <button id="create-run-button" type="submit">Start run</button>
+            </form>
+          </div>
+
+          <!-- Import Video panel -->
+          <div id="panel-import-video" class="create-panel" style="display: none;">
+            <h2>Import Video</h2>
+            <p class="muted">Import an existing video from a URL or local file.</p>
+            <form id="import-video-form">
+              <label for="import-video-url">Video URL</label>
+              <input
+                type="text"
+                id="import-video-url"
+                placeholder="YouTube URL or direct video link..."
+              />
+              <div class="import-divider"><span>or</span></div>
+              <label for="import-video-file">Upload a video file</label>
+              <input
+                type="file"
+                id="import-video-file"
+                accept="video/*"
+              />
+              <button id="import-video-button" type="submit">Import video</button>
+            </form>
+          </div>
         </div>
       </section>
     </div>

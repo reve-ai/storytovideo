@@ -111,6 +111,81 @@ body {
   min-height: 200px;
 }
 
+.create-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.create-tab {
+  flex: 1;
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms;
+  margin-bottom: -2px;
+}
+
+.create-tab:hover:not(.create-tab-active) {
+  color: var(--text);
+  background: transparent;
+  transform: none;
+}
+
+.create-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
+.create-panel {
+  animation: card-enter 180ms ease;
+}
+
+.import-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.8rem 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.import-divider::before,
+.import-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+#import-video-url {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.58rem 0.62rem;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+#import-video-file {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
