@@ -516,6 +516,15 @@ async function runShotPlanningStage(
     throw new Error("Shot planning requires storyAnalysis in state");
   }
 
+  const isComfy = options.videoBackend === "comfy";
+  const durationGuidance = isComfy
+    ? `Shots can be 0.5-10 seconds long (fractional values like 1.5 or 3.5 are fine). Choose the duration that best fits the action:
+- Very short (0.5-2s): flash cuts, inserts, whip pans, rapid montage
+- Short (2-4s): quick reactions, insert cutaways, snappy dialogue
+- Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
+- Long (8-10s): slow reveals, extended action, lingering moments`
+    : `Each shot is exactly 8 seconds (durationSeconds: 8). This is a fixed constraint of the Veo video backend.`;
+
   const systemPrompt = `You are a cinematic shot planner. Your job is to break down each scene into shots with cinematic composition.
 
 ${CINEMATIC_RULES}
@@ -529,7 +538,7 @@ Plan shots for ONE scene at a time. Call planShotsForScene once per scene, in sc
 
 For each scene:
 1. Choose a transition type (Scene 1 is always "cut")
-2. Break into shots (each shot is 8 seconds)
+2. ${durationGuidance}
 3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
 4. Distribute dialogue across shots respecting pacing rules
 5. All shots use first_last_frame generation strategy
