@@ -1104,6 +1104,7 @@ Output directory: "${options.outputDir}"`;
         return assembleVideo({
           ...params,
           subtitles,
+          importedAudio: state.importedAudio,
           dryRun: options.dryRun,
         });
       }, options.onToolError, options.abortSignal),

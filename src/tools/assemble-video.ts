@@ -113,15 +113,67 @@ async function burnSubtitles(videoPath: string, assPath: string): Promise<void> 
 }
 
 /**
+ * Overlay imported audio onto a video clip using ffmpeg.
+ * If the audio is shorter than the video, it is padded with silence.
+ * If the audio is longer, it is trimmed to match the video duration.
+ * Returns the path to the new video file with audio mixed in.
+ */
+async function overlayAudio(
+  videoPath: string,
+  audioPath: string,
+  outputPath: string,
+): Promise<string> {
+  const videoDuration = await getVideoDuration(videoPath);
+
+  // Mix imported audio with any existing audio track.
+  // Use amix to combine, or just add the audio if the video has none.
+  // The imported audio is trimmed/padded to match video duration.
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i", videoPath,
+    "-i", audioPath,
+    "-filter_complex",
+    `[1:a]apad=whole_dur=${videoDuration},atrim=0:${videoDuration}[imported];[0:a][imported]amix=inputs=2:duration=first:dropout_transition=0[aout]`,
+    "-map", "0:v",
+    "-map", "[aout]",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-shortest",
+    outputPath,
+  ]).catch(async () => {
+    // Fallback: video may have no audio track — just add the imported audio directly
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i", videoPath,
+      "-i", audioPath,
+      "-filter_complex",
+      `[1:a]apad=whole_dur=${videoDuration},atrim=0:${videoDuration}[aout]`,
+      "-map", "0:v",
+      "-map", "[aout]",
+      "-c:v", "copy",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-shortest",
+      outputPath,
+    ]);
+  });
+
+  return outputPath;
+}
+
+/**
  * Assembles multiple video clips into a single final video with optional scene transitions.
  * Uses ffmpeg xfade filter for transitions, or concat demuxer for all-cut videos.
  * Optionally burns ASS subtitles into the final video.
+ * When importedAudio is provided, overlays per-clip audio before assembly.
  * Returns the path to the final assembled video.
  */
 export async function assembleVideo(params: {
   videoPaths: string[];
   transitions?: Array<{ type: "cut" | "fade_black"; durationMs: number }>;
   subtitles?: Array<{ startSec: number; endSec: number; text: string }>;
+  importedAudio?: Record<number, string>;
   outputDir: string;
   outputFile?: string;
   dryRun?: boolean;
@@ -130,6 +182,7 @@ export async function assembleVideo(params: {
     videoPaths,
     transitions = [],
     subtitles = [],
+    importedAudio,
     outputDir,
     outputFile = "final.mp4",
     dryRun = false,
@@ -154,6 +207,26 @@ export async function assembleVideo(params: {
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
 
+  // Overlay imported audio per-clip when available
+  let finalVideoPaths = videoPaths;
+  if (importedAudio && Object.keys(importedAudio).length > 0) {
+    finalVideoPaths = [];
+    for (let i = 0; i < videoPaths.length; i++) {
+      const shotNumber = i + 1; // videoPaths are ordered by shot number
+      const audioPath = importedAudio[shotNumber];
+      if (audioPath && fs.existsSync(audioPath)) {
+        const ext = path.extname(videoPaths[i]);
+        const base = path.basename(videoPaths[i], ext);
+        const mixedPath = path.join(outputDir, `${base}_mixed${ext}`);
+        console.log(`[assembly] Overlaying imported audio for shot ${shotNumber}`);
+        await overlayAudio(videoPaths[i], audioPath, mixedPath);
+        finalVideoPaths.push(mixedPath);
+      } else {
+        finalVideoPaths.push(videoPaths[i]);
+      }
+    }
+  }
+
   const outputPath = path.join(outputDir, outputFile);
 
   // Check if all transitions are "cut" (no xfade needed)
@@ -162,10 +235,10 @@ export async function assembleVideo(params: {
   let result: { path: string };
   if (!hasTransitions) {
     // Use fast concat demuxer for all-cut videos
-    result = await assembleWithConcat(videoPaths, outputPath);
+    result = await assembleWithConcat(finalVideoPaths, outputPath);
   } else {
     // Use xfade filter for videos with transitions
-    result = await assembleWithXfade(videoPaths, transitions, outputPath);
+    result = await assembleWithXfade(finalVideoPaths, transitions, outputPath);
   }
 
   // Burn subtitles if provided

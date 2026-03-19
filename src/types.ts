@@ -113,6 +113,7 @@ export interface PipelineState {
   instructionHistory: StageInstructionRecord[];
   decisionHistory: StageDecisionRecord[];
   pendingJobs: Record<string, { jobId: string; outputPath: string }>;
+  importedAudio?: Record<number, string>;              // shotNumber → audio file path (from import pipeline)
   itemDirectives: Record<string, ItemDirective>;     // keyed by target
   rollbackTarget?: string;                          // stage to roll back to (set by RAI handler)
   lastSavedAt: string;                             // ISO timestamp of last state save
