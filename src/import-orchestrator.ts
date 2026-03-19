@@ -1,8 +1,36 @@
+import * as fs from "fs";
+import * as path from "path";
 import { splitVideo, ShotInfo } from "./tools/split-video";
 import { analyzeShots, ShotAnalysisResult, ShotFrameInput } from "./tools/analyze-shots";
 import { reverseEngineerMetadata, ShotDescription } from "./tools/reverse-engineer-metadata";
 import { saveState } from "./tools/state";
-import type { PipelineState, StoryAnalysis } from "./types";
+import type { PipelineState, StoryAnalysis, AssetLibrary } from "./types";
+
+/**
+ * Write partial shot-analysis results to a sidecar JSON file so the UI
+ * can display progressive analysis updates between full state saves.
+ */
+function savePartialAnalysis(outputDir: string, results: ShotAnalysisResult[]): void {
+  const filePath = path.join(outputDir, "import_analysis_progress.json");
+  fs.writeFileSync(filePath, JSON.stringify(results, null, 2));
+}
+
+/**
+ * Build a minimal AssetLibrary from the StoryAnalysis so that Director Mode
+ * features (frame redo, prompt edits) don't crash when assetLibrary is required.
+ * For imported runs the asset images don't exist yet, so paths are empty strings.
+ */
+function buildPlaceholderAssetLibrary(analysis: StoryAnalysis): AssetLibrary {
+  const characterImages: Record<string, { front: string; angle: string }> = {};
+  for (const char of analysis.characters) {
+    characterImages[char.name] = { front: "", angle: "" };
+  }
+  const locationImages: Record<string, string> = {};
+  for (const loc of analysis.locations) {
+    locationImages[loc.name] = "";
+  }
+  return { characterImages, locationImages };
+}
 
 /**
  * Orchestrates the full video import pipeline:
@@ -73,18 +101,22 @@ export async function runImportPipeline(
     lastFramePath: s.lastFramePath,
   }));
 
-  let analysisCount = 0;
-  const analysisResults: ShotAnalysisResult[] = await analyzeShots(
+  // Accumulate results progressively so state saves contain real data
+  const analysisResults: ShotAnalysisResult[] = [];
+  await analyzeShots(
     shotInputs,
-    (_result, index, total) => {
-      analysisCount++;
+    (result, index, total) => {
+      analysisResults.push(result);
       progress("analyze", `Analyzed shot ${index + 1}/${total}`);
-      if (analysisCount % 5 === 0 || index === total - 1) {
+      // Write partial analysis to sidecar file + save state on every 5th shot or last
+      if (analysisResults.length % 5 === 0 || index === total - 1) {
+        savePartialAnalysis(outputDir, analysisResults);
         saveState({ state }).catch(() => {});
       }
     },
   );
   progress("analyze", `Analyzed ${analysisResults.length} shots`);
+  savePartialAnalysis(outputDir, analysisResults);
   await saveState({ state });
 
   // ── Phase 3: Bridge formats & reverse-engineer metadata ───────────────
@@ -95,6 +127,9 @@ export async function runImportPipeline(
   }
 
   // Map ShotAnalysisResult → ShotDescription
+  // Use 1-based index to match the output's shotNumber convention.
+  // Pass through startFramePrompt/endFramePrompt in the description field
+  // so reverse-engineer can use them for its own prompt generation.
   const shotDescriptions: ShotDescription[] = analysisResults.map((r) => {
     const dur = durationMap.get(r.shotNumber) ?? 0;
     let cumulative = 0;
@@ -103,10 +138,17 @@ export async function runImportPipeline(
     }
     const mins = Math.floor(cumulative / 60);
     const secs = Math.floor(cumulative % 60);
+
+    // Build a rich description that includes frame prompts so the LLM
+    // has full context for scene grouping and character identification
+    const descParts = [r.actionPrompt];
+    if (r.startFramePrompt) descParts.push(`Start frame: ${r.startFramePrompt}`);
+    if (r.endFramePrompt) descParts.push(`End frame: ${r.endFramePrompt}`);
+
     return {
-      index: r.shotNumber - 1,
+      index: r.shotNumber,  // 1-based to match prompt's "Shot ${s.index}" display
       timestamp: `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
-      description: r.actionPrompt,
+      description: descParts.join("\n"),
       composition: r.composition,
       cameraDirection: "",
       dialogue: "",
@@ -139,7 +181,9 @@ export async function runImportPipeline(
 
   // ── Phase 5: Bootstrap final PipelineState ────────────────────────────
   state.storyAnalysis = storyAnalysis;
-  state.completedStages = ["analysis", "shot_planning", "frame_generation"];
+  // Build placeholder assetLibrary so Director Mode frame redo works
+  state.assetLibrary = buildPlaceholderAssetLibrary(storyAnalysis);
+  state.completedStages = ["analysis", "shot_planning", "asset_generation", "frame_generation"];
   state.currentStage = "video_generation";
   state.generatedAssets = {};
   await saveState({ state });

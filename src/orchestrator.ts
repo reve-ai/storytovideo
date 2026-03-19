@@ -726,8 +726,13 @@ async function runFrameGenerationStage(
   state: PipelineState,
   options: PipelineOptions,
 ): Promise<PipelineState> {
-  if (!state.storyAnalysis || !state.assetLibrary) {
-    throw new Error("Frame generation requires storyAnalysis and assetLibrary in state");
+  if (!state.storyAnalysis) {
+    throw new Error("Frame generation requires storyAnalysis in state");
+  }
+  // assetLibrary may have placeholder entries for imported runs — that's fine.
+  // If completely missing, create an empty one so downstream code doesn't crash.
+  if (!state.assetLibrary) {
+    state.assetLibrary = { characterImages: {}, locationImages: {} };
   }
 
   const analysis = state.storyAnalysis;
