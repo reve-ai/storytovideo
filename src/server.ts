@@ -1086,6 +1086,15 @@ async function handleRedoRun(
     return;
   }
 
+  // Import runs cannot redo analysis or shot_planning — the storyText is placeholder
+  // and these stages were bootstrapped from the imported video, not from text analysis.
+  if (run.mode === "import" && (stage === "analysis" || stage === "shot_planning")) {
+    sendJson(res, 400, {
+      error: `Cannot redo "${stage}" on an imported run. Import runs derive analysis and shot planning from the source video. You can redo from asset_generation, frame_generation, video_generation, or assembly.`,
+    });
+    return;
+  }
+
   // Load state
   const state = loadState(run.outputDir);
   if (!state) {
@@ -1507,6 +1516,14 @@ async function handleSetDirective(
       earliestStage = "video_generation";
     }
   } else if (trimmedTarget.startsWith("analysis:")) {
+    // Import runs cannot redo analysis — storyText is placeholder
+    if (run.mode === "import") {
+      await saveState({ state });
+      sendJson(res, 400, {
+        error: `Cannot set analysis-level directives on an imported run. Import runs derive analysis from the source video. You can set directives for shots, frames, videos, and assets.`,
+      });
+      return;
+    }
     // analysis:art_style, analysis:character:Name — clear from analysis stage
     // Use clearStageData to also wipe generatedAssets/Frames/Videos/assetLibrary/storyAnalysis
     // so downstream stages don't skip regeneration based on stale outputs
@@ -1940,7 +1957,7 @@ async function handleImportRun(req: IncomingMessage, res: ServerResponse): Promi
     maxRetries: 2,
     resume: false,
     verbose: false,
-    reviewMode: false,
+    reviewMode: true,
     videoBackend: "comfy",
     onToolError: (stage: string, tool: string, error: string) => {
       emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
@@ -2105,7 +2122,7 @@ async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Pr
     maxRetries: 2,
     resume: false,
     verbose: false,
-    reviewMode: false,
+    reviewMode: true,
     videoBackend: "comfy",
     onToolError: (stage: string, tool: string, error: string) => {
       emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
@@ -2398,12 +2415,24 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // For import runs, include partial shot analysis progress if available
+      let importAnalysisProgress: unknown = undefined;
+      if (run.mode === "import" && !state.storyAnalysis) {
+        const progressPath = join(run.outputDir, "import_analysis_progress.json");
+        if (existsSync(progressPath)) {
+          try {
+            importAnalysisProgress = JSON.parse(readFileSync(progressPath, "utf-8"));
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
       sendJson(res, 200, {
         storyAnalysis: state.storyAnalysis,
         currentStage: state.currentStage,
         completedStages: state.completedStages,
         assetLibrary: state.assetLibrary,
         itemDirectives: state.itemDirectives ?? {},
+        ...(importAnalysisProgress !== undefined && { importAnalysisProgress }),
       });
       return;
     }
