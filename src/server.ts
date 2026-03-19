@@ -1959,6 +1959,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         currentStage: state.currentStage,
         completedStages: state.completedStages,
         assetLibrary: state.assetLibrary,
+        itemDirectives: state.itemDirectives ?? {},
       });
       return;
     }

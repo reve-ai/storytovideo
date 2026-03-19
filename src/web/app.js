@@ -489,7 +489,11 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       return;
     }
 
-    const { storyAnalysis } = response;
+    const { storyAnalysis, itemDirectives } = response;
+    // Update directives from state endpoint (avoids separate fetch)
+    if (itemDirectives) {
+      state.directives = itemDirectives;
+    }
     if (!storyAnalysis) {
       elements.stageOutputSection.style.display = "none";
       return;
