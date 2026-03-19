@@ -76,6 +76,7 @@ export interface PipelineOptions {
   resume: boolean;
   verbose: boolean;
   reviewMode?: boolean;
+  videoBackend?: "veo" | "comfy";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   abortSignal?: AbortSignal;
 }

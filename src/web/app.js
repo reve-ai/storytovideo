@@ -41,6 +41,7 @@ const elements = {
   runStage: getElement("run-stage"),
   runProgress: getElement("run-progress"),
   runOutput: getElement("run-output"),
+  runVideoBackend: getElement("run-video-backend"),
   runError: getElement("run-error"),
   connectionStatus: getElement("connection-status"),
   stageList: getElement("stage-list"),
@@ -280,6 +281,7 @@ function renderRunDetails() {
     elements.runStage.textContent = "-";
     elements.runProgress.textContent = "0 / 6 (0%)";
     elements.runOutput.textContent = "-";
+    elements.runVideoBackend.textContent = "-";
     elements.reviewAwaiting.textContent = "no";
     elements.reviewContinueState.textContent = "no";
     elements.reviewPendingCount.textContent = "0";
@@ -303,6 +305,7 @@ function renderRunDetails() {
   elements.runStage.textContent = formatStageLabel(run.currentStage);
   elements.runProgress.textContent = `${run.progress.completed} / ${run.progress.total} (${run.progress.percent}%)`;
   elements.runOutput.textContent = run.outputDir;
+  elements.runVideoBackend.textContent = run.options?.videoBackend || "veo";
   setGlobalError(run.error ? `Run error: ${run.error}` : "");
 
   const awaiting = Boolean(run.review?.awaitingUserReview);
@@ -965,6 +968,8 @@ async function handleCreateRunSubmit(event) {
     return;
   }
 
+  const videoBackend = document.getElementById("video-backend").value;
+
   elements.createRunButton.disabled = true;
   try {
     const run = await requestJson("/runs", {
@@ -973,6 +978,7 @@ async function handleCreateRunSubmit(event) {
         storyText,
         options: {
           reviewMode: false,
+          videoBackend,
         },
       }),
     });

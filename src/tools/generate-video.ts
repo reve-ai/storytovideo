@@ -51,6 +51,8 @@ type GenerateVideoParams = {
   abortSignal?: AbortSignal;
   /** Character names to strip from prompts before sending to Veo. */
   characterNames?: string[];
+  /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
+  videoBackend?: "veo" | "comfy";
   pendingJobStore?: {
     get: (key: string) => { jobId: string; outputPath: string } | undefined;
     set: (key: string, value: { jobId: string; outputPath: string }) => Promise<void>;
@@ -66,7 +68,7 @@ type GenerateVideoResult = { shotNumber: number; path: string; duration: number 
  * Dispatches to Veo 3.1 or ComfyUI backend based on VIDEO_BACKEND env var.
  */
 export async function generateVideo(params: GenerateVideoParams): Promise<GenerateVideoResult> {
-  const backend = (process.env.VIDEO_BACKEND || "veo").toLowerCase();
+  const backend = (params.videoBackend || process.env.VIDEO_BACKEND || "veo").toLowerCase();
   console.log(`[generateVideo] Using backend: ${backend}`);
 
   // Strip character names from prompts to avoid triggering Veo's RAI celebrity filter.

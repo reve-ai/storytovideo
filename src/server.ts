@@ -98,6 +98,7 @@ interface CreateRunRequest {
     resume?: boolean;
     verbose?: boolean;
     reviewMode?: boolean;
+    videoBackend?: "veo" | "comfy";
   };
 }
 
@@ -337,6 +338,11 @@ function parseCreateRunRequest(body: unknown): CreateRunRequest {
     throw new Error("options.skipTo must be a string when provided");
   }
 
+  const videoBackend = options.videoBackend;
+  if (videoBackend !== undefined && videoBackend !== "veo" && videoBackend !== "comfy") {
+    throw new Error('options.videoBackend must be "veo" or "comfy" when provided');
+  }
+
   return {
     storyText,
     outputDir: outputDirValue,
@@ -348,6 +354,7 @@ function parseCreateRunRequest(body: unknown): CreateRunRequest {
       resume: parseBoolean(options.resume, false),
       verbose: parseBoolean(options.verbose, false),
       reviewMode: parseBoolean(options.reviewMode, true),
+      videoBackend,
     },
   };
 }
@@ -428,6 +435,7 @@ function buildPipelineOptions(request: CreateRunRequest, runId: string): Pipelin
     resume: options.resume ?? false,
     verbose: options.verbose ?? false,
     reviewMode: options.reviewMode ?? true,
+    videoBackend: options.videoBackend,
     onToolError: (stage: string, tool: string, error: string) => {
       emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
     },
