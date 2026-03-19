@@ -52,11 +52,19 @@ Typical dialogue scene pattern (2 characters, ~26s):
 3. Close-up on Character B (6s) — B reacts. Only expression changes between start and end.
 4. OTS on A from behind B's shoulder (6s) — A continues speaking, small gesture between start and end.
 
+SHOT DURATION:
+- Shots can be 2-8 seconds long. Default to 8s unless a shorter duration better fits the action.
+- When using Veo backend, all shots are rendered as 8s regardless of the specified duration.
+- When using ComfyUI backend, the actual duration is used.
+- Shorter shots (2-4s) work well for: quick reaction shots, insert cutaways, rapid montage sequences.
+- Longer shots (6-8s) work well for: establishing shots, dialogue, tracking shots, emotional beats.
+
 DIALOGUE PACING:
 - ~2.5 words/second in film
 - 8s clip: ~15-20 words
 - 6s clip: ~10-12 words
 - 4s clip: ~6-8 words
+- 2s clip: ~3-5 words
 - Not every shot needs dialogue — silence and reactions are valid
 
 DIALOGUE FORMATTING:
@@ -100,7 +108,7 @@ CROSS-SHOT CONTINUITY:
 
 const perSceneShotSchema = z.object({
   shotInScene: z.number(),
-  durationSeconds: z.union([z.literal("8"), z.literal(8)]).transform(() => 8 as const),
+  durationSeconds: z.number().min(2).max(8),
   shotType: z.literal("first_last_frame"),
   composition: z.string(),
   startFramePrompt: z.string(),
@@ -166,7 +174,7 @@ export function planShotsForScene(
     shotNumber: nextShotNumber++,
     sceneNumber,
     shotType: "first_last_frame" as const,
-    durationSeconds: shot.durationSeconds as 8,
+    durationSeconds: shot.durationSeconds,
   }));
 
   updatedAnalysis.scenes[sceneIndex].shots = processedShots;
