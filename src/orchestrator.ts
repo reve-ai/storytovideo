@@ -95,6 +95,7 @@ function createInitialState(storyFile: string, outputDir: string): PipelineState
     instructionHistory: [],
     decisionHistory: [],
     pendingJobs: {},
+    itemDirectives: {},
     lastSavedAt: new Date().toISOString(),
   };
 }

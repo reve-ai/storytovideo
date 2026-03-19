@@ -27,7 +27,7 @@ import {
 } from "./server-events";
 import { loadState, saveState } from "./tools/state";
 import { setInterrupted } from "./signals";
-import type { PipelineOptions, PipelineState } from "./types";
+import type { ItemDirective, PipelineOptions, PipelineState } from "./types";
 
 
 
@@ -285,6 +285,7 @@ function createInitialApiState(outputDir: string): PipelineState {
     instructionHistory: [],
     decisionHistory: [],
     pendingJobs: {},
+    itemDirectives: {},
     lastSavedAt: new Date().toISOString(),
   };
 }
@@ -762,7 +763,7 @@ function sendRunMutationLockedResponse(res: ServerResponse, run: RunRecord): voi
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
 }
 
 async function runInBackground(runId: string, resume = false): Promise<void> {
@@ -1126,7 +1127,7 @@ async function handleRedoItem(
     return;
   }
 
-  const { type, shotNumber, assetKey } = body as { type?: string; shotNumber?: number; assetKey?: string };
+  const { type, shotNumber, assetKey, directive } = body as { type?: string; shotNumber?: number; assetKey?: string; directive?: string };
 
   const validTypes = ["frame", "video", "asset", "start_frame", "end_frame"];
   if (!type || !validTypes.includes(type)) {
@@ -1269,6 +1270,31 @@ async function handleRedoItem(
     }
   }
 
+  // Save directive if provided
+  if (directive && typeof directive === "string" && directive.trim().length > 0) {
+    // Build the target key from the redo-item parameters
+    let directiveTarget: string;
+    if (type === "asset") {
+      directiveTarget = `asset:${assetKey}`;
+    } else if (type === "start_frame") {
+      directiveTarget = `shot:${shotNumber}:start_frame`;
+    } else if (type === "end_frame") {
+      directiveTarget = `shot:${shotNumber}:end_frame`;
+    } else if (type === "video") {
+      directiveTarget = `shot:${shotNumber}:video`;
+    } else {
+      // type === "frame" — applies to both start and end
+      directiveTarget = `shot:${shotNumber}:start_frame`;
+    }
+    const now = new Date().toISOString();
+    state.itemDirectives[directiveTarget] = {
+      target: directiveTarget,
+      directive: directive.trim(),
+      createdAt: state.itemDirectives[directiveTarget]?.createdAt ?? now,
+      updatedAt: now,
+    };
+  }
+
   // Set currentStage to the earliest cleared stage
   state.currentStage = earliestStage;
 
@@ -1298,6 +1324,235 @@ async function handleRedoItem(
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord), type, ...(shotNumber !== undefined && { shotNumber }), ...(assetKey !== undefined && { assetKey }) });
 }
+
+async function handleSetDirective(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const body = await readJsonBody(req) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const { target, directive } = body as { target?: string; directive?: string };
+  if (!target || typeof target !== "string" || target.trim().length === 0) {
+    sendJson(res, 400, { error: '"target" is required and must be a non-empty string' });
+    return;
+  }
+  if (!directive || typeof directive !== "string" || directive.trim().length === 0) {
+    sendJson(res, 400, { error: '"directive" is required and must be a non-empty string' });
+    return;
+  }
+
+  // If there's a running pipeline, abort and wait for it to finish
+  const existing = runningPipelines.get(runId);
+  if (existing) {
+    console.log('[handleSetDirective] Aborting running pipeline for ' + runId + '...');
+    existing.abortController.abort();
+    const timeoutPromise = new Promise<'timeout'>(r => setTimeout(() => r('timeout'), 30_000));
+    const result = await Promise.race([
+      existing.promise.then(() => 'done' as const),
+      timeoutPromise,
+    ]);
+    if (result === 'timeout') {
+      console.warn(`[handleSetDirective] Pipeline for ${runId} did not stop within 30s, force-removing`);
+      runningPipelines.delete(runId);
+    } else {
+      console.log('[handleSetDirective] Pipeline for ' + runId + ' stopped successfully');
+    }
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available" });
+    return;
+  }
+
+  // Save the directive
+  const now = new Date().toISOString();
+  const directiveObj: ItemDirective = {
+    target: target.trim(),
+    directive: directive.trim(),
+    createdAt: state.itemDirectives[target.trim()]?.createdAt ?? now,
+    updatedAt: now,
+  };
+  state.itemDirectives[target.trim()] = directiveObj;
+
+  // Clear the item + dependents (same cascade logic as redo-item)
+  // Parse the target to determine what to clear
+  const trimmedTarget = target.trim();
+  let earliestStage: string | null = null;
+
+  if (trimmedTarget.startsWith("asset:")) {
+    // e.g. "asset:character:Lupov:front"
+    const assetKey = trimmedTarget.slice("asset:".length);
+    if (state.generatedAssets[assetKey]) {
+      const parts = assetKey.split(":");
+      const assetType = parts[0];
+      const assetName = parts[1];
+      const angleType = parts[2];
+
+      if (assetType === "character" && angleType === "front") {
+        delete state.generatedAssets[assetKey];
+        const angleKey = `character:${assetName}:angle`;
+        delete state.generatedAssets[angleKey];
+        if (state.assetLibrary?.characterImages[assetName]) {
+          delete state.assetLibrary.characterImages[assetName];
+        }
+      } else if (assetType === "character" && angleType === "angle") {
+        delete state.generatedAssets[assetKey];
+        if (state.assetLibrary?.characterImages[assetName]) {
+          state.assetLibrary.characterImages[assetName].angle = "";
+        }
+      } else if (assetType === "location") {
+        delete state.generatedAssets[assetKey];
+        if (state.assetLibrary?.locationImages[assetName]) {
+          delete state.assetLibrary.locationImages[assetName];
+        }
+      }
+      state.completedStages = state.completedStages.filter(
+        s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "asset_generation";
+    }
+  } else if (trimmedTarget.startsWith("shot:")) {
+    // e.g. "shot:16:start_frame", "shot:16:video", "shot:16:action_prompt"
+    const parts = trimmedTarget.split(":");
+    const shotNum = parseInt(parts[1], 10);
+    const itemType = parts.slice(2).join(":");
+
+    if (itemType === "start_frame") {
+      if (state.generatedFrames[shotNum]) {
+        state.generatedFrames[shotNum].start = undefined;
+        state.generatedFrames[shotNum].end = undefined;
+      }
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "frame_generation";
+    } else if (itemType === "end_frame") {
+      if (state.generatedFrames[shotNum]) {
+        state.generatedFrames[shotNum].end = undefined;
+      }
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "frame_generation";
+    } else if (itemType === "video") {
+      delete state.generatedVideos[shotNum];
+      state.completedStages = state.completedStages.filter(
+        s => s !== "video_generation" && s !== "assembly"
+      );
+      earliestStage = "video_generation";
+    }
+    // For prompt-type targets (start_frame_prompt, end_frame_prompt, action_prompt),
+    // we just save the directive without clearing generated artifacts
+  } else if (trimmedTarget.startsWith("analysis:")) {
+    // analysis:art_style, analysis:character:Name — clear from analysis stage
+    state.completedStages = state.completedStages.filter(
+      s => s !== "analysis" && s !== "shot_planning" && s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+    );
+    earliestStage = "analysis";
+  }
+
+  if (earliestStage) {
+    state.currentStage = earliestStage;
+  }
+
+  await saveState({ state });
+
+  // If we cleared something, re-run the pipeline
+  if (earliestStage) {
+    const updatedRecord = runStore.patch(runId, {
+      status: "queued",
+      completedAt: undefined,
+      error: undefined,
+      currentStage: earliestStage,
+      completedStages: state.completedStages,
+    }) ?? run;
+
+    emitRunStatusEvent(runId, "queued");
+    emitLogEvent(runId, `Directive set for ${trimmedTarget}, redoing from ${earliestStage}`);
+    startRunStateMonitor(runId);
+    setImmediate(() => {
+      void runInBackground(runId, true);
+    });
+
+    sendJson(res, 200, { directive: directiveObj, run: toRunResponse(updatedRecord) });
+  } else {
+    // Directive saved but no cascade needed (e.g. prompt-type targets)
+    sendJson(res, 200, { directive: directiveObj, run: toRunResponse(run) });
+  }
+}
+
+async function handleGetDirectives(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  const directives = state?.itemDirectives ?? {};
+
+  sendJson(res, 200, { runId, directives });
+}
+
+async function handleDeleteDirective(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const body = await readJsonBody(req) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const { target } = body as { target?: string };
+  if (!target || typeof target !== "string" || target.trim().length === 0) {
+    sendJson(res, 400, { error: '"target" is required and must be a non-empty string' });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available" });
+    return;
+  }
+
+  const trimmedTarget = target.trim();
+  if (!state.itemDirectives[trimmedTarget]) {
+    sendJson(res, 404, { error: `No directive found for target: ${trimmedTarget}` });
+    return;
+  }
+
+  delete state.itemDirectives[trimmedTarget];
+  await saveState({ state });
+
+  sendJson(res, 200, { deleted: trimmedTarget, run: toRunResponse(run) });
+}
+
 
 async function handleStopRun(
   _req: IncomingMessage,
@@ -1525,6 +1780,25 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       await handleRedoItem(req, res, runId);
       return;
     }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "directive") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleSetDirective(req, res, runId);
+      return;
+    }
+
+    if (method === "GET" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "directives") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleGetDirectives(req, res, runId);
+      return;
+    }
+
+    if (method === "DELETE" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "directive") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleDeleteDirective(req, res, runId);
+      return;
+    }
+
 
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "stop") {
       const runId = decodeURIComponent(pathParts[1]);

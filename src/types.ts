@@ -59,6 +59,13 @@ export interface VerificationResult {
   suggestions: string[];       // prompt improvements
 }
 
+export interface ItemDirective {
+  target: string;        // item key, e.g. "shot:16:start_frame", "shot:16:video", "asset:character:Lupov:front", "shot:8:action_prompt"
+  directive: string;     // user's instruction, e.g. "make the lighting darker, more ominous"
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PipelineOptions {
   outputDir: string;
   dryRun: boolean;
@@ -105,6 +112,7 @@ export interface PipelineState {
   instructionHistory: StageInstructionRecord[];
   decisionHistory: StageDecisionRecord[];
   pendingJobs: Record<string, { jobId: string; outputPath: string }>;
+  itemDirectives: Record<string, ItemDirective>;     // keyed by target
   rollbackTarget?: string;                          // stage to roll back to (set by RAI handler)
   lastSavedAt: string;                             // ISO timestamp of last state save
 }

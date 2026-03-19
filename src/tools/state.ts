@@ -13,6 +13,7 @@ function withReviewDefaults(state: PipelineState): PipelineState {
     decisionHistory: state.decisionHistory ?? [],
     // Ensure newer fields have defaults for old state files
     pendingJobs: state.pendingJobs ?? {},
+    itemDirectives: state.itemDirectives ?? {},
   };
 }
 
@@ -115,6 +116,12 @@ export const saveStateTool = {
         decidedAt: z.string(),
         instructionCount: z.number(),
       })),
+      itemDirectives: z.record(z.string(), z.object({
+        target: z.string(),
+        directive: z.string(),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+      })).optional(),
       lastSavedAt: z.string(),
     }).describe("Full pipeline state to save"),
   }),
