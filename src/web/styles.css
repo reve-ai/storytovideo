@@ -200,6 +200,27 @@ body {
   background: var(--panel-alt);
 }
 
+.import-shot-analysis {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.import-shot-analysis-pending {
+  opacity: 0.5;
+}
+
+.import-analysis-field {
+  margin: 0.15rem 0;
+  line-height: 1.35;
+}
+
+.import-analysis-label {
+  font-weight: 600;
+  color: var(--text-muted, #888);
+}
+
 
 .panel {
   display: flex;

@@ -132,6 +132,10 @@ function isStageGenerating(stage) {
   return isRunActivelyExecuting(state.activeRun) && state.activeRun.currentStage === stage;
 }
 
+function isImportRun(run) {
+  return Boolean(run) && run.mode === "import";
+}
+
 function setReviewLockMessage(message, tone = "locked") {
   elements.reviewLockMessage.textContent = message;
   elements.reviewLockMessage.classList.remove("lock-message-locked", "lock-message-ready");
@@ -227,6 +231,8 @@ function renderRunSelect() {
 function renderStageProgress() {
   elements.stageList.replaceChildren();
   const run = state.activeRun;
+  const importMode = isImportRun(run);
+  const importProtectedStages = ["analysis", "shot_planning"];
 
   for (const stage of STAGE_ORDER) {
     const item = document.createElement("li");
@@ -239,13 +245,15 @@ function renderStageProgress() {
       item.classList.add("stage-complete");
       item.textContent += " - complete";
 
-      // Add redo button for completed stages
-      const redoBtn = document.createElement("button");
-      redoBtn.className = "redo-button";
-      redoBtn.textContent = "Redo";
-      redoBtn.disabled = isRunActivelyExecuting(run);
-      redoBtn.onclick = () => handleRedoClick(stage);
-      item.append(" ", redoBtn);
+      // Add redo button for completed stages (hidden for import-protected stages)
+      if (!(importMode && importProtectedStages.includes(stage))) {
+        const redoBtn = document.createElement("button");
+        redoBtn.className = "redo-button";
+        redoBtn.textContent = "Redo";
+        redoBtn.disabled = isRunActivelyExecuting(run);
+        redoBtn.onclick = () => handleRedoClick(stage);
+        item.append(" ", redoBtn);
+      }
     } else if (run.currentStage === stage) {
       item.classList.add("stage-current");
       item.textContent += " - current";
@@ -259,12 +267,14 @@ function renderStageProgress() {
         item.append(" ", stopBtn);
       }
 
-      // Always allow redo for current stage
-      const redoBtn = document.createElement("button");
-      redoBtn.className = "redo-button";
-      redoBtn.textContent = "Redo";
-      redoBtn.onclick = () => handleRedoClick(stage);
-      item.append(" ", redoBtn);
+      // Allow redo for current stage (hidden for import-protected stages)
+      if (!(importMode && importProtectedStages.includes(stage))) {
+        const redoBtn = document.createElement("button");
+        redoBtn.className = "redo-button";
+        redoBtn.textContent = "Redo";
+        redoBtn.onclick = () => handleRedoClick(stage);
+        item.append(" ", redoBtn);
+      }
     } else {
       item.classList.add("stage-pending");
       item.textContent += " - pending";
@@ -490,7 +500,7 @@ async function refreshAssets({ silent = false } = {}) {
 }
 
 
-function buildPartialImportHtml() {
+function buildPartialImportHtml(importAnalysisProgress) {
   // Collect frame and video assets from the asset map
   const shotMap = new Map(); // shotNumber → { start, end, video }
   for (const asset of state.assetsById.values()) {
@@ -514,18 +524,43 @@ function buildPartialImportHtml() {
     }
   }
 
-  if (shotMap.size === 0) return "";
+  // Build a lookup for analysis progress by shot number
+  const analysisMap = new Map();
+  if (Array.isArray(importAnalysisProgress)) {
+    for (const item of importAnalysisProgress) {
+      if (item && typeof item.shotNumber === "number") {
+        analysisMap.set(item.shotNumber, item);
+      }
+    }
+  }
+
+  if (shotMap.size === 0 && analysisMap.size === 0) return "";
+
+  const totalShots = Math.max(shotMap.size, analysisMap.size);
+  const analyzedCount = analysisMap.size;
 
   let html = `<div class="stage-output-header">`;
   html += `<h3>Import in Progress</h3>`;
-  html += `<p class="muted">Extracted ${shotMap.size} shot${shotMap.size !== 1 ? "s" : ""} — analyzing…</p>`;
+  if (analyzedCount > 0 && analyzedCount < totalShots) {
+    html += `<p class="muted">Extracted ${totalShots} shot${totalShots !== 1 ? "s" : ""} — analyzed ${analyzedCount} of ${totalShots}…</p>`;
+  } else if (analyzedCount >= totalShots && totalShots > 0) {
+    html += `<p class="muted">Extracted ${totalShots} shot${totalShots !== 1 ? "s" : ""} — analysis complete</p>`;
+  } else {
+    html += `<p class="muted">Extracted ${totalShots} shot${totalShots !== 1 ? "s" : ""} — analyzing…</p>`;
+  }
   html += `</div>`;
 
-  const sorted = [...shotMap.entries()].sort((a, b) => a[0] - b[0]);
+  // Merge shot numbers from both maps
+  const allShotNumbers = new Set([...shotMap.keys(), ...analysisMap.keys()]);
+  const sorted = [...allShotNumbers].sort((a, b) => a - b);
+
   html += `<div class="stage-output-section">`;
   html += `<h4>Extracted Frames</h4>`;
   html += `<div class="import-shots-grid">`;
-  for (const [shotNum, assets] of sorted) {
+  for (const shotNum of sorted) {
+    const assets = shotMap.get(shotNum) || {};
+    const analysis = analysisMap.get(shotNum);
+
     html += `<div class="import-shot-card">`;
     html += `<p class="shot-asset-label">Shot ${shotNum}</p>`;
     html += `<div class="shot-assets">`;
@@ -548,6 +583,29 @@ function buildPartialImportHtml() {
       html += `</div>`;
     }
     html += `</div>`;
+
+    // Render analysis descriptions if available
+    if (analysis) {
+      html += `<div class="import-shot-analysis">`;
+      if (analysis.composition) {
+        html += `<p class="import-analysis-field"><span class="import-analysis-label">Composition:</span> ${escapeHtml(analysis.composition)}</p>`;
+      }
+      if (analysis.actionPrompt) {
+        html += `<p class="import-analysis-field"><span class="import-analysis-label">Action:</span> ${escapeHtml(analysis.actionPrompt)}</p>`;
+      }
+      if (analysis.startFramePrompt) {
+        html += `<p class="import-analysis-field"><span class="import-analysis-label">Start Frame:</span> ${escapeHtml(analysis.startFramePrompt)}</p>`;
+      }
+      if (analysis.endFramePrompt) {
+        html += `<p class="import-analysis-field"><span class="import-analysis-label">End Frame:</span> ${escapeHtml(analysis.endFramePrompt)}</p>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div class="import-shot-analysis import-shot-analysis-pending">`;
+      html += `<p class="muted">Awaiting analysis…</p>`;
+      html += `</div>`;
+    }
+
     html += `</div>`;
   }
   html += `</div>`;
@@ -580,7 +638,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
 
     if (!storyAnalysis) {
       // No story analysis yet — render any available assets (import progress)
-      html = buildPartialImportHtml();
+      html = buildPartialImportHtml(response.importAnalysisProgress);
       if (!html) {
         elements.stageOutputSection.style.display = "none";
         return;
@@ -612,7 +670,8 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const descClass = charDescDirective ? " desc-edited" : "";
         html += `<tr>`;
         html += `<td><strong>${escapeHtml(char.name)}</strong></td>`;
-        html += `<td><span class="${descClass}">${escapeHtml(char.physicalDescription)}</span><button class="editable-desc-btn" data-edit-target="${escapeHtml(charDescTarget)}" data-edit-current="${escapeHtml(char.physicalDescription)}" title="Edit description">✏️</button></td>`;
+        const charEditBtn = isImportRun(state.activeRun) ? "" : `<button class="editable-desc-btn" data-edit-target="${escapeHtml(charDescTarget)}" data-edit-current="${escapeHtml(char.physicalDescription)}" title="Edit description">✏️</button>`;
+        html += `<td><span class="${descClass}">${escapeHtml(char.physicalDescription)}</span>${charEditBtn}</td>`;
         html += `<td>${escapeHtml(char.ageRange)}</td>`;
 
         // Look up character images
@@ -660,7 +719,8 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const locDescClass = locDescDirective ? " desc-edited" : "";
         html += `<tr>`;
         html += `<td><strong>${escapeHtml(loc.name)}</strong></td>`;
-        html += `<td><span class="${locDescClass}">${escapeHtml(loc.visualDescription)}</span><button class="editable-desc-btn" data-edit-target="${escapeHtml(locDescTarget)}" data-edit-current="${escapeHtml(loc.visualDescription)}" title="Edit description">✏️</button></td>`;
+        const locEditBtn = isImportRun(state.activeRun) ? "" : `<button class="editable-desc-btn" data-edit-target="${escapeHtml(locDescTarget)}" data-edit-current="${escapeHtml(loc.visualDescription)}" title="Edit description">✏️</button>`;
+        html += `<td><span class="${locDescClass}">${escapeHtml(loc.visualDescription)}</span>${locEditBtn}</td>`;
 
         // Look up location image
         const locAsset = findAsset(`location:${loc.name}:front`);
