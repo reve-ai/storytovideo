@@ -85,54 +85,69 @@ async function analyzeSingleShot(
 }
 
 /**
+ * Analyze a single shot with retry logic. Returns null on permanent failure.
+ */
+async function analyzeShotWithRetry(
+  shot: ShotFrameInput,
+  label: string,
+  maxRetries: number,
+): Promise<ShotAnalysisResult | null> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Analyzing shot ${shot.shotNumber} (${label}), attempt ${attempt}...`);
+      const analysis = await analyzeSingleShot(shot.firstFramePath, shot.lastFramePath);
+      return {
+        shotNumber: shot.shotNumber,
+        composition: analysis.composition || "medium_shot",
+        actionPrompt: analysis.actionPrompt || "",
+        startFramePrompt: analysis.startFramePrompt || "",
+        endFramePrompt: analysis.endFramePrompt || "",
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`Error analyzing shot ${shot.shotNumber} (attempt ${attempt}/${maxRetries}): ${msg}`);
+      if (attempt < maxRetries) {
+        await sleep(2000 * attempt);
+      }
+    }
+  }
+  console.error(`Failed to analyze shot ${shot.shotNumber} after ${maxRetries} attempts. Skipping.`);
+  return null;
+}
+
+/**
  * Analyzes an array of shots by sending first/last frame pairs to Gemini Flash vision model.
- * Processes sequentially with rate limiting and retry logic.
+ * Processes in parallel batches of `concurrency` (default 5) with retry logic.
  * Returns partial results if interrupted — already-analyzed shots are preserved.
  */
 export async function analyzeShots(
   shots: ShotFrameInput[],
   onProgress?: (result: ShotAnalysisResult, index: number, total: number) => void,
+  concurrency = 5,
 ): Promise<ShotAnalysisResult[]> {
   const results: ShotAnalysisResult[] = [];
   const maxRetries = 3;
+  let completed = 0;
 
-  for (let i = 0; i < shots.length; i++) {
-    const shot = shots[i];
-    let lastError: Error | null = null;
+  for (let batchStart = 0; batchStart < shots.length; batchStart += concurrency) {
+    const batch = shots.slice(batchStart, batchStart + concurrency);
+    const promises = batch.map((shot, i) => {
+      const globalIndex = batchStart + i;
+      return analyzeShotWithRetry(shot, `${globalIndex + 1}/${shots.length}`, maxRetries);
+    });
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`Analyzing shot ${shot.shotNumber} (${i + 1}/${shots.length}), attempt ${attempt}...`);
-        const analysis = await analyzeSingleShot(shot.firstFramePath, shot.lastFramePath);
-
-        const result: ShotAnalysisResult = {
-          shotNumber: shot.shotNumber,
-          composition: analysis.composition || "medium_shot",
-          actionPrompt: analysis.actionPrompt || "",
-          startFramePrompt: analysis.startFramePrompt || "",
-          endFramePrompt: analysis.endFramePrompt || "",
-        };
-
+    const batchResults = await Promise.all(promises);
+    for (const result of batchResults) {
+      if (result) {
         results.push(result);
-        onProgress?.(result, i, shots.length);
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        console.error(`Error analyzing shot ${shot.shotNumber} (attempt ${attempt}/${maxRetries}): ${lastError.message}`);
-        if (attempt < maxRetries) {
-          await sleep(2000);
-        }
+        completed++;
+        onProgress?.(result, completed - 1, shots.length);
       }
     }
 
-    if (lastError) {
-      console.error(`Failed to analyze shot ${shot.shotNumber} after ${maxRetries} attempts. Continuing with remaining shots.`);
-    }
-
-    // Rate limiting: 1s delay between API calls (skip after last shot)
-    if (i < shots.length - 1) {
-      await sleep(1000);
+    // Brief pause between batches to avoid rate limits (skip after last batch)
+    if (batchStart + concurrency < shots.length) {
+      await sleep(500);
     }
   }
 
