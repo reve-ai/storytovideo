@@ -399,7 +399,9 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
         }
 
         // Convert duration to frame count (fps=16)
-        const length = 16 * durationSeconds;
+        // ComfyUI requires length to be 4k+1 (e.g., 5, 9, 13, ..., 81, 85)
+        const rawLength = Math.round(16 * durationSeconds);
+        const length = Math.round((rawLength - 1) / 4) * 4 + 1;
         console.log(`[generateVideo] Duration: ${durationSeconds}s → ${length} frames (fps=16)`);
 
         // Run the frame_to_video workflow
