@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createImage, remixImage } from "../reve-client";
+import { createImageGrok, remixImageGrok } from "../grok-image-client";
 import type { Shot, AssetLibrary, FrameReference } from "../types";
 import * as fs from "fs";
 import * as path from "path";
@@ -221,8 +222,9 @@ async function generateSingleFrame(params: {
     referenceImagePaths.push(continuityRefPath);
   }
 
-  // Limit to max 6 reference images (Reve supports up to 6)
-  const limitedReferencePaths = referenceImagePaths.slice(0, 6);
+  // Limit reference images: Grok supports up to 5, Reve up to 6
+  const maxRefs = videoBackend === "grok" ? 5 : 6;
+  const limitedReferencePaths = referenceImagePaths.slice(0, maxRefs);
   const referencesUsed = limitedReferencePaths.map((refPath): FrameReference => {
     if (refPath === locationRef) {
       return { type: "location", name: shot.location, path: refPath };
@@ -252,29 +254,49 @@ async function generateSingleFrame(params: {
     }
     const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
     const remixPrompt = imgPrefix + prompt;
-    if (remixPrompt.length > 2560) {
+    if (videoBackend !== "grok" && remixPrompt.length > 2560) {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
-    return {
-      path: await remixImage(remixPrompt, limitedReferencePaths, {
-        aspectRatio: getFrameAspectRatio(videoBackend),
-        outputPath,
-      }),
-      referencesUsed,
-    };
+    if (videoBackend === "grok") {
+      return {
+        path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
+          aspectRatio: getFrameAspectRatio(videoBackend),
+          outputPath,
+        }),
+        referencesUsed,
+      };
+    } else {
+      return {
+        path: await remixImage(remixPrompt, limitedReferencePaths, {
+          aspectRatio: getFrameAspectRatio(videoBackend),
+          outputPath,
+        }),
+        referencesUsed,
+      };
+    }
   } else {
     // No reference images — use text-to-image generation
-    if (prompt.length > 2560) {
+    if (videoBackend !== "grok" && prompt.length > 2560) {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
-    return {
-      path: await createImage(prompt, {
-        aspectRatio: getFrameAspectRatio(videoBackend),
-        outputPath,
-      }),
-      referencesUsed,
-    };
+    if (videoBackend === "grok") {
+      return {
+        path: await createImageGrok(prompt, {
+          aspectRatio: getFrameAspectRatio(videoBackend),
+          outputPath,
+        }),
+        referencesUsed: [],
+      };
+    } else {
+      return {
+        path: await createImage(prompt, {
+          aspectRatio: getFrameAspectRatio(videoBackend),
+          outputPath,
+        }),
+        referencesUsed: [],
+      };
+    }
   }
 }
 

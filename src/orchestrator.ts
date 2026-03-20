@@ -741,6 +741,7 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
           ...params,
           dryRun: options.dryRun,
           outputDir: options.outputDir,
+          videoBackend: options.videoBackend,
         });
         state.generatedAssets[result.key] = result.path;
         // Update asset library

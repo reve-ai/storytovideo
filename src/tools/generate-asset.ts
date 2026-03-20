@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createImage, editImage } from "../reve-client";
+import { createImageGrok, remixImageGrok } from "../grok-image-client";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -15,6 +16,7 @@ export async function generateAsset(params: {
   outputDir: string;
   dryRun?: boolean;
   referenceImagePath?: string;
+  videoBackend?: "veo" | "comfy" | "grok";
 }): Promise<{ key: string; path: string }> {
   const {
     characterName,
@@ -97,13 +99,24 @@ export async function generateAsset(params: {
       const filePath = path.join(assetDir, filename);
 
       let resultPath: string;
+      const useGrok = params.videoBackend === "grok";
 
       if (isEditing) {
-        // Image edit via Reve API
-        resultPath = await editImage(referenceImagePath!, prompt, { outputPath: filePath });
+        if (useGrok) {
+          // Image edit via Grok API (uses remix with single reference image)
+          resultPath = await remixImageGrok(prompt, [referenceImagePath!], { aspectRatio: "1:1", outputPath: filePath });
+        } else {
+          // Image edit via Reve API
+          resultPath = await editImage(referenceImagePath!, prompt, { outputPath: filePath });
+        }
       } else {
-        // Text to image via Reve API
-        resultPath = await createImage(prompt, { aspectRatio: "1:1", outputPath: filePath });
+        if (useGrok) {
+          // Text to image via Grok API
+          resultPath = await createImageGrok(prompt, { aspectRatio: "1:1", outputPath: filePath });
+        } else {
+          // Text to image via Reve API
+          resultPath = await createImage(prompt, { aspectRatio: "1:1", outputPath: filePath });
+        }
       }
 
       return { key, path: resultPath };
