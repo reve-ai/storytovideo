@@ -864,6 +864,15 @@ dd {
   letter-spacing: 0.05em;
 }
 
+.shot-asset-refs {
+  margin: 0;
+  max-width: 150px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: center;
+}
+
 .inline-thumbnail {
   max-width: 120px;
   max-height: 120px;
