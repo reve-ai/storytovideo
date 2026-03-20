@@ -1,0 +1,1173 @@
+{
+  "title": "Gourmet Guard",
+  "artStyle": "photorealistic",
+  "characters": [
+    {
+      "name": "Guy Gur-Ari",
+      "physicalDescription": "A calm, confident man with olive skin, dark hair, light stubble, warm brown eyes. Wears a fitted button-down shirt with rolled sleeves and dark chinos.",
+      "personality": "Extremely calm, unbothered, quietly confident.",
+      "ageRange": "35-45"
+    }
+  ],
+  "locations": [
+    {
+      "name": "Tech Company Conference Room",
+      "visualDescription": "A sleek, modern Silicon Valley conference room. Floor-to-ceiling glass walls, long white composite table, ergonomic gray mesh chairs. Cool LED overhead lighting with soft natural daylight. Muted whites, light grays, soft blues."
+    }
+  ],
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "title": "Full Video",
+      "narrativeSummary": "Improved reverse engineered from source.mp4",
+      "charactersPresent": [
+        "Guy Gur-Ari"
+      ],
+      "location": "Tech Company Conference Room",
+      "estimatedDurationSeconds": 60.07,
+      "transition": "cut",
+      "shots": [
+        {
+          "shotNumber": 1,
+          "sceneNumber": 1,
+          "shotInScene": 1,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.67,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of a man in a dark jacket walking down a grand hallway with pillars and warm lamps on a desk in the distance.",
+          "endFramePrompt": "Same wide shot, the man is closer to the reception desk in the grand hallway.",
+          "actionPrompt": "A man in a dark jacket walks away from the camera through a grand, dimly lit hallway with large pillars towards a reception desk.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 2,
+          "sceneNumber": 1,
+          "shotInScene": 2,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.25,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of a security guard in a light-colored shirt sitting down in a dark room with a wall of security monitors.",
+          "endFramePrompt": "Same medium shot, the security guard is seated and looking at the monitors.",
+          "actionPrompt": "A man in a security uniform sits down at a desk in a dark room filled with many glowing security monitors.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 3,
+          "sceneNumber": 1,
+          "shotInScene": 3,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.67,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand reaching into a brown paper bag.",
+          "endFramePrompt": "Same close-up, the hand is holding a wrapped sandwich pulled from the bag.",
+          "actionPrompt": "A hand reaches into a brown paper bag and pulls out a sandwich wrapped in a white paper towel.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 4,
+          "sceneNumber": 1,
+          "shotInScene": 4,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.08,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of a security guard in a light green uniform looking down at a sandwich in his hand.",
+          "endFramePrompt": "Same close-up, the security guard continues to look at the sandwich, his expression neutral.",
+          "actionPrompt": "A man in a security uniform looks down at a sandwich he is holding with a focused expression.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 5,
+          "sceneNumber": 1,
+          "shotInScene": 5,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.04,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of a dark corridor with a person in the distance shining a flashlight towards the camera.",
+          "endFramePrompt": "Same wide shot, the flashlight beam has moved slightly as the person continues down the corridor.",
+          "actionPrompt": "A person walks down a long, dark, narrow corridor, shining a bright flashlight beam ahead.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 6,
+          "sceneNumber": 1,
+          "shotInScene": 6,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.38,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, eyes looking slightly to the side.",
+          "endFramePrompt": "Same close-up, his gaze shifts slightly as he continues to scan the area.",
+          "actionPrompt": "A close-up of the security guard's face as he looks around vigilantly in a dimly lit hallway.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 7,
+          "sceneNumber": 1,
+          "shotInScene": 7,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.42,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot from the doorway of the monitor room, the security guard's silhouette in the foreground.",
+          "endFramePrompt": "Same wide shot, the security guard has walked further into the room towards the monitors.",
+          "actionPrompt": "The security guard enters the monitor room, seen from behind as he walks towards his desk.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 8,
+          "sceneNumber": 1,
+          "shotInScene": 8,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.79,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Extreme close-up of hands holding a sandwich, the background is out of focus.",
+          "endFramePrompt": "Same close-up, the hands shift the sandwich slightly.",
+          "actionPrompt": "Extreme close-up of hands holding a half-eaten sandwich in front of blurry security monitors.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 9,
+          "sceneNumber": 1,
+          "shotInScene": 9,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.21,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of the security guard in his uniform, seated and looking down at his food.",
+          "endFramePrompt": "Same medium shot, he maintains his seated position with a slight change in facial expression.",
+          "actionPrompt": "The security guard sits at his desk, holding his sandwich and looking contemplative.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 10,
+          "sceneNumber": 1,
+          "shotInScene": 10,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.67,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand reaching into the opening of a brown paper bag.",
+          "endFramePrompt": "Same close-up, the hand is now grasping a green apple inside the bag.",
+          "actionPrompt": "A hand reaches into the brown paper bag again and picks up a green apple.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 11,
+          "sceneNumber": 1,
+          "shotInScene": 11,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.58,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand entering a brown paper bag.",
+          "endFramePrompt": "Same close-up, the hand is pulling out a small item wrapped in white paper.",
+          "actionPrompt": "Close-up of a hand reaching into a paper bag to retrieve a wrapped item.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 12,
+          "sceneNumber": 1,
+          "shotInScene": 12,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.13,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, sandwich near his mouth.",
+          "endFramePrompt": "Same close-up, he has taken a bite and is chewing.",
+          "actionPrompt": "The security guard takes a bite of his sandwich while looking down.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 13,
+          "sceneNumber": 1,
+          "shotInScene": 13,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 3.33,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a tablet screen on a desk, displaying a video with a 'prime' logo.",
+          "endFramePrompt": "Same close-up, the video on the tablet continues to play.",
+          "actionPrompt": "A tablet on the desk plays a video showing hands preparing food.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 14,
+          "sceneNumber": 1,
+          "shotInScene": 14,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.58,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, eyes focused on a screen off-camera.",
+          "endFramePrompt": "Same close-up, he continues watching with a steady gaze.",
+          "actionPrompt": "The security guard watches the tablet intently while continuing to eat.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 15,
+          "sceneNumber": 1,
+          "shotInScene": 15,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.25,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of the security guard at his desk, beginning to reach for a device.",
+          "endFramePrompt": "Same medium shot, his hand is extended further towards a laptop.",
+          "actionPrompt": "The security guard reaches across his desk towards a laptop while surrounded by monitors.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 16,
+          "sceneNumber": 1,
+          "shotInScene": 16,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.25,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a laptop screen showing an Amazon Prime search results page for kitchenware.",
+          "endFramePrompt": "Same close-up, the screen remains static on the shopping page.",
+          "actionPrompt": "A laptop screen displays an online shopping page for a 'kitchen set' with a grill pan and knives.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 17,
+          "sceneNumber": 1,
+          "shotInScene": 17,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.92,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, illuminated by the light of the laptop screen.",
+          "endFramePrompt": "Same close-up, his eyes move as if reading the screen, a slight smile forming.",
+          "actionPrompt": "The security guard looks at the laptop screen with an expression of interest and curiosity.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 18,
+          "sceneNumber": 1,
+          "shotInScene": 18,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.79,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of a kitchen where the security guard is busy with several packages on a table.",
+          "endFramePrompt": "Same wide shot, he has opened one of the boxes and is looking inside.",
+          "actionPrompt": "The security guard stands in a brightly lit kitchen, unpacking cardboard shipping boxes on a table.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 19,
+          "sceneNumber": 1,
+          "shotInScene": 19,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.67,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of the security guard holding a black grinder, looking at it with satisfaction.",
+          "endFramePrompt": "Same medium shot, he turns the grinder in his hands to examine it from different angles.",
+          "actionPrompt": "The security guard holds a new salt and pepper grinder set, inspecting it closely in his kitchen.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 20,
+          "sceneNumber": 1,
+          "shotInScene": 20,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.63,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a table with a patterned cloth, a knife lying flat on it.",
+          "endFramePrompt": "Same close-up, a hand enters the frame and adjusts the position of the knife slightly.",
+          "actionPrompt": "A large kitchen knife is carefully placed onto a decorative patterned cloth on a table.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 21,
+          "sceneNumber": 1,
+          "shotInScene": 21,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.58,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Top-down close-up of a grill pan on a stove, hands pressing bread onto the ridges.",
+          "endFramePrompt": "Same close-up, the bread is being toasted, with steam or smoke beginning to rise.",
+          "actionPrompt": "Two slices of bread are being pressed down onto a hot grill pan by a pair of hands.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 22,
+          "sceneNumber": 1,
+          "shotInScene": 22,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.88,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of a sandwich on a wooden board, a hand holding the top slice of bread above it.",
+          "endFramePrompt": "Same medium shot, the hand places the top slice onto the sandwich, completing it.",
+          "actionPrompt": "A gourmet sandwich with sliced meat and fresh greens is being assembled on a wooden cutting board.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 23,
+          "sceneNumber": 1,
+          "shotInScene": 23,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.96,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand holding a half-sandwich, the cross-section of fillings is visible.",
+          "endFramePrompt": "Same close-up, the hand moves the sandwich slightly as if preparing for a bite.",
+          "actionPrompt": "A hand holds a piece of a gourmet sandwich, revealing the layers of meat and vegetables inside.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 24,
+          "sceneNumber": 1,
+          "shotInScene": 24,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 2.04,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of the security guard eating, with a doorway visible behind him.",
+          "endFramePrompt": "Same medium shot, the second security guard is now walking through the doorway in the background.",
+          "actionPrompt": "The security guard eats his sandwich while another guard in a similar uniform walks past in the background.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 25,
+          "sceneNumber": 1,
+          "shotInScene": 25,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.29,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, he has a bit of food in his mouth and looks sideways.",
+          "endFramePrompt": "Same close-up, his head is turned further, his expression shifting to one of surprise.",
+          "actionPrompt": "The security guard suddenly stops eating and turns his head to look at something off-camera.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 26,
+          "sceneNumber": 1,
+          "shotInScene": 26,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.04,
+          "shotType": "first_last_frame",
+          "composition": "over_the_shoulder",
+          "startFramePrompt": "Over-the-shoulder shot from behind the first guard, focusing on the second guard standing and looking down.",
+          "endFramePrompt": "Same over-the-shoulder shot, the second guard gestures slightly as he speaks.",
+          "actionPrompt": "Over-the-shoulder shot of the first security guard as a second guard (name tag 'SHIELDS') talks to him about his sandwich.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 27,
+          "sceneNumber": 1,
+          "shotInScene": 27,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.08,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of the security monitor room with both guards interacting.",
+          "endFramePrompt": "Same wide shot, the second guard takes a bite of his sandwich.",
+          "actionPrompt": "Both security guards are in the monitor room; the first guard sits while the second one stands and eats a sandwich.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 28,
+          "sceneNumber": 1,
+          "shotInScene": 28,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.79,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the first security guard's face, looking up towards the second guard.",
+          "endFramePrompt": "Same close-up, his expression remains skeptical as he listens.",
+          "actionPrompt": "The first security guard looks slightly annoyed as he is interrupted during his meal.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 29,
+          "sceneNumber": 1,
+          "shotInScene": 29,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.5,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the second security guard's face as he chews his food.",
+          "endFramePrompt": "Same close-up, he gives a slight nod while looking at the first guard.",
+          "actionPrompt": "The second security guard eats his sandwich and looks at his colleague with a nonchalant expression.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 30,
+          "sceneNumber": 1,
+          "shotInScene": 30,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.46,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the first security guard's face as he begins to turn away.",
+          "endFramePrompt": "Same close-up, he is now looking directly ahead at the screens, his back to the camera.",
+          "actionPrompt": "The first security guard turns his attention back to the security monitors, dismissing the conversation.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 31,
+          "sceneNumber": 1,
+          "shotInScene": 31,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.04,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a laptop screen displaying online shopping results for cookbooks.",
+          "endFramePrompt": "Same close-up, the screen is static on the cookbook results.",
+          "actionPrompt": "A laptop screen shows an Amazon Prime search for 'cookbooks' with various recipe book covers visible.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 32,
+          "sceneNumber": 1,
+          "shotInScene": 32,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.38,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of hands placing a cookbook on top of another on a kitchen table.",
+          "endFramePrompt": "Same close-up, the stack of three cookbooks is neatly arranged.",
+          "actionPrompt": "Hands stack several new cookbooks on a table, including one titled 'Spice Recipes'.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 33,
+          "sceneNumber": 1,
+          "shotInScene": 33,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.63,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Extreme close-up of a gas stove burner before it is lit.",
+          "endFramePrompt": "Same extreme close-up, the burner is now lit with vibrant blue flames.",
+          "actionPrompt": "A gas stove burner is ignited, with a ring of blue flames appearing instantly.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 34,
+          "sceneNumber": 1,
+          "shotInScene": 34,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.79,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of the security guard in his kitchen, standing by the stove and bringing a spoon to his mouth.",
+          "endFramePrompt": "Same wide shot, he has tasted the food and looks thoughtful as he continues to cook.",
+          "actionPrompt": "In a blue-tiled kitchen, the security guard, wearing an apron, tastes food from a wooden spoon while cooking at the stove.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 35,
+          "sceneNumber": 1,
+          "shotInScene": 35,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.96,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face as he sips from a wooden spoon.",
+          "endFramePrompt": "Same close-up, he lowers the spoon, a look of satisfied concentration on his face.",
+          "actionPrompt": "The security guard carefully tastes his cooking, his expression focused and analytical.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 36,
+          "sceneNumber": 1,
+          "shotInScene": 36,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.58,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of a dark hallway with a single beam of light projecting from the right.",
+          "endFramePrompt": "Same wide shot, the light beam has moved significantly, illuminating a different part of the hallway.",
+          "actionPrompt": "A bright flashlight beam cuts through the darkness of a grand hallway, scanning the area.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 37,
+          "sceneNumber": 1,
+          "shotInScene": 37,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.33,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of the dark hallway with the flashlight beam creating a bright lens flare.",
+          "endFramePrompt": "Same wide shot, the light beam shifts slightly, maintaining its intensity.",
+          "actionPrompt": "The flashlight beam intensifies and points directly toward the camera in the dark hallway.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 38,
+          "sceneNumber": 1,
+          "shotInScene": 38,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.67,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the security guard's face, his eyes wide and focused on the screens.",
+          "endFramePrompt": "Same close-up, he leans forward slightly, his expression becoming more serious.",
+          "actionPrompt": "The security guard looks alert and slightly concerned while watching the security monitors.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 39,
+          "sceneNumber": 1,
+          "shotInScene": 39,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.58,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of the kitchen with smoke rising from the stove area and the guard reacting.",
+          "endFramePrompt": "Same wide shot, the smoke has filled more of the room as he continues to move around the stove.",
+          "actionPrompt": "Thick white smoke billows from the stove in the kitchen as the security guard tries to manage a small fire.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 40,
+          "sceneNumber": 1,
+          "shotInScene": 40,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.42,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a cardboard box with blue tape, a knife edge just touching the tape.",
+          "endFramePrompt": "Same close-up, the knife has cut through the tape and the hand is moving away.",
+          "actionPrompt": "A hand uses a small knife to slice through the blue shipping tape on a cardboard box.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 41,
+          "sceneNumber": 1,
+          "shotInScene": 41,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.33,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of hands and a knife poised over a pile of herbs on a wooden board.",
+          "endFramePrompt": "Same close-up, the herbs are now finely chopped.",
+          "actionPrompt": "Hands skillfully chop fresh green herbs on a wooden cutting board with a large knife.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 42,
+          "sceneNumber": 1,
+          "shotInScene": 42,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.42,
+          "shotType": "first_last_frame",
+          "composition": "pov",
+          "startFramePrompt": "POV shot from the back of an oven, looking out at the security guard reaching in.",
+          "endFramePrompt": "Same POV shot, the tray is being pulled forward and out of the oven.",
+          "actionPrompt": "POV shot from inside an oven as the security guard, wearing mitts, pulls out a tray of golden-brown food.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 43,
+          "sceneNumber": 1,
+          "shotInScene": 43,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.67,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a pan on a stove, the contents beginning to sizzle.",
+          "endFramePrompt": "Same close-up, the food has been tossed and is now more evenly distributed in the pan.",
+          "actionPrompt": "Food is being saut\u00e9ed in a dark frying pan on a gas stove, with steam rising.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 44,
+          "sceneNumber": 1,
+          "shotInScene": 44,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.42,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand holding a lemon half over an unseen dish.",
+          "endFramePrompt": "Same close-up, the hand has squeezed the lemon, and juice is flowing out.",
+          "actionPrompt": "A hand squeezes a half-lemon, with juice spraying and dripping down.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 45,
+          "sceneNumber": 1,
+          "shotInScene": 45,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.38,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Extreme close-up of the lemon as it is being compressed by a hand.",
+          "endFramePrompt": "Same extreme close-up, the squeezing action continues with more juice visible.",
+          "actionPrompt": "A close-up of the lemon being squeezed further, showing the texture of the fruit and the juice.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 46,
+          "sceneNumber": 1,
+          "shotInScene": 46,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.54,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Low-angle close-up of the security guard's face as he begins to raise his arm.",
+          "endFramePrompt": "Same close-up, he is now wiping his brow with his forearm.",
+          "actionPrompt": "The security guard wipes sweat from his forehead with his arm, looking exhausted but determined.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 47,
+          "sceneNumber": 1,
+          "shotInScene": 47,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.79,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide establishing shot of a subway station platform with a train stopped at the tracks.",
+          "endFramePrompt": "Same wide shot, the train remains stationary at the platform.",
+          "actionPrompt": "A train sits at a station platform at night, with city lights visible in the distance.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 48,
+          "sceneNumber": 1,
+          "shotInScene": 48,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.92,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a hand holding a smartphone displaying a video player interface.",
+          "endFramePrompt": "Same close-up, the video on the phone screen continues to play.",
+          "actionPrompt": "A smartphone screen shows an Amazon Prime video titled 'James May: Oh Cook' featuring a cooking demonstration.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 49,
+          "sceneNumber": 1,
+          "shotInScene": 49,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.88,
+          "shotType": "first_last_frame",
+          "composition": "medium_shot",
+          "startFramePrompt": "Medium shot of the guard sitting on a blue bench in a dimly lit station, looking down at his phone.",
+          "endFramePrompt": "Same medium shot, he looks up slightly as if checking for his train.",
+          "actionPrompt": "The security guard, now in his dark uniform jacket, sits on a subway station bench and checks his phone.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 50,
+          "sceneNumber": 1,
+          "shotInScene": 50,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.71,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a glass bowl with eggs, a whisk just starting to move.",
+          "endFramePrompt": "Same close-up, the eggs are now being vigorously whisked into a frothy mixture.",
+          "actionPrompt": "A metal whisk rapidly beats a mixture of yellow eggs in a clear glass bowl.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 51,
+          "sceneNumber": 1,
+          "shotInScene": 51,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.88,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a mille-feuille pastry, sugar beginning to fall from above.",
+          "endFramePrompt": "Same close-up, the pastry is now lightly dusted with white powdered sugar.",
+          "actionPrompt": "Powdered sugar is sifted over a beautifully layered pastry topped with fresh raspberries.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 52,
+          "sceneNumber": 1,
+          "shotInScene": 52,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.88,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the second guard's face, a slight smile forming.",
+          "endFramePrompt": "Same close-up, he looks pleased and relaxed.",
+          "actionPrompt": "The second security guard smiles to himself while sitting in the monitor room.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 53,
+          "sceneNumber": 1,
+          "shotInScene": 53,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.17,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the first guard's face, his eyes lighting up.",
+          "endFramePrompt": "Same close-up, he breaks into a full, happy grin.",
+          "actionPrompt": "The first security guard beams with a wide, genuine smile, looking very satisfied.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 54,
+          "sceneNumber": 1,
+          "shotInScene": 54,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.13,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of the monitor room as the first guard begins to stand.",
+          "endFramePrompt": "Same wide shot, the first guard has walked out of frame, leaving the second guard alone.",
+          "actionPrompt": "The first security guard stands up and leaves the monitor room while the second guard continues to eat.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 55,
+          "sceneNumber": 1,
+          "shotInScene": 55,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 0.96,
+          "shotType": "first_last_frame",
+          "composition": "wide_establishing",
+          "startFramePrompt": "Wide shot of a dark street at night, the guard walking towards a restaurant.",
+          "endFramePrompt": "Same wide shot, he has walked past the restaurant's entrance.",
+          "actionPrompt": "The security guard walks down a city sidewalk at night, passing a restaurant with a glowing 'FUEGO' sign.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 56,
+          "sceneNumber": 1,
+          "shotInScene": 56,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 1.54,
+          "shotType": "first_last_frame",
+          "composition": "insert_cutaway",
+          "startFramePrompt": "Close-up of a window with a white paper sign that reads 'CHEF WANTED'.",
+          "endFramePrompt": "Same close-up, the sign remains centered in the frame.",
+          "actionPrompt": "A 'CHEF WANTED' sign is visible through the window of the FUEGO restaurant.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        },
+        {
+          "shotNumber": 57,
+          "sceneNumber": 1,
+          "shotInScene": 57,
+          "durationSeconds": 8,
+          "actualDurationSeconds": 3.2,
+          "shotType": "first_last_frame",
+          "composition": "close_up",
+          "startFramePrompt": "Close-up of the guard's face against a blurred city background.",
+          "endFramePrompt": "Same close-up, text overlays his face as the screen fades slightly.",
+          "actionPrompt": "The security guard looks forward with a hopeful expression as the 'Shopping. It's on prime' logo appears.",
+          "dialogue": "",
+          "soundEffects": "",
+          "cameraDirection": "Static",
+          "charactersPresent": [
+            "Guy Gur-Ari"
+          ],
+          "location": "Tech Company Conference Room",
+          "continuousFromPrevious": false
+        }
+      ]
+    }
+  ]
+}
