@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createImage, remixImage } from "../reve-client";
-import type { Shot, AssetLibrary } from "../types";
+import type { Shot, AssetLibrary, FrameReference } from "../types";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -10,6 +10,11 @@ import * as path from "path";
 export function getFrameAspectRatio(videoBackend?: "veo" | "comfy" | "grok"): string {
   return (videoBackend === "veo" || videoBackend === "grok") ? "16:9" : "1:1";
 }
+
+type GeneratedSingleFrameResult = {
+  path: string;
+  referencesUsed: FrameReference[];
+};
 
 /**
  * Generates start/end keyframe images for shots using the Reve API.
@@ -24,7 +29,13 @@ export async function generateFrame(params: {
   dryRun?: boolean;
   previousEndFramePath?: string;
   videoBackend?: "veo" | "comfy" | "grok";
-}): Promise<{ shotNumber: number; startPath?: string; endPath?: string }> {
+}): Promise<{
+  shotNumber: number;
+  startPath?: string;
+  endPath?: string;
+  startReferences?: FrameReference[];
+  endReferences?: FrameReference[];
+}> {
   const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend } = params;
 
   // Create frames directory if it doesn't exist
@@ -41,7 +52,9 @@ export async function generateFrame(params: {
     return {
       shotNumber: shot.shotNumber,
       startPath,
-      endPath,
+      endPath: videoBackend === "grok" ? undefined : endPath,
+      startReferences: [],
+      endReferences: videoBackend === "grok" ? undefined : [],
     };
   }
 
@@ -49,17 +62,23 @@ export async function generateFrame(params: {
   if (shot.continuousFromPrevious && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
     console.log(`[generateFrame] Shot ${shot.shotNumber}: copying previous end frame for continuity`);
     fs.copyFileSync(previousEndFramePath, startPath);
+    const startReferences: FrameReference[] = [{
+      type: "continuity",
+      name: "Previous shot end frame",
+      path: previousEndFramePath,
+    }];
 
     // Skip end frame for Grok backend (only uses start frames)
     if (videoBackend === "grok") {
       return {
         shotNumber: shot.shotNumber,
         startPath,
+        startReferences,
       };
     }
 
     // Generate only the end frame
-    const endFramePath = await generateSingleFrame({
+    const endFrameResult = await generateSingleFrame({
       shot,
       artStyle,
       assetLibrary,
@@ -72,7 +91,9 @@ export async function generateFrame(params: {
     return {
       shotNumber: shot.shotNumber,
       startPath,
-      endPath: endFramePath,
+      endPath: endFrameResult.path,
+      startReferences,
+      endReferences: endFrameResult.referencesUsed,
     };
   }
 
@@ -83,7 +104,7 @@ export async function generateFrame(params: {
 
   try {
     // Generate start frame
-    const startFramePath = await generateSingleFrame({
+    const startFrameResult = await generateSingleFrame({
       shot,
       artStyle,
       assetLibrary,
@@ -98,25 +119,28 @@ export async function generateFrame(params: {
     if (videoBackend === "grok") {
       return {
         shotNumber: shot.shotNumber,
-        startPath: startFramePath,
+        startPath: startFrameResult.path,
+        startReferences: startFrameResult.referencesUsed,
       };
     }
 
     // Generate end frame (with start frame as additional input for continuity)
-    const endFramePath = await generateSingleFrame({
+    const endFrameResult = await generateSingleFrame({
       shot,
       artStyle,
       assetLibrary,
       isEndFrame: true,
-      previousStartFramePath: startFramePath,
+      previousStartFramePath: startFrameResult.path,
       outputPath: endPath,
       videoBackend,
     });
 
     return {
       shotNumber: shot.shotNumber,
-      startPath: startFramePath,
-      endPath: endFramePath,
+      startPath: startFrameResult.path,
+      endPath: endFrameResult.path,
+      startReferences: startFrameResult.referencesUsed,
+      endReferences: endFrameResult.referencesUsed,
     };
   } catch (error) {
     throw new Error(
@@ -137,7 +161,7 @@ async function generateSingleFrame(params: {
   previousEndFramePath?: string;
   outputPath: string;
   videoBackend?: "veo" | "comfy" | "grok";
-}): Promise<string> {
+}): Promise<GeneratedSingleFrameResult> {
   const {
     shot,
     artStyle,
@@ -162,6 +186,7 @@ async function generateSingleFrame(params: {
 
   // Collect reference image file paths.
   // Order: location > character > continuity (previous end frame as low-priority style ref).
+  const characterRefPaths = new Map<string, string>(); // path -> character name
   const referenceImagePaths: string[] = [];
 
   // Determine continuity reference path (previous end frame for start frames,
@@ -186,6 +211,7 @@ async function generateSingleFrame(params: {
       const refPath = charRefs.front || charRefs.angle;
       if (refPath && fs.existsSync(refPath)) {
         referenceImagePaths.push(refPath);
+        characterRefPaths.set(refPath, charName);
       }
     }
   }
@@ -197,18 +223,21 @@ async function generateSingleFrame(params: {
 
   // Limit to max 6 reference images (Reve supports up to 6)
   const limitedReferencePaths = referenceImagePaths.slice(0, 6);
+  const referencesUsed = limitedReferencePaths.map((refPath): FrameReference => {
+    if (refPath === locationRef) {
+      return { type: "location", name: shot.location, path: refPath };
+    }
+    if (characterRefPaths.has(refPath)) {
+      return { type: "character", name: characterRefPaths.get(refPath)!, path: refPath };
+    }
+    return {
+      type: "continuity",
+      name: isEndFrame ? `Shot ${shot.shotNumber} start frame` : "Previous shot end frame",
+      path: refPath,
+    };
+  });
 
   if (limitedReferencePaths.length > 0) {
-    // Build a set of character ref paths for labeling
-    const characterRefPaths = new Map<string, string>(); // path -> character name
-    for (const charName of shot.charactersPresent) {
-      const charRefs = assetLibrary.characterImages[charName];
-      if (charRefs) {
-        const refPath = charRefs.front || charRefs.angle;
-        if (refPath) characterRefPaths.set(refPath, charName);
-      }
-    }
-
     // Build <img> tag prefix to reference images by index
     const imgTagParts: string[] = [];
     for (let i = 0; i < limitedReferencePaths.length; i++) {
@@ -227,19 +256,25 @@ async function generateSingleFrame(params: {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
-    return await remixImage(remixPrompt, limitedReferencePaths, {
-      aspectRatio: getFrameAspectRatio(videoBackend),
-      outputPath,
-    });
+    return {
+      path: await remixImage(remixPrompt, limitedReferencePaths, {
+        aspectRatio: getFrameAspectRatio(videoBackend),
+        outputPath,
+      }),
+      referencesUsed,
+    };
   } else {
     // No reference images — use text-to-image generation
     if (prompt.length > 2560) {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
-    return await createImage(prompt, {
-      aspectRatio: getFrameAspectRatio(videoBackend),
-      outputPath,
-    });
+    return {
+      path: await createImage(prompt, {
+        aspectRatio: getFrameAspectRatio(videoBackend),
+        outputPath,
+      }),
+      referencesUsed,
+    };
   }
 }
 

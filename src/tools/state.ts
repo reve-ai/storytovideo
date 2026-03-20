@@ -97,7 +97,20 @@ export const saveStateTool = {
       storyAnalysis: z.any().nullable().describe("StoryAnalysis object or null"),
       assetLibrary: z.any().nullable().describe("AssetLibrary object or null"),
       generatedAssets: z.record(z.string(), z.string()),
-      generatedFrames: z.record(z.string(), z.object({ start: z.string().optional(), end: z.string().optional() })),
+      generatedFrames: z.record(z.string(), z.object({
+        start: z.string().optional(),
+        end: z.string().optional(),
+        startReferences: z.array(z.object({
+          type: z.enum(["character", "location", "continuity"]),
+          name: z.string(),
+          path: z.string(),
+        })).optional(),
+        endReferences: z.array(z.object({
+          type: z.enum(["character", "location", "continuity"]),
+          name: z.string(),
+          path: z.string(),
+        })).optional(),
+      })),
       generatedVideos: z.record(z.string(), z.string()),
       errors: z.array(z.object({ stage: z.string(), shot: z.number().optional(), error: z.string(), timestamp: z.string() })),
       verifications: z.array(z.object({ stage: z.string(), shot: z.number().optional(), passed: z.boolean(), score: z.number(), issues: z.array(z.string()), timestamp: z.string() })),

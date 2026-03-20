@@ -119,6 +119,7 @@ export interface PipelineState {
   generatedAssets: Record<string, string>;        // { "character:Bolt:front": "path", ... } — item-level tracking
   generatedFrames: Record<number, GeneratedFrameSet>;
   generatedVideos: Record<number, string>;
+	videoPromptsSent?: Record<number, string>;
   errors: Array<{ stage: string; shot?: number; error: string; timestamp: string }>;
   verifications: Array<{ stage: string; shot?: number; passed: boolean; score: number; issues: string[]; timestamp: string }>;
   interrupted: boolean;                            // true if last run was interrupted

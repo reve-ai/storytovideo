@@ -1003,7 +1003,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
         const videoDirective = Object.values(state.itemDirectives).find(
           d => d.target === `shot:${params.shotNumber}:video`
         );
-        if (videoDirective) {
+        if (videoDirective && !actionPrompt.includes(videoDirective.directive)) {
           actionPrompt = `${actionPrompt}. IMPORTANT DIRECTOR NOTE: ${videoDirective.directive}`;
           console.log(`[video_generation] Injected video directive for shot ${params.shotNumber}: "${videoDirective.directive.substring(0, 100)}"`);
         }
@@ -1198,7 +1198,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
         const videoDirective = Object.values(state.itemDirectives).find(
           d => d.target === `shot:${params.shotNumber}:video`
         );
-        if (videoDirective) {
+        if (videoDirective && !actionPrompt.includes(videoDirective.directive)) {
           actionPrompt = `${actionPrompt}. IMPORTANT DIRECTOR NOTE: ${videoDirective.directive}`;
           console.log(`[shot_generation] Injected video directive for shot ${params.shotNumber}: "${videoDirective.directive.substring(0, 100)}"`);
         }

@@ -891,6 +891,23 @@ dd {
   background: #000;
 }
 
+.video-prompt-sent {
+  margin-top: 0.3rem;
+}
+
+.video-prompt-sent-summary {
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.video-prompt-sent-text {
+  font-size: 0.78rem;
+  color: var(--text);
+  margin: 0.3rem 0 0;
+  white-space: pre-wrap;
+}
+
 /* Spinner placeholders for in-progress assets */
 .spinner-placeholder {
   display: inline-flex;
@@ -1007,6 +1024,32 @@ dd {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.shot-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.shot-ref-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: 72px;
+}
+
+.shot-ref-thumbnail {
+  width: 60px;
+  height: 60px;
+}
+
+.shot-ref-label {
+  font-size: 0.7rem;
+  line-height: 1.2;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* Lightbox overlay */

@@ -1019,11 +1019,18 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 }
               }
               if (videoAsset && videoAsset.previewUrl) {
+	                const promptSent = state.activeRun?.videoPromptsSent?.[shot.shotNumber];
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Video</p>`;
                 html += `<video src="${escapeHtml(videoAsset.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
                 html += `<button class="redo-item-button" data-redo-type="video" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry video for shot ${shot.shotNumber}">↻</button>`;
                 html += buildDirectiveControls(`shot:${shot.shotNumber}:video`, isRunActivelyExecuting(state.activeRun));
+	                if (promptSent) {
+	                  html += `<details class="video-prompt-sent">`;
+	                  html += `<summary class="video-prompt-sent-summary">Prompt sent to API ▸</summary>`;
+	                  html += `<p class="video-prompt-sent-text">${escapeHtml(promptSent)}</p>`;
+	                  html += `</details>`;
+	                }
                 html += `</div>`;
               } else if (showVideoSpinners) {
                 const pct = state.videoProgress?.[shot.shotNumber];

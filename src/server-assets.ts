@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "fs";
 import { extname, isAbsolute, relative, resolve, sep } from "path";
 
-import type { PipelineState } from "./types";
+import type { FrameReference, PipelineState } from "./types";
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -24,6 +24,7 @@ export interface AssetFeedItem {
   variant?: string;
   path: string;
   previewUrl?: string;
+  references?: FrameReference[];
   createdAt: string;
 }
 
@@ -36,6 +37,7 @@ export interface AssetFeedItemInput {
   path: string;
   shotNumber?: number;
   variant?: string;
+  references?: FrameReference[];
   fallbackTimestamp: string;
 }
 
@@ -110,6 +112,7 @@ export function createAssetFeedItem(params: AssetFeedItemInput): AssetFeedItem {
     path,
     shotNumber,
     variant,
+    references,
     fallbackTimestamp,
   } = params;
 
@@ -123,6 +126,7 @@ export function createAssetFeedItem(params: AssetFeedItemInput): AssetFeedItem {
     variant,
     path,
     previewUrl: absolutePath ? toPreviewUrl(runId, outputDir, absolutePath) : undefined,
+    references,
     createdAt: toTimestamp(absolutePath, fallbackTimestamp),
   };
 }
@@ -174,6 +178,7 @@ export function buildAssetFeed(runId: string, state: PipelineState): AssetFeedIt
           path: frameSet.start,
           shotNumber,
           variant: "start",
+          references: frameSet.startReferences,
           fallbackTimestamp,
         }),
       );
@@ -189,6 +194,7 @@ export function buildAssetFeed(runId: string, state: PipelineState): AssetFeedIt
           path: frameSet.end,
           shotNumber,
           variant: "end",
+          references: frameSet.endReferences,
           fallbackTimestamp,
         }),
       );

@@ -111,6 +111,7 @@ interface RunResponse {
   completedAt?: string;
   error?: string;
   options: PipelineOptions;
+	videoPromptsSent?: PipelineState["videoPromptsSent"];
   review: ReviewState;
 }
 
@@ -320,6 +321,7 @@ function createInitialApiState(outputDir: string): PipelineState {
     generatedAssets: {},
     generatedFrames: {},
     generatedVideos: {},
+	    videoPromptsSent: {},
     errors: [],
     verifications: [],
     interrupted: false,
@@ -537,6 +539,7 @@ function toRunResponse(record: RunRecord): RunResponse {
     completedAt: record.completedAt,
     error: record.error,
     options: record.options,
+	    videoPromptsSent: state?.videoPromptsSent,
     review: {
       awaitingUserReview: state?.awaitingUserReview ?? false,
       continueRequested: state?.continueRequested ?? false,
@@ -1370,6 +1373,7 @@ async function handleRedoItem(
       // Delete frame and its dependent video
       delete state.generatedFrames[shotNumber!];
       delete state.generatedVideos[shotNumber!];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1383,6 +1387,7 @@ async function handleRedoItem(
         state.generatedFrames[shotNumber!].endReferences = undefined;
       }
       delete state.generatedVideos[shotNumber!];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1394,6 +1399,7 @@ async function handleRedoItem(
         state.generatedFrames[shotNumber!].endReferences = undefined;
       }
       delete state.generatedVideos[shotNumber!];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1401,6 +1407,7 @@ async function handleRedoItem(
     } else {
       // type === "video"
       delete state.generatedVideos[shotNumber!];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1577,6 +1584,7 @@ async function handleSetDirective(
         state.generatedFrames[shotNum].endReferences = undefined;
       }
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1587,12 +1595,14 @@ async function handleSetDirective(
         state.generatedFrames[shotNum].endReferences = undefined;
       }
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "video") {
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1611,6 +1621,7 @@ async function handleSetDirective(
         }
       }
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1618,6 +1629,7 @@ async function handleSetDirective(
     } else if (itemType === "action_prompt") {
       // Action prompt edit → regenerate video (and downstream assembly)
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1625,6 +1637,7 @@ async function handleSetDirective(
     } else if (itemType === "camera_direction") {
       // Camera direction edit → regenerate video (and downstream assembly)
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1632,6 +1645,7 @@ async function handleSetDirective(
     } else if (itemType === "sound_effects") {
       // Sound effects edit → regenerate video and assembly
       delete state.generatedVideos[shotNum];
+	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
