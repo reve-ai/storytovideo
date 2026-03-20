@@ -6,6 +6,7 @@ import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
 import { getGoogleClient } from "../google-client";
 import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
+import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -76,7 +77,7 @@ type GenerateVideoParams = {
   /** Character names to strip from prompts before sending to Veo. */
   characterNames?: string[];
   /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
-  videoBackend?: "veo" | "comfy";
+  videoBackend?: "veo" | "comfy" | "grok";
   /** Progress callback for UI updates */
   onProgress?: (message: string) => void;
   pendingJobStore?: {
@@ -112,8 +113,10 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     return generateVideoComfy(sanitized);
   } else if (backend === "veo") {
     return generateVideoVeo(sanitized);
+  } else if (backend === "grok") {
+    return generateVideoGrok(sanitized);
   } else {
-    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo" or "comfy".`);
+    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "comfy", or "grok".`);
   }
 }
 
@@ -492,6 +495,77 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
     throw lastError;
   } catch (error) {
     console.error(`[generateVideo] Error generating shot ${shotNumber}:`, error);
+    throw error;
+  }
+}
+
+
+/**
+ * Grok backend: generates video via xAI Grok API.
+ * Uses only the start frame (ignores endFramePath). Supports 1-15s duration.
+ */
+async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateVideoResult> {
+  const {
+    shotNumber,
+    shotType,
+    actionPrompt,
+    dialogue,
+    soundEffects,
+    cameraDirection,
+    durationSeconds,
+    startFramePath,
+    outputDir,
+    dryRun = false,
+    abortSignal,
+  } = params;
+
+  // Ensure output directory exists
+  await mkdir(outputDir, { recursive: true });
+
+  const outputPath = join(outputDir, `shot_${String(shotNumber).padStart(3, "0")}.mp4`);
+
+  // Dry-run mode: return placeholder
+  if (dryRun) {
+    console.log(`[generateVideo] DRY-RUN: Shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
+    return { shotNumber, path: outputPath, duration: durationSeconds };
+  }
+
+  if (!startFramePath) {
+    throw new Error("Grok backend requires startFramePath");
+  }
+
+  // Build video prompt from components
+  const promptParts: string[] = [];
+  if (actionPrompt) promptParts.push(actionPrompt);
+  if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
+  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
+  const videoPrompt = promptParts.join(". ");
+
+  console.log(`[generateVideo] Generating shot ${shotNumber} via Grok (${shotType}, ${durationSeconds}s)`);
+  console.log(`[generateVideo] Prompt: ${videoPrompt.substring(0, 100)}...`);
+
+  // Convert start frame to base64 data URI
+  const imageBuffer = readFileSync(startFramePath);
+  const ext = startFramePath.toLowerCase().endsWith(".png") ? "png" : "jpeg";
+  const dataUri = `data:image/${ext};base64,${imageBuffer.toString("base64")}`;
+
+  // Clamp duration to Grok's supported range (1-15s)
+  const clampedDuration = Math.max(1, Math.min(15, Math.round(durationSeconds)));
+
+  try {
+    // grok-client already handles retries with exponential backoff
+    const result = await grokGenerateVideo(videoPrompt, {
+      image: dataUri,
+      duration: clampedDuration,
+      outputPath,
+      abortSignal,
+    });
+
+    console.log(`[generateVideo] Shot ${shotNumber} saved to ${result.path}`);
+    return { shotNumber, path: result.path, duration: clampedDuration };
+  } catch (error) {
+    console.error(`[generateVideo] Error generating shot ${shotNumber} via Grok:`, error);
     throw error;
   }
 }

@@ -516,14 +516,23 @@ async function runShotPlanningStage(
     throw new Error("Shot planning requires storyAnalysis in state");
   }
 
-  const isComfy = options.videoBackend === "comfy";
-  const durationGuidance = isComfy
-    ? `Shots can be 0.5-10 seconds long (fractional values like 1.5 or 3.5 are fine). Choose the duration that best fits the action:
+  const backend = options.videoBackend;
+  let durationGuidance: string;
+  if (backend === "comfy") {
+    durationGuidance = `Shots can be 0.5-10 seconds long (fractional values like 1.5 or 3.5 are fine). Choose the duration that best fits the action:
 - Very short (0.5-2s): flash cuts, inserts, whip pans, rapid montage
 - Short (2-4s): quick reactions, insert cutaways, snappy dialogue
 - Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
-- Long (8-10s): slow reveals, extended action, lingering moments`
-    : `Each shot is exactly 8 seconds (durationSeconds: 8). This is a fixed constraint of the Veo video backend.`;
+- Long (8-10s): slow reveals, extended action, lingering moments`;
+  } else if (backend === "grok") {
+    durationGuidance = `Shots can be 1-15 seconds long. Choose the duration that best fits the action:
+- Very short (1-2s): flash cuts, inserts, whip pans, rapid montage
+- Short (2-4s): quick reactions, insert cutaways, snappy dialogue
+- Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
+- Long (8-15s): slow reveals, extended action, lingering moments`;
+  } else {
+    durationGuidance = `Each shot is exactly 8 seconds (durationSeconds: 8). This is a fixed constraint of the Veo video backend.`;
+  }
 
   const systemPrompt = `You are a cinematic shot planner. Your job is to break down each scene into shots with cinematic composition.
 

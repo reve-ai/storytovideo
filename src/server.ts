@@ -135,7 +135,7 @@ interface CreateRunRequest {
     resume?: boolean;
     verbose?: boolean;
     reviewMode?: boolean;
-    videoBackend?: "veo" | "comfy";
+    videoBackend?: "veo" | "comfy" | "grok";
   };
 }
 
@@ -382,8 +382,8 @@ function parseCreateRunRequest(body: unknown): CreateRunRequest {
   }
 
   const videoBackend = options.videoBackend;
-  if (videoBackend !== undefined && videoBackend !== "veo" && videoBackend !== "comfy") {
-    throw new Error('options.videoBackend must be "veo" or "comfy" when provided');
+  if (videoBackend !== undefined && videoBackend !== "veo" && videoBackend !== "comfy" && videoBackend !== "grok") {
+    throw new Error('options.videoBackend must be "veo", "comfy", or "grok" when provided');
   }
 
   return {
@@ -1786,12 +1786,12 @@ async function handleSetVideoBackend(
 
   const body = (await readJsonBody(req)) as Record<string, unknown> | null;
   const videoBackend = body?.videoBackend;
-  if (videoBackend !== "veo" && videoBackend !== "comfy") {
-    sendJson(res, 400, { error: 'videoBackend must be "veo" or "comfy"' });
+  if (videoBackend !== "veo" && videoBackend !== "comfy" && videoBackend !== "grok") {
+    sendJson(res, 400, { error: 'videoBackend must be "veo", "comfy", or "grok"' });
     return;
   }
 
-  const updatedOptions = { ...run.options, videoBackend: videoBackend as "veo" | "comfy" };
+  const updatedOptions = { ...run.options, videoBackend: videoBackend as "veo" | "comfy" | "grok" };
   const updatedRecord = runStore.patch(runId, { options: updatedOptions });
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord ?? run) });

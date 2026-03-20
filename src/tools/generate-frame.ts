@@ -7,8 +7,8 @@ import * as path from "path";
 /**
  * Returns the aspect ratio frames should be generated at for a given video backend.
  */
-export function getFrameAspectRatio(videoBackend?: "veo" | "comfy"): string {
-  return videoBackend === "veo" ? "16:9" : "1:1";
+export function getFrameAspectRatio(videoBackend?: "veo" | "comfy" | "grok"): string {
+  return (videoBackend === "veo" || videoBackend === "grok") ? "16:9" : "1:1";
 }
 
 /**
@@ -23,7 +23,7 @@ export async function generateFrame(params: {
   outputDir: string;
   dryRun?: boolean;
   previousEndFramePath?: string;
-  videoBackend?: "veo" | "comfy";
+  videoBackend?: "veo" | "comfy" | "grok";
 }): Promise<{ shotNumber: number; startPath?: string; endPath?: string }> {
   const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend } = params;
 
@@ -120,7 +120,7 @@ async function generateSingleFrame(params: {
   previousStartFramePath?: string;
   previousEndFramePath?: string;
   outputPath: string;
-  videoBackend?: "veo" | "comfy";
+  videoBackend?: "veo" | "comfy" | "grok";
 }): Promise<string> {
   const {
     shot,
