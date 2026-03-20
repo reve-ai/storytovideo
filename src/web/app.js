@@ -122,6 +122,66 @@ function findAsset(key) {
   return null;
 }
 
+function formatReferenceType(type) {
+  if (type === "character") return "char";
+  if (type === "location") return "loc";
+  return "cont";
+}
+
+function buildFrameReferenceSummary(asset) {
+  const references = Array.isArray(asset?.references) ? asset.references : [];
+  if (references.length === 0) {
+    return "";
+  }
+  const summary = references
+    .filter((reference) => reference && typeof reference.name === "string" && typeof reference.type === "string")
+    .map((reference) => `${escapeHtml(reference.name)} (${escapeHtml(formatReferenceType(reference.type))})`)
+    .join(", ");
+
+  return summary ? `<p class="shot-asset-refs">Refs: ${summary}</p>` : "";
+}
+
+function collectShotReferenceAssets(shot) {
+  const references = [];
+  const charactersPresent = Array.isArray(shot?.charactersPresent) ? shot.charactersPresent : [];
+
+  for (const charName of charactersPresent) {
+    if (typeof charName !== "string" || charName.length === 0) continue;
+
+    const frontAsset = findAsset(`character:${charName}:front`);
+    const angleAsset = findAsset(`character:${charName}:angle`);
+
+    if (frontAsset?.previewUrl) {
+      references.push({
+        name: charName,
+        subtype: "front",
+        previewUrl: frontAsset.previewUrl,
+      });
+    }
+
+    if (angleAsset?.previewUrl) {
+      references.push({
+        name: charName,
+        subtype: "angle",
+        previewUrl: angleAsset.previewUrl,
+      });
+    }
+  }
+
+  if (typeof shot?.location === "string" && shot.location.length > 0) {
+    const locationAsset = findAsset(`location:${shot.location}:front`);
+    if (locationAsset?.previewUrl) {
+      references.push({
+        name: shot.location,
+        subtype: "location",
+        previewUrl: locationAsset.previewUrl,
+      });
+    }
+  }
+
+  return references;
+}
+
 function isRunActivelyExecuting(run) {
   return Boolean(run) && (run.status === "queued" || run.status === "running");
 }
@@ -866,6 +926,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
           html += `<tbody>`;
           for (const shot of scene.shots) {
             const dialogue = shot.dialogue ? escapeHtml(shot.dialogue) : "<em>—</em>";
+            const isGrok = state.activeRun?.options?.videoBackend === "grok";
             html += `<tr>`;
             html += `<td>${shot.shotNumber}</td>`;
             html += `<td>${escapeHtml(shot.composition)}</td>`;
@@ -876,13 +937,14 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             // Add collapsible prompts row
             const promptFields = [
               { label: "Start Frame Prompt", value: shot.startFramePrompt, targetKey: `shot:${shot.shotNumber}:start_frame_prompt` },
-              { label: "End Frame Prompt", value: shot.endFramePrompt, targetKey: `shot:${shot.shotNumber}:end_frame_prompt` },
+              ...(!isGrok ? [{ label: "End Frame Prompt", value: shot.endFramePrompt, targetKey: `shot:${shot.shotNumber}:end_frame_prompt` }] : []),
               { label: "Action Prompt", value: shot.actionPrompt, targetKey: `shot:${shot.shotNumber}:action_prompt` },
               { label: "Camera Direction", value: shot.cameraDirection, targetKey: `shot:${shot.shotNumber}:camera_direction` },
               { label: "Sound Effects", value: shot.soundEffects, targetKey: `shot:${shot.shotNumber}:sound_effects` },
             ];
+            const shotReferenceAssets = collectShotReferenceAssets(shot);
             const hasAnyPrompt = promptFields.some(f => f.value);
-            if (hasAnyPrompt) {
+            if (hasAnyPrompt || shotReferenceAssets.length > 0) {
               html += `<tr class="shot-prompts-row"><td colspan="4">`;
               html += `<details class="shot-prompts-details">`;
               html += `<summary class="shot-prompts-summary">Prompts ▸</summary>`;
@@ -896,6 +958,19 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<span class="shot-prompt-value${editedClass}">${val}</span>`;
                 html += `</div>`;
               }
+              if (shotReferenceAssets.length > 0) {
+                html += `<div class="shot-prompt-field">`;
+                html += `<span class="shot-prompt-label">References</span>`;
+                html += `<div class="shot-references">`;
+                for (const reference of shotReferenceAssets) {
+                  html += `<div class="shot-ref-item">`;
+                  html += `<img src="${escapeHtml(reference.previewUrl)}" alt="${escapeHtml(reference.name)} ${escapeHtml(reference.subtype)} reference" class="inline-thumbnail shot-ref-thumbnail" />`;
+                  html += `<span class="shot-ref-label">${escapeHtml(reference.name)} (${escapeHtml(reference.subtype)})</span>`;
+                  html += `</div>`;
+                }
+                html += `</div>`;
+                html += `</div>`;
+              }
               html += `</div>`;
               html += `</details>`;
               html += `</td></tr>`;
@@ -905,7 +980,6 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             const startFrameAsset = findAsset(`frame:${shot.shotNumber}:start`);
             const endFrameAsset = findAsset(`frame:${shot.shotNumber}:end`);
             const videoAsset = findAsset(`video:${shot.shotNumber}`);
-            const isGrok = state.activeRun?.options?.videoBackend === "grok";
             const showFrameSpinners = isStageGenerating("frame_generation") || isStageGenerating("shot_generation");
             const showVideoSpinners = isStageGenerating("video_generation") || isStageGenerating("shot_generation");
 
@@ -918,6 +992,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Start Frame</p>`;
                 html += `<img src="${escapeHtml(startFrameAsset.previewUrl)}" alt="Start Frame" class="inline-thumbnail" />`;
+                html += buildFrameReferenceSummary(startFrameAsset);
                 html += `<button class="redo-item-button" data-redo-type="start_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry start frame for shot ${shot.shotNumber}">↻</button>`;
                 html += buildDirectiveControls(`shot:${shot.shotNumber}:start_frame`, isRunActivelyExecuting(state.activeRun));
                 html += `</div>`;
@@ -932,6 +1007,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                   html += `<div class="shot-asset-item">`;
                   html += `<p class="shot-asset-label">End Frame</p>`;
                   html += `<img src="${escapeHtml(endFrameAsset.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
+                  html += buildFrameReferenceSummary(endFrameAsset);
                   html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame for shot ${shot.shotNumber}">↻</button>`;
                   html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunActivelyExecuting(state.activeRun));
                   html += `</div>`;
