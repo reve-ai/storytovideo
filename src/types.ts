@@ -52,6 +52,19 @@ export interface AssetLibrary {
   locationImages: Record<string, string>;                              // paths
 }
 
+export interface FrameReference {
+  type: "character" | "location" | "continuity";
+  name: string;
+  path: string;
+}
+
+export interface GeneratedFrameSet {
+  start?: string;
+  end?: string;
+  startReferences?: FrameReference[];
+  endReferences?: FrameReference[];
+}
+
 export interface VerificationResult {
   passed: boolean;
   score: number;               // 0.0-1.0
@@ -104,7 +117,7 @@ export interface PipelineState {
   storyAnalysis: StoryAnalysis | null;
   assetLibrary: AssetLibrary | null;
   generatedAssets: Record<string, string>;        // { "character:Bolt:front": "path", ... } — item-level tracking
-  generatedFrames: Record<number, { start?: string; end?: string }>;
+  generatedFrames: Record<number, GeneratedFrameSet>;
   generatedVideos: Record<number, string>;
   errors: Array<{ stage: string; shot?: number; error: string; timestamp: string }>;
   verifications: Array<{ stage: string; shot?: number; passed: boolean; score: number; issues: string[]; timestamp: string }>;
