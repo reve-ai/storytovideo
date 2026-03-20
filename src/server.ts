@@ -33,7 +33,7 @@ import {
 } from "./server-events";
 import { loadState, saveState } from "./tools/state";
 import { setInterrupted } from "./signals";
-import type { ItemDirective, PipelineOptions, PipelineState } from "./types";
+import type { GeneratedFrameSet, ItemDirective, PipelineOptions, PipelineState } from "./types";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
@@ -118,7 +118,7 @@ interface StateSnapshot {
   currentStage: string;
   completedStages: string[];
   generatedAssets: Record<string, string>;
-  generatedFrames: Record<string, { start?: string; end?: string }>;
+  generatedFrames: Record<string, GeneratedFrameSet>;
   generatedVideos: Record<string, string>;
   errors: PipelineState["errors"];
   hasStoryAnalysis: boolean;
@@ -529,15 +529,21 @@ function toRunResponse(record: RunRecord): RunResponse {
 
 function cloneGeneratedFrames(
   generatedFrames: PipelineState["generatedFrames"],
-): Record<string, { start?: string; end?: string }> {
-  const cloned: Record<string, { start?: string; end?: string }> = {};
+): Record<string, GeneratedFrameSet> {
+  const cloned: Record<string, GeneratedFrameSet> = {};
   for (const [shotNumber, frameSet] of Object.entries(generatedFrames)) {
     cloned[shotNumber] = {
       start: frameSet?.start,
       end: frameSet?.end,
+      startReferences: frameSet?.startReferences?.map((reference) => ({ ...reference })),
+      endReferences: frameSet?.endReferences?.map((reference) => ({ ...reference })),
     };
   }
   return cloned;
+}
+
+function sameFrameReferences(a?: GeneratedFrameSet["startReferences"], b?: GeneratedFrameSet["startReferences"]): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
 function toStateSnapshot(state: PipelineState): StateSnapshot {
@@ -638,7 +644,7 @@ function detectStateChanges(runId: string, state: PipelineState, previous: State
     const previousFrameSet = previous.generatedFrames[shotKey];
     const shotNumber = Number(shotKey);
 
-    if (frameSet.start && frameSet.start !== previousFrameSet?.start) {
+    if (frameSet.start && (frameSet.start !== previousFrameSet?.start || !sameFrameReferences(frameSet.startReferences, previousFrameSet?.startReferences))) {
       emitAssetEvent(
         runId,
         createAssetFeedItem({
@@ -650,12 +656,13 @@ function detectStateChanges(runId: string, state: PipelineState, previous: State
           path: frameSet.start,
           shotNumber,
           variant: "start",
+          references: frameSet.startReferences,
           fallbackTimestamp,
         }),
       );
     }
 
-    if (frameSet.end && frameSet.end !== previousFrameSet?.end) {
+    if (frameSet.end && (frameSet.end !== previousFrameSet?.end || !sameFrameReferences(frameSet.endReferences, previousFrameSet?.endReferences))) {
       emitAssetEvent(
         runId,
         createAssetFeedItem({
@@ -667,6 +674,7 @@ function detectStateChanges(runId: string, state: PipelineState, previous: State
           path: frameSet.end,
           shotNumber,
           variant: "end",
+          references: frameSet.endReferences,
           fallbackTimestamp,
         }),
       );
@@ -1219,6 +1227,8 @@ async function handleRedoItem(
     return;
   }
 
+  const isGrok = run.options?.videoBackend === "grok";
+
   console.log('[handleRedoItem] Redo-item requested for run ' + runId);
 
   // Parse and validate request body
@@ -1319,7 +1329,7 @@ async function handleRedoItem(
 
     // Cascade: frames and videos depend on assets
     state.completedStages = state.completedStages.filter(
-      s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+      s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
     );
     earliestStage = "asset_generation";
   } else {
@@ -1337,37 +1347,40 @@ async function handleRedoItem(
       delete state.generatedFrames[shotNumber!];
       delete state.generatedVideos[shotNumber!];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (type === "start_frame") {
       // Delete start frame → also cascade to end frame (end uses start as reference) and video
       if (state.generatedFrames[shotNumber!]) {
         state.generatedFrames[shotNumber!].start = undefined;
         state.generatedFrames[shotNumber!].end = undefined;
+        state.generatedFrames[shotNumber!].startReferences = undefined;
+        state.generatedFrames[shotNumber!].endReferences = undefined;
       }
       delete state.generatedVideos[shotNumber!];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (type === "end_frame") {
       // Delete end frame only → cascade to video
       if (state.generatedFrames[shotNumber!]) {
         state.generatedFrames[shotNumber!].end = undefined;
+        state.generatedFrames[shotNumber!].endReferences = undefined;
       }
       delete state.generatedVideos[shotNumber!];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else {
       // type === "video"
       delete state.generatedVideos[shotNumber!];
       state.completedStages = state.completedStages.filter(
-        s => s !== "video_generation" && s !== "assembly"
+        s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "video_generation";
+      earliestStage = isGrok ? "shot_generation" : "video_generation";
     }
   }
 
@@ -1436,6 +1449,8 @@ async function handleSetDirective(
     sendJson(res, 404, { error: `Run not found: ${runId}` });
     return;
   }
+
+  const isGrok = run.options?.videoBackend === "grok";
 
   const body = await readJsonBody(req) as Record<string, unknown> | null;
   if (!body || typeof body !== "object") {
@@ -1520,7 +1535,7 @@ async function handleSetDirective(
         }
       }
       state.completedStages = state.completedStages.filter(
-        s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = "asset_generation";
     }
@@ -1534,63 +1549,69 @@ async function handleSetDirective(
       if (state.generatedFrames[shotNum]) {
         state.generatedFrames[shotNum].start = undefined;
         state.generatedFrames[shotNum].end = undefined;
+        state.generatedFrames[shotNum].startReferences = undefined;
+        state.generatedFrames[shotNum].endReferences = undefined;
       }
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "end_frame") {
       if (state.generatedFrames[shotNum]) {
         state.generatedFrames[shotNum].end = undefined;
+        state.generatedFrames[shotNum].endReferences = undefined;
       }
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "video") {
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "video_generation" && s !== "assembly"
+        s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "video_generation";
+      earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "start_frame_prompt" || itemType === "end_frame_prompt") {
       // Prompt edit → regenerate frames (and downstream video/assembly)
       if (state.generatedFrames[shotNum]) {
         if (itemType === "start_frame_prompt") {
           state.generatedFrames[shotNum].start = undefined;
           state.generatedFrames[shotNum].end = undefined;
+          state.generatedFrames[shotNum].startReferences = undefined;
+          state.generatedFrames[shotNum].endReferences = undefined;
         } else {
           state.generatedFrames[shotNum].end = undefined;
+          state.generatedFrames[shotNum].endReferences = undefined;
         }
       }
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "frame_generation" && s !== "video_generation" && s !== "assembly"
+        s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "frame_generation";
+      earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "action_prompt") {
       // Action prompt edit → regenerate video (and downstream assembly)
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "video_generation" && s !== "assembly"
+        s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "video_generation";
+      earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "camera_direction") {
       // Camera direction edit → regenerate video (and downstream assembly)
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "video_generation" && s !== "assembly"
+        s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "video_generation";
+      earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "sound_effects") {
       // Sound effects edit → regenerate video and assembly
       delete state.generatedVideos[shotNum];
       state.completedStages = state.completedStages.filter(
-        s => s !== "video_generation" && s !== "assembly"
+        s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
-      earliestStage = "video_generation";
+      earliestStage = isGrok ? "shot_generation" : "video_generation";
     }
   } else if (trimmedTarget.startsWith("analysis:")) {
     // Import runs cannot redo analysis — storyText is placeholder
