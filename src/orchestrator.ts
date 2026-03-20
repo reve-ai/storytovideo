@@ -25,6 +25,7 @@ type StageName =
   | "asset_generation"
   | "frame_generation"
   | "video_generation"
+  | "shot_generation"
   | "assembly";
 
 const STAGE_ORDER: StageName[] = [
@@ -33,6 +34,7 @@ const STAGE_ORDER: StageName[] = [
   "asset_generation",
   "frame_generation",
   "video_generation",
+  "shot_generation",
   "assembly",
 ];
 
@@ -129,6 +131,37 @@ function compactState(state: PipelineState, stageName?: string): string {
     return JSON.stringify(compact, null, 2);
   }
 
+  if (stageName === 'shot_generation') {
+    // Shot generation (grok) needs shot data + asset library for frame generation + video generation
+    const allShots = state.storyAnalysis?.scenes.flatMap(s => s.shots || []) ?? [];
+    const remainingShots = allShots.filter(s => !state.generatedVideos[s.shotNumber]);
+
+    const compact = {
+      outputDir: state.outputDir,
+      generatedFrames: state.generatedFrames,
+      generatedVideos: state.generatedVideos,
+      assetLibrary: state.assetLibrary,
+      artStyle: state.storyAnalysis?.artStyle,
+      remainingShots: remainingShots.map(s => ({
+        shotNumber: s.shotNumber,
+        sceneNumber: s.sceneNumber,
+        shotInScene: s.shotInScene,
+        durationSeconds: s.durationSeconds,
+        shotType: s.shotType,
+        composition: s.composition,
+        startFramePrompt: s.startFramePrompt,
+        actionPrompt: s.actionPrompt,
+        dialogue: s.dialogue,
+        soundEffects: s.soundEffects,
+        cameraDirection: s.cameraDirection,
+        charactersPresent: s.charactersPresent,
+        location: s.location,
+        continuousFromPrevious: s.continuousFromPrevious,
+      })),
+    };
+    return JSON.stringify(compact, null, 2);
+  }
+
   if (stageName === 'assembly') {
     // Assembly only needs video paths, scene transitions, and dialogue for subtitles.
     const compact = {
@@ -170,18 +203,18 @@ function buildInstructionInjectionBlock(instructions: string[]): string {
 
 /** Map directive target patterns to the stages they apply to. */
 const DIRECTIVE_STAGE_MAP: Record<string, string[]> = {
-  // shot:N:start_frame, shot:N:end_frame → frame_generation
-  "start_frame": ["frame_generation"],
+  // shot:N:start_frame, shot:N:end_frame → frame_generation (or shot_generation for grok)
+  "start_frame": ["frame_generation", "shot_generation"],
   "end_frame": ["frame_generation"],
-  // shot:N:video → video_generation
-  "video": ["video_generation"],
+  // shot:N:video → video_generation (or shot_generation for grok)
+  "video": ["video_generation", "shot_generation"],
   // Prompt-level fields are injected into the stage that *uses* the prompt
-  "start_frame_prompt": ["frame_generation", "shot_planning"],
+  "start_frame_prompt": ["frame_generation", "shot_generation", "shot_planning"],
   "end_frame_prompt": ["frame_generation", "shot_planning"],
-  "action_prompt": ["video_generation", "shot_planning"],
+  "action_prompt": ["video_generation", "shot_generation", "shot_planning"],
   // Shot metadata fields
-  "camera_direction": ["video_generation", "shot_planning"],
-  "sound_effects": ["video_generation", "assembly", "shot_planning"],
+  "camera_direction": ["video_generation", "shot_generation", "shot_planning"],
+  "sound_effects": ["video_generation", "shot_generation", "assembly", "shot_planning"],
 };
 
 function directiveMatchesStage(target: string, stageName: string): boolean {
@@ -266,24 +299,30 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
     } catch (_) { /* directory may not exist */ }
   }
 
-  // assembly (5): final.mp4, final.ass
-  if (stageIdx <= 5) {
+  // assembly (6): final.mp4, final.ass
+  if (stageIdx <= STAGE_ORDER.indexOf("assembly")) {
     tryUnlink(join(outputDir, "final.mp4"));
     tryUnlink(join(outputDir, "final.ass"));
   }
 
+  // shot_generation (5): frames/ + videos/ (combined stage for grok)
+  if (stageIdx <= STAGE_ORDER.indexOf("shot_generation")) {
+    clearDir(join(outputDir, "frames"));
+    clearDir(join(outputDir, "videos"));
+  }
+
   // video_generation (4): videos/
-  if (stageIdx <= 4) {
+  if (stageIdx <= STAGE_ORDER.indexOf("video_generation")) {
     clearDir(join(outputDir, "videos"));
   }
 
   // frame_generation (3): frames/
-  if (stageIdx <= 3) {
+  if (stageIdx <= STAGE_ORDER.indexOf("frame_generation")) {
     clearDir(join(outputDir, "frames"));
   }
 
   // asset_generation (2): assets/characters/, assets/locations/
-  if (stageIdx <= 2) {
+  if (stageIdx <= STAGE_ORDER.indexOf("asset_generation")) {
     clearDir(join(outputDir, "assets", "characters"));
     clearDir(join(outputDir, "assets", "locations"));
   }
@@ -291,7 +330,7 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
   // shot_planning (1): no files to delete (shots live in state JSON)
 
   // analysis (0): story_analysis.json
-  if (stageIdx <= 0) {
+  if (stageIdx <= STAGE_ORDER.indexOf("analysis")) {
     tryUnlink(join(outputDir, "story_analysis.json"));
   }
 }
@@ -306,7 +345,8 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
  * - asset_generation (2): clear generatedAssets, generatedFrames, generatedVideos
  * - frame_generation (3): clear generatedFrames, generatedVideos
  * - video_generation (4): clear generatedVideos
- * - assembly (5): nothing to clear
+ * - shot_generation (5): clear generatedFrames, generatedVideos (combined grok stage)
+ * - assembly (6): nothing to clear
  */
 export function clearStageData(state: PipelineState, fromStage: StageName, outputDir?: string): void {
   const stageIdx = STAGE_ORDER.indexOf(fromStage);
@@ -319,15 +359,15 @@ export function clearStageData(state: PipelineState, fromStage: StageName, outpu
     clearStageFiles(outputDir, fromStage);
   }
 
-  // Clear data based on stage index
-  if (stageIdx <= 0) {
+  // Clear data based on stage name for clarity
+  if (fromStage === "analysis") {
     // analysis: clear everything
     state.storyAnalysis = null;
     state.assetLibrary = null;
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
-  } else if (stageIdx <= 1) {
+  } else if (fromStage === "shot_planning") {
     // shot_planning: clear asset-related and downstream
     state.assetLibrary = null;
     if (state.storyAnalysis) {
@@ -338,20 +378,24 @@ export function clearStageData(state: PipelineState, fromStage: StageName, outpu
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
-  } else if (stageIdx <= 2) {
+  } else if (fromStage === "asset_generation") {
     // asset_generation: clear generated assets and downstream
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
-  } else if (stageIdx <= 3) {
+  } else if (fromStage === "frame_generation") {
     // frame_generation: clear generated frames and videos
     state.generatedFrames = {};
     state.generatedVideos = {};
-  } else if (stageIdx <= 4) {
+  } else if (fromStage === "video_generation") {
     // video_generation: clear generated videos
     state.generatedVideos = {};
+  } else if (fromStage === "shot_generation") {
+    // shot_generation (grok combined): clear both frames and videos
+    state.generatedFrames = {};
+    state.generatedVideos = {};
   }
-  // assembly (5): nothing to clear
+  // assembly: nothing to clear
 
   // Remove the target stage and all subsequent stages from completedStages
   for (let i = stageIdx; i < STAGE_ORDER.length; i++) {
@@ -1015,6 +1059,139 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
 }
 
 // ---------------------------------------------------------------------------
+// Stage: Shot Generation (Grok combined frame + video)
+// ---------------------------------------------------------------------------
+
+async function runShotGenerationStage(
+  state: PipelineState,
+  options: PipelineOptions,
+): Promise<PipelineState> {
+  if (!state.storyAnalysis) {
+    throw new Error("Shot generation requires storyAnalysis in state");
+  }
+  if (!state.assetLibrary) {
+    state.assetLibrary = { characterImages: {}, locationImages: {} };
+  }
+
+  const analysis = state.storyAnalysis;
+  const allShots = analysis.scenes.flatMap((s) => s.shots || []);
+
+  // Determine which shots still need video generation (the final output)
+  const neededShots = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+
+  const hasPendingInstructions = (state.pendingStageInstructions["shot_generation"]?.length ?? 0) > 0;
+  const hasDirectives = hasItemDirectivesForStage(state, "shot_generation");
+  if (neededShots.length === 0 && !hasPendingInstructions && !hasDirectives) {
+    console.log("[shot_generation] All shots already generated, skipping.");
+    state.completedStages.push("shot_generation");
+    state.currentStage = "assembly";
+    return state;
+  }
+
+  const stateJson = compactState(state, 'shot_generation');
+  const systemPrompt = `You are a shot generation agent for the Grok video backend. For each shot, you generate a start frame image and then generate a video from that frame.
+
+Current pipeline state:
+${stateJson}
+
+Process shots ONE AT A TIME, in shot number order. For each shot:
+1. First, call generateFrame to create the start frame image (the Grok backend only uses start frames, not end frames).
+2. Then, call generateVideo with the start frame path to generate the video clip.
+3. After each shot completes (both frame and video), call saveState to checkpoint progress.
+
+IMPORTANT RULES:
+- Process ONE shot at a time: generateFrame → generateVideo → saveState → next shot.
+- Check state.generatedVideos[shotNumber] before processing — skip shots that already have videos.
+- If a shot already has a start frame in state.generatedFrames[shotNumber].start, skip generateFrame and go straight to generateVideo.
+- Pass dryRun=${options.dryRun} to both generateFrame and generateVideo.
+- Use outputDir="${options.outputDir}" for frames.
+- Use outputDir="${join(options.outputDir, "videos")}" for videos.
+- Art style: "${analysis.artStyle}"
+- The Grok backend does NOT use end frames. generateFrame will handle this — just pass the shot data.
+- Each shot is independent — no cross-shot continuity via end frames.
+
+Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(", ")}`;
+
+  const userPrompt = `Generate frames and videos for ${neededShots.length} shots using the Grok backend. Process them in order by shot number.`;
+
+  const shotGenTools: Record<string, any> = {
+    generateFrame: {
+      description: generateFrameTool.description,
+      inputSchema: generateFrameTool.parameters,
+      execute: wrapToolExecute("shot_generation", "generateFrame", async (params: z.infer<typeof generateFrameTool.parameters>) => {
+        const result = await generateFrame({
+          shot: params.shot,
+          artStyle: params.artStyle,
+          assetLibrary: params.assetLibrary,
+          outputDir: options.outputDir,
+          dryRun: options.dryRun,
+          previousEndFramePath: params.previousEndFramePath,
+          videoBackend: options.videoBackend,
+        });
+        state.generatedFrames[result.shotNumber] = {
+          start: result.startPath,
+          end: result.endPath,
+        };
+        await saveState({ state });
+        return result;
+      }, options.onToolError, options.abortSignal),
+    },
+    generateVideo: {
+      description: generateVideoTool.description,
+      inputSchema: generateVideoTool.parameters,
+      execute: wrapToolExecute("shot_generation", "generateVideo", async (params: z.infer<typeof generateVideoTool.parameters>) => {
+        const result = await generateVideo({
+          ...params,
+          dryRun: options.dryRun,
+          outputDir: join(options.outputDir, "videos"),
+          abortSignal: options.abortSignal,
+          videoBackend: options.videoBackend,
+          onProgress: options.onProgress,
+          characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+          pendingJobStore: {
+            get: (key) => state.pendingJobs[key],
+            set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
+            delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
+          },
+        });
+        state.generatedVideos[result.shotNumber] = result.path;
+        await saveState({ state });
+        return result;
+      }, options.onToolError, options.abortSignal),
+    },
+    saveState: {
+      description: saveStateTool.description,
+      inputSchema: saveStateTool.parameters,
+      execute: wrapToolExecute("shot_generation", "saveState", async () => {
+        return saveState({ state });
+      }, options.onToolError, options.abortSignal),
+    },
+  };
+
+  if (options.verify) {
+    shotGenTools.verifyOutput = {
+      description: verifyOutputTool.description,
+      inputSchema: verifyOutputTool.parameters,
+      execute: wrapToolExecute("shot_generation", "verifyOutput", async (params: z.infer<typeof verifyOutputTool.parameters>) => {
+        return verifyOutput({ ...params, dryRun: options.dryRun });
+      }, options.onToolError, options.abortSignal),
+    };
+  }
+
+  await runStage("shot_generation", state, options, systemPrompt, userPrompt, shotGenTools, 120, options.verbose);
+
+  // Recompute remaining shots after stage execution
+  const remainingShots = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+  if (remainingShots.length > 0) {
+    console.warn(`[shot_generation] WARNING: ${remainingShots.length}/${allShots.length} shots still missing. NOT marking as complete — will resume on next run.`);
+    return state;
+  }
+  state.completedStages.push("shot_generation");
+  state.currentStage = "assembly";
+  return state;
+}
+
+// ---------------------------------------------------------------------------
 // Stage 6: Assembly
 // ---------------------------------------------------------------------------
 
@@ -1227,12 +1404,14 @@ export async function runPipeline(
   }
 
   // Stage loop
+  const isGrok = options.videoBackend === "grok";
   const stageRunners: Record<StageName, (s: PipelineState, o: PipelineOptions) => Promise<PipelineState>> = {
     analysis: (s, o) => runAnalysisStage(s, storyText, o),
     shot_planning: runShotPlanningStage,
     asset_generation: runAssetGenerationStage,
     frame_generation: runFrameGenerationStage,
     video_generation: runVideoGenerationStage,
+    shot_generation: runShotGenerationStage,
     assembly: runAssemblyStage,
   };
 
@@ -1262,6 +1441,20 @@ export async function runPipeline(
       // Skip completed stages
       if (state.completedStages.includes(stageName)) {
         console.log(`Skipping completed stage: ${stageName}`);
+        continue;
+      }
+
+      // Grok backend: skip frame_generation and video_generation (replaced by shot_generation)
+      if (isGrok && (stageName === "frame_generation" || stageName === "video_generation")) {
+        console.log(`Skipping ${stageName} (grok backend uses shot_generation instead)`);
+        state.completedStages.push(stageName);
+        continue;
+      }
+
+      // Non-grok backends: skip shot_generation (they use separate frame_generation + video_generation)
+      if (!isGrok && stageName === "shot_generation") {
+        console.log(`Skipping shot_generation (only used with grok backend)`);
+        state.completedStages.push(stageName);
         continue;
       }
 
