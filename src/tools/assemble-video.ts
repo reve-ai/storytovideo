@@ -50,7 +50,7 @@ function formatAssTime(seconds: number): string {
  * Generate an ASS subtitle file from subtitle entries.
  * Styling: white text, black outline (2px), bottom-center, ~32px font, semi-transparent black background.
  */
-function generateAssFile(
+export function generateAssFile(
   subtitles: Array<{ startSec: number; endSec: number; text: string }>,
   outputPath: string,
 ): string {
@@ -85,7 +85,7 @@ ${subtitles.map((sub) => {
  * Burn ASS subtitles into a video file using ffmpeg's ass filter.
  * Replaces the input file with the subtitled version.
  */
-async function burnSubtitles(videoPath: string, assPath: string): Promise<void> {
+export async function burnSubtitles(videoPath: string, assPath: string): Promise<void> {
   const dir = path.dirname(videoPath);
   const ext = path.extname(videoPath);
   const base = path.basename(videoPath, ext);
@@ -104,6 +104,61 @@ async function burnSubtitles(videoPath: string, assPath: string): Promise<void> 
     "-preset", "medium",
     "-crf", "23",
     "-c:a", "copy",
+    "-y",
+    tempPath,
+  ]);
+
+  // Replace original with subtitled version
+  fs.renameSync(tempPath, videoPath);
+}
+
+/**
+ * Format seconds to SRT timestamp format: HH:MM:SS,mmm.
+ */
+function formatSrtTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.round((seconds % 1) * 1000);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+}
+
+/**
+ * Generate an SRT subtitle file from subtitle entries.
+ */
+function generateSrtFile(
+  subtitles: Array<{ startSec: number; endSec: number; text: string }>,
+  outputPath: string,
+): string {
+  const srtContent = subtitles.map((sub, i) => {
+    return `${i + 1}
+${formatSrtTime(sub.startSec)} --> ${formatSrtTime(sub.endSec)}
+${sub.text}
+`;
+  }).join("\n");
+
+  fs.writeFileSync(outputPath, srtContent);
+  return outputPath;
+}
+
+/**
+ * Embed subtitles as a soft/native subtitle track (mov_text) into an MP4 video.
+ * Uses -c:v copy -c:a copy so no re-encoding occurs — this is near-instant.
+ * Replaces the input file with the subtitled version.
+ */
+async function embedSubtitleTrack(videoPath: string, srtPath: string): Promise<void> {
+  const dir = path.dirname(videoPath);
+  const ext = path.extname(videoPath);
+  const base = path.basename(videoPath, ext);
+  const tempPath = path.join(dir, `${base}_subtitled${ext}`);
+
+  await execFileAsync("ffmpeg", [
+    "-i", videoPath,
+    "-i", srtPath,
+    "-c:v", "copy",      // No re-encoding of video
+    "-c:a", "copy",      // No re-encoding of audio
+    "-c:s", "mov_text",  // MP4 native subtitle format
+    "-metadata:s:s:0", "language=eng",
     "-y",
     tempPath,
   ]);
@@ -165,7 +220,7 @@ async function overlayAudio(
 /**
  * Assembles multiple video clips into a single final video with optional scene transitions.
  * Uses ffmpeg xfade filter for transitions, or concat demuxer for all-cut videos.
- * Optionally burns ASS subtitles into the final video.
+ * Optionally embeds subtitles as a soft/native subtitle track (no re-encoding).
  * When importedAudio is provided, overlays per-clip audio before assembly.
  * Returns the path to the final assembled video.
  */
@@ -197,9 +252,9 @@ export async function assembleVideo(params: {
     const mockPath = path.join(outputDir, outputFile);
     console.log(`[dry-run] Would assemble ${videoPaths.length} videos into ${mockPath}`);
     if (subtitles.length > 0) {
-      const assPath = path.join(outputDir, "subtitles.ass");
-      generateAssFile(subtitles, assPath);
-      console.log(`[dry-run] Generated subtitle file: ${assPath} (${subtitles.length} entries)`);
+      const srtPath = path.join(outputDir, "subtitles.srt");
+      generateSrtFile(subtitles, srtPath);
+      console.log(`[dry-run] Generated subtitle file: ${srtPath} (${subtitles.length} entries)`);
     }
     return { path: mockPath };
   }
@@ -241,13 +296,13 @@ export async function assembleVideo(params: {
     result = await assembleWithXfade(finalVideoPaths, transitions, outputPath);
   }
 
-  // Burn subtitles if provided
+  // Embed subtitles as a soft subtitle track (toggleable in players)
   if (subtitles.length > 0) {
-    const assPath = path.join(outputDir, "subtitles.ass");
-    generateAssFile(subtitles, assPath);
-    console.log(`[assembly] Generated subtitle file: ${assPath} (${subtitles.length} entries)`);
-    await burnSubtitles(result.path, assPath);
-    console.log(`[assembly] Burned subtitles into ${result.path}`);
+    const srtPath = path.join(outputDir, "subtitles.srt");
+    generateSrtFile(subtitles, srtPath);
+    console.log(`[assembly] Generated subtitle file: ${srtPath} (${subtitles.length} entries)`);
+    await embedSubtitleTrack(result.path, srtPath);
+    console.log(`[assembly] Embedded subtitle track into ${result.path}`);
   }
 
   return result;
@@ -364,7 +419,7 @@ async function assembleWithXfade(
  * Claude calls this to assemble the final video from all shot clips.
  */
 export const assembleVideoTool = {
-  description: "Assemble multiple video clips into a single final video with optional scene transitions and burned-in subtitles.",
+  description: "Assemble multiple video clips into a single final video with optional scene transitions and soft subtitle track.",
   parameters: z.object({
     videoPaths: z.array(z.string()).describe("Ordered list of video clip paths"),
     transitions: z.array(z.object({
@@ -375,7 +430,7 @@ export const assembleVideoTool = {
       startSec: z.number().describe("Start time in seconds"),
       endSec: z.number().describe("End time in seconds"),
       text: z.string().describe("Subtitle text to display"),
-    })).optional().describe("Subtitle entries to burn into the video. Each entry has start/end times and text."),
+    })).optional().describe("Subtitle entries to embed as a soft subtitle track. Each entry has start/end times and text."),
     outputDir: z.string().describe("Output directory for the final video"),
     outputFile: z.string().optional().describe("Output filename (default: final.mp4)"),
     dryRun: z.boolean().optional().describe("If true, return placeholder path without calling ffmpeg"),
