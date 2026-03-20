@@ -424,7 +424,9 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
 
         // Poll for job completion
         console.log(`[generateVideo] Polling for completion (job: ${jobId})`);
-        const result = await pollJob(jobId, abortSignal);
+        const result = await pollJob(jobId, abortSignal, (progress) => {
+          console.log(`[generateVideo] Shot ${shotNumber}: ${progress}% complete`);
+        });
 
         if (result.status !== "completed") {
           throw new Error(`Job ${jobId} did not complete successfully: ${result.status}`);

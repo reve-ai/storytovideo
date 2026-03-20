@@ -113,6 +113,7 @@ export async function checkJob(jobId: string): Promise<{ status: string; outputA
 export async function pollJob(
   jobId: string,
   signal?: AbortSignal,
+  onProgress?: (progress: number) => void,
 ): Promise<{ status: string; outputAssetIds: string[] }> {
   const baseUrl = getComfyBaseUrl();
   const pollIntervalMs = 5000;
@@ -136,6 +137,7 @@ export async function pollJob(
 
     const data = (await response.json()) as {
       status: string;
+      progress?: number;
       output_asset_ids?: string[];
     };
 
@@ -148,6 +150,11 @@ export async function pollJob(
 
     if (data.status === "failed") {
       throw new Error(`Job ${jobId} failed`);
+    }
+
+    if (data.progress !== undefined && data.progress > 0) {
+      console.log(`[comfy] Job ${jobId.slice(0, 8)}... progress: ${data.progress}%`);
+      onProgress?.(data.progress);
     }
 
     // Wait before polling again
