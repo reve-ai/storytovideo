@@ -350,7 +350,24 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
         console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
         return { shotNumber, path: outputPath, duration: durationSeconds };
       }
-      // Job not completed or unreachable — clear and re-submit
+      if (status && (status.status === "running" || status.status === "queued")) {
+        // Job is still in progress — poll it to completion instead of re-submitting
+        console.log(`[generateVideo] Pending job ${pending.jobId} still ${status.status}, resuming poll...`);
+        const progressCb = params.onProgress;
+        const result = await pollJob(pending.jobId, abortSignal, (progress) => {
+          const msg = `[video_generation] Shot ${shotNumber}: ${progress}% complete`;
+          console.log(msg);
+          progressCb?.(msg);
+        });
+        if (result.status === "completed" && result.outputAssetIds.length > 0) {
+          await downloadAsset(result.outputAssetIds[0], outputPath);
+          await pendingJobStore.delete(jobKey);
+          console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
+          return { shotNumber, path: outputPath, duration: durationSeconds };
+        }
+        // If poll ended without success, fall through to re-submit
+      }
+      // Job failed or unreachable — clear and re-submit
       console.log(`[generateVideo] Pending job ${pending.jobId} not usable (status: ${status?.status ?? "unreachable"}), re-submitting...`);
       await pendingJobStore.delete(jobKey);
     }
