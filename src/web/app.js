@@ -905,6 +905,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             const startFrameAsset = findAsset(`frame:${shot.shotNumber}:start`);
             const endFrameAsset = findAsset(`frame:${shot.shotNumber}:end`);
             const videoAsset = findAsset(`video:${shot.shotNumber}`);
+            const isGrok = state.activeRun?.options?.videoBackend === "grok";
             const showFrameSpinners = isStageGenerating("frame_generation") || isStageGenerating("shot_generation");
             const showVideoSpinners = isStageGenerating("video_generation") || isStageGenerating("shot_generation");
 
@@ -926,18 +927,20 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
                 html += `</div>`;
               }
-              if (endFrameAsset && endFrameAsset.previewUrl) {
-                html += `<div class="shot-asset-item">`;
-                html += `<p class="shot-asset-label">End Frame</p>`;
-                html += `<img src="${escapeHtml(endFrameAsset.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
-                html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame for shot ${shot.shotNumber}">↻</button>`;
-                html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunActivelyExecuting(state.activeRun));
-                html += `</div>`;
-              } else if (showFrameSpinners) {
-                html += `<div class="shot-asset-item">`;
-                html += `<p class="shot-asset-label">End Frame</p>`;
-                html += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
-                html += `</div>`;
+              if (!isGrok) {
+                if (endFrameAsset && endFrameAsset.previewUrl) {
+                  html += `<div class="shot-asset-item">`;
+                  html += `<p class="shot-asset-label">End Frame</p>`;
+                  html += `<img src="${escapeHtml(endFrameAsset.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
+                  html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame for shot ${shot.shotNumber}">↻</button>`;
+                  html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunActivelyExecuting(state.activeRun));
+                  html += `</div>`;
+                } else if (showFrameSpinners) {
+                  html += `<div class="shot-asset-item">`;
+                  html += `<p class="shot-asset-label">End Frame</p>`;
+                  html += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
+                  html += `</div>`;
+                }
               }
               if (videoAsset && videoAsset.previewUrl) {
                 html += `<div class="shot-asset-item">`;
