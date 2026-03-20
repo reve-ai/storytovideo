@@ -396,6 +396,25 @@ dt {
   font-weight: normal;
 }
 
+#delete-run-button {
+  background: #c0392b;
+  color: white;
+  border: none;
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+#delete-run-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#delete-run-button:hover:not(:disabled) {
+  background: #a93226;
+}
+
 .run-name-input {
   font-size: 0.88rem;
   padding: 0.15rem 0.35rem;

@@ -63,6 +63,7 @@ const elements = {
   submitInstructionButton: getElement("submit-instruction-button"),
   continueButton: getElement("continue-button"),
   retryButton: getElement("retry-button"),
+  deleteRunButton: getElement("delete-run-button"),
   eventsList: getElement("events-list"),
   stageOutputSection: getElement("stage-output-section"),
   stageOutput: getElement("stage-output"),
@@ -386,6 +387,7 @@ function renderRunDetails() {
     elements.instructionStage.disabled = true;
     elements.continueButton.disabled = true;
     elements.retryButton.disabled = true;
+    elements.deleteRunButton.disabled = true;
     setReviewLockMessage("Select a run to inspect review control lock state.");
     renderStageProgress();
     return;
@@ -453,6 +455,9 @@ function renderRunDetails() {
       `Review controls are unavailable while status is \"${formatStageLabel(run.status)}\". Controls unlock when status returns to \"awaiting review\" (including after interrupt).`,
     );
   }
+
+  // Delete is available when the run is not actively executing
+  elements.deleteRunButton.disabled = isRunActivelyExecuting(run);
 
   renderStageProgress();
 }
@@ -1684,6 +1689,26 @@ function bindEvents() {
 
   elements.retryButton.addEventListener("click", () => {
     void handleRetryClick();
+  });
+
+  elements.deleteRunButton.addEventListener("click", async () => {
+    if (!state.activeRunId) return;
+    const run = state.runs.find(r => r.id === state.activeRunId);
+    const label = run?.name || state.activeRunId.slice(0, 8);
+    if (!confirm(`Delete run "${label}"? This removes it from the list but does not delete output files.`)) return;
+    try {
+      await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}`, {
+        method: "DELETE",
+      });
+      state.runs = state.runs.filter(r => r.id !== state.activeRunId);
+      state.activeRunId = null;
+      state.activeRun = null;
+      renderRunSelect();
+      renderRunDetails();
+      appendEvent(createEventEntry({ title: "Run deleted", message: `Deleted run ${label}` }));
+    } catch (error) {
+      setGlobalError(`Failed to delete run: ${error.message}`);
+    }
   });
 
   elements.reviewModeCheckbox.addEventListener("change", async () => {

@@ -206,6 +206,12 @@ class RunStore {
     return updated;
   }
 
+  delete(id: string): boolean {
+    const existed = this.runs.delete(id);
+    if (existed) this.persist();
+    return existed;
+  }
+
   private load(): void {
     mkdirSync(RUN_DB_DIR, { recursive: true });
 
@@ -2300,6 +2306,24 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "continue") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleContinueRun(req, res, runId);
+      return;
+    }
+
+    if (method === "DELETE" && pathParts.length === 2 && pathParts[0] === "runs") {
+      const runId = decodeURIComponent(pathParts[1]);
+      const run = runStore.get(runId);
+      if (!run) {
+        sendJson(res, 404, { error: `Run not found: ${runId}` });
+        return;
+      }
+      // Don't allow deleting a running pipeline
+      if (runningPipelines.has(runId)) {
+        sendJson(res, 409, { error: "Cannot delete a running pipeline — stop it first" });
+        return;
+      }
+      runStore.delete(runId);
+      stopRunStateMonitor(runId);
+      sendJson(res, 200, { deleted: runId });
       return;
     }
 
