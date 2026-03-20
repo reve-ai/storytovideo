@@ -843,9 +843,17 @@ async function runInBackground(runId: string, resume = false): Promise<void> {
 
   const pipeline = (async () => {
     try {
+      const callbacks = {
+        onToolError: (stage: string, tool: string, error: string) => {
+          emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
+        },
+        onProgress: (message: string) => {
+          emitLogEvent(runId, message);
+        },
+      };
       const pipelineOptions = resume
-        ? { ...record.options, resume: true, abortSignal: abortController.signal }
-        : { ...record.options, abortSignal: abortController.signal };
+        ? { ...record.options, resume: true, abortSignal: abortController.signal, ...callbacks }
+        : { ...record.options, abortSignal: abortController.signal, ...callbacks };
       await runPipeline(record.storyText, pipelineOptions);
       pollRunState(runId);
       const state = loadState(record.outputDir);
