@@ -77,6 +77,8 @@ type GenerateVideoParams = {
   characterNames?: string[];
   /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
   videoBackend?: "veo" | "comfy";
+  /** Progress callback for UI updates */
+  onProgress?: (message: string) => void;
   pendingJobStore?: {
     get: (key: string) => { jobId: string; outputPath: string } | undefined;
     set: (key: string, value: { jobId: string; outputPath: string }) => Promise<void>;
@@ -424,8 +426,11 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
 
         // Poll for job completion
         console.log(`[generateVideo] Polling for completion (job: ${jobId})`);
+        const progressCb = params.onProgress;
         const result = await pollJob(jobId, abortSignal, (progress) => {
-          console.log(`[generateVideo] Shot ${shotNumber}: ${progress}% complete`);
+          const msg = `[video_generation] Shot ${shotNumber}: ${progress}% complete`;
+          console.log(msg);
+          progressCb?.(msg);
         });
 
         if (result.status !== "completed") {

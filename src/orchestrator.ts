@@ -915,6 +915,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             outputDir: join(options.outputDir, "videos"),
             abortSignal: options.abortSignal,
             videoBackend: options.videoBackend,
+            onProgress: options.onProgress,
             characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
             pendingJobStore: {
               get: (key) => state.pendingJobs[key],

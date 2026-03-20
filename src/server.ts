@@ -476,6 +476,9 @@ function buildPipelineOptions(request: CreateRunRequest, runId: string): Pipelin
     onToolError: (stage: string, tool: string, error: string) => {
       emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
     },
+    onProgress: (message: string) => {
+      emitLogEvent(runId, message);
+    },
   };
 }
 
