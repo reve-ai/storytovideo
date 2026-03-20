@@ -414,27 +414,28 @@ function renderRunDetails() {
   elements.reviewPendingCount.textContent = String(pendingCount);
 
   const reviewSafe = isRunReviewSafe(run);
-  elements.submitInstructionButton.disabled = !reviewSafe;
-  elements.instructionText.disabled = !reviewSafe;
-  elements.instructionStage.disabled = !reviewSafe;
+  const canAddInstructions = reviewSafe || run.status === "stopped" || run.status === "failed";
+  elements.submitInstructionButton.disabled = !canAddInstructions;
+  elements.instructionText.disabled = !canAddInstructions;
+  elements.instructionStage.disabled = !canAddInstructions;
   elements.continueButton.disabled = !reviewSafe || continueRequested;
 
   if (isRunActivelyExecuting(run)) {
     setReviewLockMessage(
-      "Review controls are locked while this run is executing (queued/running). Interrupt and wait for status \"awaiting review\" to unlock.",
+      "Review controls are locked while this run is executing (queued/running). Stop the run to add instructions.",
     );
     elements.retryButton.disabled = true;
-  } else if (run.status === "failed") {
-    elements.retryButton.disabled = false;
-    setReviewLockMessage(
-      "Run failed. Use Retry to resume from last checkpoint.",
-      "locked",
-    );
   } else if (run.status === "stopped") {
     elements.retryButton.disabled = false;
     setReviewLockMessage(
-      "Run was stopped. Use Retry to resume from last checkpoint.",
-      "locked",
+      "Run stopped. Add instructions for the current stage, then Resume to continue.",
+      "ready",
+    );
+  } else if (run.status === "failed") {
+    elements.retryButton.disabled = false;
+    setReviewLockMessage(
+      "Run failed. Add instructions for the current stage, then Retry to resume.",
+      "ready",
     );
   } else if (reviewSafe) {
     elements.retryButton.disabled = true;
@@ -1308,13 +1309,17 @@ async function handleSubmitInstruction(event) {
   }
   if (isRunActivelyExecuting(state.activeRun)) {
     setGlobalError(
-      'Review controls are locked while run is executing. Interrupt and wait for status "awaiting review".',
+      "Review controls are locked while run is executing. Stop the run first.",
     );
     renderRunDetails();
     return;
   }
-  if (!isRunReviewSafe(state.activeRun)) {
-    setGlobalError('Run is not in review-safe state. Controls unlock when status is "awaiting_review".');
+
+  const canAddInstructions = isRunReviewSafe(state.activeRun)
+    || state.activeRun.status === "stopped"
+    || state.activeRun.status === "failed";
+  if (!canAddInstructions) {
+    setGlobalError("Run is not in a state that accepts instructions.");
     renderRunDetails();
     return;
   }

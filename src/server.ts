@@ -987,8 +987,12 @@ async function handleSubmitInstruction(
     return;
   }
 
-  if (!state.awaitingUserReview) {
-    sendJson(res, 409, { error: "Run is not awaiting review" });
+  // Allow instructions when stopped/failed (not just awaiting_review)
+  const canAcceptInstructions = state.awaitingUserReview
+    || run.status === "stopped"
+    || run.status === "failed";
+  if (!canAcceptInstructions) {
+    sendJson(res, 409, { error: "Run is not in a state that accepts instructions" });
     return;
   }
 
