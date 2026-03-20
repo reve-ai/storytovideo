@@ -90,6 +90,7 @@ function createInitialState(storyFile: string, outputDir: string): PipelineState
     generatedAssets: {},
     generatedFrames: {},
     generatedVideos: {},
+	    videoPromptsSent: {},
     errors: [],
     verifications: [],
     interrupted: false,
@@ -272,6 +273,7 @@ function applyPromptLevelDirectives(state: PipelineState): void {
       (shot as any)[key] = directive.directive;
     }
   }
+
 }
 
 function hasItemDirectivesForStage(state: PipelineState, stageName: string): boolean {
@@ -369,6 +371,7 @@ export function clearStageData(state: PipelineState, fromStage: StageName, outpu
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "shot_planning") {
     // shot_planning: clear asset-related and downstream
     state.assetLibrary = null;
@@ -380,22 +383,27 @@ export function clearStageData(state: PipelineState, fromStage: StageName, outpu
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "asset_generation") {
     // asset_generation: clear generated assets and downstream
     state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "frame_generation") {
     // frame_generation: clear generated frames and videos
     state.generatedFrames = {};
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "video_generation") {
     // video_generation: clear generated videos
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "shot_generation") {
     // shot_generation (grok combined): clear both frames and videos
     state.generatedFrames = {};
     state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   }
   // assembly: nothing to clear
 
@@ -990,9 +998,19 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
       description: generateVideoTool.description,
       inputSchema: generateVideoTool.parameters,
       execute: wrapToolExecute("video_generation", "generateVideo", async (params: z.infer<typeof generateVideoTool.parameters>) => {
+        // Inject video directives directly into the action prompt
+        let actionPrompt = params.actionPrompt;
+        const videoDirective = Object.values(state.itemDirectives).find(
+          d => d.target === `shot:${params.shotNumber}:video`
+        );
+        if (videoDirective) {
+          actionPrompt = `${actionPrompt}. IMPORTANT DIRECTOR NOTE: ${videoDirective.directive}`;
+          console.log(`[video_generation] Injected video directive for shot ${params.shotNumber}: "${videoDirective.directive.substring(0, 100)}"`);
+        }
         try {
           const result = await generateVideo({
             ...params,
+            actionPrompt,
             dryRun: options.dryRun,
             outputDir: join(options.outputDir, "videos"),
             abortSignal: options.abortSignal,
@@ -1006,6 +1024,10 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             },
           });
           state.generatedVideos[result.shotNumber] = result.path;
+	          if (result.promptSent) {
+	            if (!state.videoPromptsSent) state.videoPromptsSent = {};
+	            state.videoPromptsSent[result.shotNumber] = result.promptSent;
+	          }
           await saveState({ state });
           return result;
         } catch (error: any) {
@@ -1171,8 +1193,18 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
       description: generateVideoTool.description,
       inputSchema: generateVideoTool.parameters,
       execute: wrapToolExecute("shot_generation", "generateVideo", async (params: z.infer<typeof generateVideoTool.parameters>) => {
+        // Inject video directives directly into the action prompt
+        let actionPrompt = params.actionPrompt;
+        const videoDirective = Object.values(state.itemDirectives).find(
+          d => d.target === `shot:${params.shotNumber}:video`
+        );
+        if (videoDirective) {
+          actionPrompt = `${actionPrompt}. IMPORTANT DIRECTOR NOTE: ${videoDirective.directive}`;
+          console.log(`[shot_generation] Injected video directive for shot ${params.shotNumber}: "${videoDirective.directive.substring(0, 100)}"`);
+        }
         const result = await generateVideo({
           ...params,
+          actionPrompt,
           dryRun: options.dryRun,
           outputDir: join(options.outputDir, "videos"),
           abortSignal: options.abortSignal,
@@ -1186,6 +1218,10 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
           },
         });
         state.generatedVideos[result.shotNumber] = result.path;
+	        if (result.promptSent) {
+	          if (!state.videoPromptsSent) state.videoPromptsSent = {};
+	          state.videoPromptsSent[result.shotNumber] = result.promptSent;
+	        }
 
         // Extract last frame from generated video as end frame
         if (!options.dryRun && result.path) {
