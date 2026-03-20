@@ -73,8 +73,9 @@ export async function runWorkflow(
     let detail = "";
     try {
       const body = await response.text();
-      detail = ` — ${body}`;
+      if (body) detail = ` — ${body}`;
     } catch {}
+    console.error(`[comfy] Workflow ${workflow} rejected (${response.status}). Params:`, JSON.stringify(params, null, 2));
     throw new Error(
       `Failed to run workflow: ${response.status} ${response.statusText}${detail}`
     );
