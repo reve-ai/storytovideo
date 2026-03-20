@@ -596,9 +596,18 @@ async function runShotPlanningStage(
     durationGuidance = `Each shot is exactly 8 seconds (durationSeconds: 8). This is a fixed constraint of the Veo video backend.`;
   }
 
+  const grokShotPlanningGuidance = backend === "grok"
+    ? `IMPORTANT FOR GROK: Since the Grok backend does not use end frames, set endFramePrompt to an empty string for all shots. Apply the cinematic rules normally, but any mention of end frames should be treated as composition guidance only.`
+    : "";
+  const fixedCameraGuidance = backend === "grok"
+    ? `9. The camera is FIXED for the duration of each shot. The start frame prompt must describe what the SAME stationary camera sees at the start of the shot. Since Grok does not use end frames, set endFramePrompt to an empty string for every shot.`
+    : `9. The camera is FIXED for the duration of each shot. Start and end frame prompts must describe what the SAME stationary camera sees at two moments in time. Same subject, same angle, same composition. NEVER have the start frame describe one person and the end frame describe a different person. To switch to a different person or angle, end this shot and start a new one — that's what cuts are for.`;
+
   const systemPrompt = `You are a cinematic shot planner. Your job is to break down each scene into shots with cinematic composition.
 
 ${CINEMATIC_RULES}
+
+${grokShotPlanningGuidance}
 
 For each scene in the story analysis (in order), call the planShotsForScene tool with:
 - sceneNumber: the scene number
@@ -616,7 +625,7 @@ For each scene:
 6. Write detailed frame prompts that include the composition type
 7. Write action prompts for video generation. In actionPrompt fields, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name. Character names in video prompts trigger content safety filters.
 8. Include dialogue as quoted speech if present
-9. The camera is FIXED for the duration of each shot. Start and end frame prompts must describe what the SAME stationary camera sees at two moments in time. Same subject, same angle, same composition. NEVER have the start frame describe one person and the end frame describe a different person. To switch to a different person or angle, end this shot and start a new one — that's what cuts are for.
+${fixedCameraGuidance}
 
 After planning all scenes, respond with a brief summary of the shots planned.`;
 
@@ -879,6 +888,8 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
           end: result.endPath,
+          startReferences: result.startReferences,
+          endReferences: result.endReferences,
         };
         await saveState({ state });
         return result;
@@ -1011,33 +1022,24 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               };
             }
 
-            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Rolling back to frame_generation stage.`);
+            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Deleting frames for regeneration.`);
 
             // Delete the offending frames from state so frame_generation will regenerate them
             delete state.generatedFrames[params.shotNumber];
 
-            // Remove frame_generation from completedStages so the pipeline re-runs it
-            const fgIdx = state.completedStages.indexOf("frame_generation");
-            if (fgIdx !== -1) {
-              state.completedStages.splice(fgIdx, 1);
-            }
-            // Also remove video_generation since we're rolling back
-            const vgIdx = state.completedStages.indexOf("video_generation");
-            if (vgIdx !== -1) {
-              state.completedStages.splice(vgIdx, 1);
-            }
-
-            // Signal rollback via state flag (can't throw — AI SDK swallows tool errors)
-            state.rollbackTarget = 'frame_generation';
+            // Ensure frame_generation re-runs on the next pass.
+            state.completedStages = state.completedStages.filter(
+              (stage) => stage !== "frame_generation",
+            );
             await saveState({ state });
 
-            console.log(`[video_generation] Shot ${params.shotNumber}: State saved with rollback target. Stage will restart.`);
+            console.log(`[video_generation] Shot ${params.shotNumber}: State saved. Continuing with remaining shots.`);
 
-            // Return a result telling Claude to stop calling tools
+            // Tell the stage agent to skip this shot for now and continue with the others.
             return {
               shotNumber: params.shotNumber,
-              error: "RAI celebrity filter triggered. Frames deleted. Pipeline will roll back to frame_generation. STOP generating videos — the stage is restarting.",
-              rolledBack: true,
+              error: `RAI celebrity filter triggered. Frames for shot ${params.shotNumber} deleted. SKIP this shot and CONTINUE generating videos for all remaining shots. The frames will be regenerated on the next pass.`,
+              raiTriggered: true,
             };
           }
           throw error;
@@ -1068,6 +1070,15 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
   // Recompute remaining videos after stage execution
   const remainingVideos = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
   if (remainingVideos.length > 0) {
+    const missingFrames = remainingVideos.filter(
+      (shot) => !state.generatedFrames[shot.shotNumber]?.start,
+    );
+    if (missingFrames.length > 0) {
+      console.log(`[video_generation] ${missingFrames.length} shots need frame regeneration. Rolling back to frame_generation.`);
+      state.completedStages = state.completedStages.filter((stage) => stage !== "frame_generation");
+      state.rollbackTarget = "frame_generation";
+      await saveState({ state });
+    }
     console.warn(`[video_generation] WARNING: ${remainingVideos.length}/${allShots.length} videos still missing. NOT marking as complete — will resume on next run.`);
     return state;
   }
@@ -1149,6 +1160,8 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
           end: result.endPath,
+          startReferences: result.startReferences,
+          endReferences: result.endReferences,
         };
         await saveState({ state });
         return result;
@@ -1190,6 +1203,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
               state.generatedFrames[result.shotNumber] = { start: undefined };
             }
             state.generatedFrames[result.shotNumber].end = endFramePath;
+            state.generatedFrames[result.shotNumber].endReferences = undefined;
             console.log(`[shot_generation] Extracted end frame for shot ${result.shotNumber}: ${endFramePath}`);
           } catch (err) {
             console.warn(`[shot_generation] Failed to extract end frame for shot ${result.shotNumber}:`, err);
