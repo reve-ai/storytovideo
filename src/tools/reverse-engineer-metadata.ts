@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { streamObject } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { readFileSync } from "fs";
@@ -93,13 +93,21 @@ export async function reverseEngineerMetadata(params: {
 
   const prompt = buildPrompt(shotsText, shotDescriptions.length);
 
-  // Build message content: text + optional images
+  // Build message content: text + sampled images
   const contentParts: Array<{ type: string; text?: string; image?: string }> = [
     { type: "text", text: prompt },
   ];
 
   if (frameImagePaths && frameImagePaths.length > 0) {
-    for (const imgPath of frameImagePaths) {
+    // Sample images to keep request size reasonable (max ~20 images)
+    const maxImages = 20;
+    let sampled = frameImagePaths;
+    if (frameImagePaths.length > maxImages) {
+      const step = Math.ceil(frameImagePaths.length / maxImages);
+      sampled = frameImagePaths.filter((_, i) => i % step === 0);
+    }
+
+    for (const imgPath of sampled) {
       try {
         const base64 = readFileSync(imgPath).toString("base64");
         const ext = extname(imgPath).toLowerCase();
@@ -116,17 +124,34 @@ export async function reverseEngineerMetadata(params: {
 
   try {
     const imageCount = contentParts.length - 1;
-    console.log(`[reverse-engineer] Calling Claude with ${shotDescriptions.length} shots and ${imageCount} images...`);
+    console.log(`[reverse-engineer] Streaming from Claude Sonnet with ${shotDescriptions.length} shots and ${imageCount} images...`);
     const startTime = Date.now();
 
-    const { object } = await generateObject({
-      model: anthropic("claude-opus-4-6"),
+    const stream = streamObject({
+      model: anthropic("claude-sonnet-4-20250514"),
       schema: storyAnalysisSchema,
       messages: [{ role: "user" as const, content: contentParts as any }],
     } as any);
 
+    // Log progress as partial object arrives
+    let lastLog = Date.now();
+    let lastCharCount = 0;
+    let lastSceneCount = 0;
+    for await (const partial of (stream as any).partialObjectStream) {
+      const now = Date.now();
+      const chars = partial?.characters?.length ?? 0;
+      const scenes = partial?.scenes?.length ?? 0;
+      if (now - lastLog > 5000 || chars !== lastCharCount || scenes !== lastSceneCount) {
+        const elapsed = ((now - startTime) / 1000).toFixed(0);
+        console.log(`[reverse-engineer] ${elapsed}s — ${chars} characters, ${scenes} scenes so far...`);
+        lastLog = now;
+        lastCharCount = chars;
+        lastSceneCount = scenes;
+      }
+    }
+
+    const result = await (stream as any).object as StoryAnalysis;
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const result = object as any as StoryAnalysis;
     console.log(`[reverse-engineer] Done in ${elapsed}s — ${result.characters?.length ?? 0} characters, ${result.locations?.length ?? 0} locations, ${result.scenes?.length ?? 0} scenes`);
 
     return result;
