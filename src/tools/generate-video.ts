@@ -1,9 +1,33 @@
 import { z } from "zod";
 import { mkdir } from "fs/promises";
-import { readFileSync } from "fs";
+import { readFileSync, unlinkSync } from "fs";
 import { join } from "path";
+import { execFile as execFileCb } from "child_process";
+import { promisify } from "util";
 import { getGoogleClient } from "../google-client";
 import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
+
+const execFileAsync = promisify(execFileCb);
+
+/**
+ * Resize an image to target dimensions using ffmpeg, preserving aspect ratio
+ * with padding (letterbox/pillarbox). Returns path to resized temp file.
+ */
+async function resizeForComfy(
+  inputPath: string,
+  width: number,
+  height: number,
+): Promise<string> {
+  const tmpPath = inputPath.replace(/(\.\w+)$/, `_comfy_${width}x${height}$1`);
+  await execFileAsync("ffmpeg", [
+    "-y", "-i", inputPath,
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
+    "-q:v", "2",
+    "-strict", "unofficial",
+    tmpPath,
+  ]);
+  return tmpPath;
+}
 
 // Custom error for RAI celebrity filter rejections — allows orchestrator to
 // catch this specific failure and regenerate frames before retrying.
@@ -352,14 +376,27 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
           throw new Error("first_last_frame requires both startFramePath and endFramePath");
         }
 
-        // Upload start and end frames to ComfyUI
-        console.log(`[generateVideo] Uploading start frame for shot ${shotNumber}`);
-        const startAssetId = await uploadAsset(startFramePath);
+        // Resize frames to match ComfyUI workflow dimensions, then upload
+        const comfyWidth = 640;
+        const comfyHeight = 640;
+        const tmpFiles: string[] = [];
+
+        console.log(`[generateVideo] Resizing and uploading start frame for shot ${shotNumber}`);
+        const resizedStart = await resizeForComfy(startFramePath, comfyWidth, comfyHeight);
+        tmpFiles.push(resizedStart);
+        const startAssetId = await uploadAsset(resizedStart);
         console.log(`[generateVideo] Start frame uploaded: ${startAssetId}`);
 
-        console.log(`[generateVideo] Uploading end frame for shot ${shotNumber}`);
-        const endAssetId = await uploadAsset(endFramePath);
+        console.log(`[generateVideo] Resizing and uploading end frame for shot ${shotNumber}`);
+        const resizedEnd = await resizeForComfy(endFramePath, comfyWidth, comfyHeight);
+        tmpFiles.push(resizedEnd);
+        const endAssetId = await uploadAsset(resizedEnd);
         console.log(`[generateVideo] End frame uploaded: ${endAssetId}`);
+
+        // Clean up temp resized files
+        for (const tmp of tmpFiles) {
+          try { unlinkSync(tmp); } catch {}
+        }
 
         // Convert duration to frame count (fps=16)
         const length = 16 * durationSeconds;
@@ -371,8 +408,8 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
           prompt: videoPrompt,
           start_asset_id: startAssetId,
           end_asset_id: endAssetId,
-          width: 640,
-          height: 640,
+          width: comfyWidth,
+          height: comfyHeight,
           length,
           fps: 16,
         });

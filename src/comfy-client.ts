@@ -70,8 +70,13 @@ export async function runWorkflow(
   });
 
   if (!response.ok) {
+    let detail = "";
+    try {
+      const body = await response.text();
+      detail = ` — ${body}`;
+    } catch {}
     throw new Error(
-      `Failed to run workflow: ${response.status} ${response.statusText}`
+      `Failed to run workflow: ${response.status} ${response.statusText}${detail}`
     );
   }
 
