@@ -4,6 +4,7 @@ const STAGE_ORDER = [
   "asset_generation",
   "frame_generation",
   "video_generation",
+  "shot_generation",
   "assembly",
 ];
 
@@ -877,8 +878,8 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             const startFrameAsset = findAsset(`frame:${shot.shotNumber}:start`);
             const endFrameAsset = findAsset(`frame:${shot.shotNumber}:end`);
             const videoAsset = findAsset(`video:${shot.shotNumber}`);
-            const showFrameSpinners = isStageGenerating("frame_generation");
-            const showVideoSpinners = isStageGenerating("video_generation");
+            const showFrameSpinners = isStageGenerating("frame_generation") || isStageGenerating("shot_generation");
+            const showVideoSpinners = isStageGenerating("video_generation") || isStageGenerating("shot_generation");
 
             const redoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
 
@@ -1066,10 +1067,10 @@ function handleRunEvent(type, messageEvent, source) {
           }),
         );
         // Track video generation progress per shot
-        const progressMatch = message.match(/\[video_generation\] Shot (\d+): (\d+)% complete/);
+        const progressMatch = message.match(/\[(video_generation|shot_generation)\] Shot (\d+): (\d+)% complete/);
         if (progressMatch) {
-          const shotNum = Number(progressMatch[1]);
-          const pct = Number(progressMatch[2]);
+          const shotNum = Number(progressMatch[2]);
+          const pct = Number(progressMatch[3]);
           state.videoProgress = state.videoProgress || {};
           state.videoProgress[shotNum] = pct;
           // Update spinner in-place without waiting for re-render
