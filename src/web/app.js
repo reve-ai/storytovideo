@@ -300,6 +300,8 @@ function renderStatusBadge(status) {
 
 function renderRunName(run) {
   const container = elements.runId;
+  // Don't clobber an active rename input
+  if (container.querySelector(".run-name-input")) return;
   container.replaceChildren();
 
   const nameSpan = document.createElement("span");
