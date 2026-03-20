@@ -298,10 +298,10 @@ function renderStatusBadge(status) {
   elements.runStatus.replaceChildren(badge);
 }
 
-function renderRunName(run) {
+function renderRunName(run, force = false) {
   const container = elements.runId;
-  // Don't clobber an active rename input
-  if (container.querySelector(".run-name-input")) return;
+  // Don't clobber an active rename input during poll-driven re-renders
+  if (!force && container.querySelector(".run-name-input")) return;
   container.replaceChildren();
 
   const nameSpan = document.createElement("span");
@@ -325,7 +325,7 @@ function renderRunName(run) {
     const save = async () => {
       const newName = input.value.trim();
       if (!newName || newName === run.name) {
-        renderRunName(run);
+        renderRunName(run, true);
         return;
       }
       try {
@@ -334,21 +334,20 @@ function renderRunName(run) {
           body: JSON.stringify({ name: newName }),
         });
         run.name = newName;
-        // Update the select dropdown too
         const matchingRun = state.runs.find(r => r.id === run.id);
         if (matchingRun) matchingRun.name = newName;
         renderRunSelect();
-        renderRunName(run);
+        renderRunName(run, true);
       } catch (error) {
         setGlobalError(`Failed to rename: ${error.message}`);
-        renderRunName(run);
+        renderRunName(run, true);
       }
     };
 
     input.addEventListener("blur", () => save());
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); save(); }
-      if (e.key === "Escape") { renderRunName(run); }
+      if (e.key === "Escape") { renderRunName(run, true); }
     });
 
     container.replaceChildren(input, idSpan);
