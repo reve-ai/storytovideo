@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import sharp from "sharp";
 
 const API_BASE_URL = "https://api.x.ai/v1";
 const MAX_RETRIES = 3;
@@ -12,11 +13,47 @@ function getApiKey(): string {
   return key;
 }
 
-function loadImageAsBase64(imagePath: string): string {
+/**
+ * Pad an image to match a target aspect ratio by adding black letterbox/pillarbox bars.
+ * This works around the Grok /images/edits API ignoring the aspect_ratio parameter
+ * when editing with reference images — the output always matches the input's aspect ratio.
+ */
+async function padImageToAspectRatio(imagePath: string, targetAspectRatio: string): Promise<Buffer> {
   if (!fs.existsSync(imagePath)) {
     throw new Error(`Image file not found: ${imagePath}`);
   }
-  return fs.readFileSync(imagePath).toString("base64");
+
+  const metadata = await sharp(imagePath).metadata();
+  const srcWidth = metadata.width!;
+  const srcHeight = metadata.height!;
+
+  const [arW, arH] = targetAspectRatio.split(":").map(Number);
+  const targetRatio = arW / arH;
+  const srcRatio = srcWidth / srcHeight;
+
+  // If already correct ratio (within tolerance), just return original
+  if (Math.abs(srcRatio - targetRatio) < 0.05) {
+    return fs.readFileSync(imagePath);
+  }
+
+  let newWidth: number, newHeight: number;
+  if (srcRatio > targetRatio) {
+    // Image is wider than target — add height (letterbox)
+    newWidth = srcWidth;
+    newHeight = Math.round(srcWidth / targetRatio);
+  } else {
+    // Image is taller than target — add width (pillarbox)
+    newHeight = srcHeight;
+    newWidth = Math.round(srcHeight * targetRatio);
+  }
+
+  return sharp(imagePath)
+    .resize(newWidth, newHeight, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    })
+    .png()
+    .toBuffer();
 }
 
 function ensureDir(filePath: string): void {
@@ -103,10 +140,17 @@ export async function remixImageGrok(
   const outputPath = options?.outputPath ?? "output.png";
   const aspectRatio = options?.aspectRatio ?? "16:9";
 
-  const images = referenceImagePaths.map((p) => ({
-    type: "image_url",
-    url: `data:image/png;base64,${loadImageAsBase64(p)}`,
-  }));
+  // Pad reference images to target aspect ratio so the API outputs the correct ratio.
+  // The /images/edits endpoint ignores aspect_ratio and matches the input image instead.
+  const images = [];
+  for (const p of referenceImagePaths) {
+    const paddedBuffer = await padImageToAspectRatio(p, aspectRatio);
+    const b64 = paddedBuffer.toString("base64");
+    images.push({
+      type: "image_url",
+      url: `data:image/png;base64,${b64}`,
+    });
+  }
 
   const body: Record<string, unknown> = {
     model: "grok-imagine-image",
