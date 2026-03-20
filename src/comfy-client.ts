@@ -117,11 +117,19 @@ export async function pollJob(
 ): Promise<{ status: string; outputAssetIds: string[] }> {
   const baseUrl = getComfyBaseUrl();
   const pollIntervalMs = 5000;
+  const maxPollTimeMs = 30 * 60 * 1000; // 30 minutes max
+  const startTime = Date.now();
+  let lastProgress = -1;
 
   while (true) {
     if (interrupted || signal?.aborted) {
       await cancelJob(jobId);
       throw new Error(`Job ${jobId} cancelled due to pipeline interruption`);
+    }
+
+    if (Date.now() - startTime > maxPollTimeMs) {
+      await cancelJob(jobId);
+      throw new Error(`Job ${jobId} timed out after 30 minutes`);
     }
 
     const response = await fetch(`${baseUrl}/jobs/${jobId}`, {
@@ -148,11 +156,12 @@ export async function pollJob(
       };
     }
 
-    if (data.status === "failed") {
-      throw new Error(`Job ${jobId} failed`);
+    if (data.status === "failed" || data.status === "cancelled" || data.status === "error") {
+      throw new Error(`Job ${jobId} ${data.status}`);
     }
 
-    if (data.progress !== undefined && data.progress > 0) {
+    if (data.progress !== undefined && data.progress > 0 && data.progress !== lastProgress) {
+      lastProgress = data.progress;
       console.log(`[comfy] Job ${jobId.slice(0, 8)}... progress: ${data.progress}%`);
       onProgress?.(data.progress);
     }
