@@ -523,6 +523,8 @@ async function runAnalysisStage(
 
 Call the analyzeStory tool with the full story text. The tool will return a StoryAnalysis object with characters, locations, art style, and scenes.
 
+Also call the nameRun tool to give this run a short, creative name (2-5 words) that captures the story's essence.
+
 After receiving the analysis, respond with a brief summary of what was found.`;
 
   const userPrompt = `Analyze this story:\n\n${storyText}`;
@@ -535,6 +537,20 @@ After receiving the analysis, respond with a brief summary of what was found.`;
         const result = await analyzeStory(params.storyText);
         state.storyAnalysis = result;
         return result;
+      }, options.onToolError, options.abortSignal),
+    },
+    nameRun: {
+      description: "Give this run a short, creative name (2-5 words) that captures the essence of the story.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("A short creative name for this run (2-5 words, no quotes)"),
+      }),
+      execute: wrapToolExecute("analysis", "nameRun", async (params: { name: string }) => {
+        const trimmed = params.name.trim().replace(/^["']|["']$/g, "").slice(0, 60);
+        if (options.onNameRun) {
+          options.onNameRun(trimmed);
+        }
+        console.log(`[analysis] Run named: "${trimmed}"`);
+        return { name: trimmed };
       }, options.onToolError, options.abortSignal),
     },
   };

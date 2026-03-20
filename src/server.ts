@@ -856,6 +856,10 @@ async function runInBackground(runId: string, resume = false): Promise<void> {
         onProgress: (message: string) => {
           emitLogEvent(runId, message);
         },
+        onNameRun: (name: string) => {
+          runStore.patch(runId, { name });
+          console.log(`[runInBackground] Run ${runId.slice(0, 8)} named by LLM: "${name}"`);
+        },
       };
       const pipelineOptions = resume
         ? { ...record.options, resume: true, abortSignal: abortController.signal, ...callbacks }
@@ -955,7 +959,7 @@ async function handleCreateRun(req: IncomingMessage, res: ServerResponse): Promi
   };
 
   runStore.upsert(record);
-  autoNameRun(runId, request.storyText);
+  // LLM names the run during analysis stage via nameRun tool
   emitRunStatusEvent(runId, "queued");
   startRunStateMonitor(runId);
   setImmediate(() => {

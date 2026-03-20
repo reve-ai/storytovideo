@@ -79,6 +79,7 @@ export interface PipelineOptions {
   videoBackend?: "veo" | "comfy" | "grok";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   onProgress?: (message: string) => void;
+  onNameRun?: (name: string) => void;
   abortSignal?: AbortSignal;
 }
 
