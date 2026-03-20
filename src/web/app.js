@@ -321,8 +321,17 @@ function renderRunName(run, force = false) {
     input.value = run.name || "";
     input.placeholder = "Enter run name...";
     input.maxLength = 60;
+    let saving = false;
+
+    const close = () => {
+      if (saving) return;
+      saving = true;
+      renderRunName(run, true);
+    };
 
     const save = async () => {
+      if (saving) return;
+      saving = true;
       const newName = input.value.trim();
       if (!newName || newName === run.name) {
         renderRunName(run, true);
@@ -337,17 +346,16 @@ function renderRunName(run, force = false) {
         const matchingRun = state.runs.find(r => r.id === run.id);
         if (matchingRun) matchingRun.name = newName;
         renderRunSelect();
-        renderRunName(run, true);
       } catch (error) {
         setGlobalError(`Failed to rename: ${error.message}`);
-        renderRunName(run, true);
       }
+      renderRunName(run, true);
     };
 
     input.addEventListener("blur", () => save());
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); save(); }
-      if (e.key === "Escape") { renderRunName(run, true); }
+      if (e.key === "Escape") { e.preventDefault(); close(); }
     });
 
     container.replaceChildren(input, idSpan);
