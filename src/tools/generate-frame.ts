@@ -5,6 +5,13 @@ import * as fs from "fs";
 import * as path from "path";
 
 /**
+ * Returns the aspect ratio frames should be generated at for a given video backend.
+ */
+export function getFrameAspectRatio(videoBackend?: "veo" | "comfy"): string {
+  return videoBackend === "veo" ? "16:9" : "1:1";
+}
+
+/**
  * Generates start/end keyframe images for shots using the Reve API.
  * For first_last_frame shots: generates both start and end frames.
  * For extension shots: returns immediately (no frames needed).
@@ -16,8 +23,9 @@ export async function generateFrame(params: {
   outputDir: string;
   dryRun?: boolean;
   previousEndFramePath?: string;
+  videoBackend?: "veo" | "comfy";
 }): Promise<{ shotNumber: number; startPath?: string; endPath?: string }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend } = params;
 
   // Create frames directory if it doesn't exist
   const framesDir = path.join(outputDir, "frames");
@@ -50,6 +58,7 @@ export async function generateFrame(params: {
       isEndFrame: true,
       previousStartFramePath: startPath,
       outputPath: endPath,
+      videoBackend,
     });
 
     return {
@@ -74,6 +83,7 @@ export async function generateFrame(params: {
       previousStartFramePath: undefined,
       previousEndFramePath: continuityRefPath,
       outputPath: startPath,
+      videoBackend,
     });
 
     // Generate end frame (with start frame as additional input for continuity)
@@ -84,6 +94,7 @@ export async function generateFrame(params: {
       isEndFrame: true,
       previousStartFramePath: startFramePath,
       outputPath: endPath,
+      videoBackend,
     });
 
     return {
@@ -109,6 +120,7 @@ async function generateSingleFrame(params: {
   previousStartFramePath?: string;
   previousEndFramePath?: string;
   outputPath: string;
+  videoBackend?: "veo" | "comfy";
 }): Promise<string> {
   const {
     shot,
@@ -118,6 +130,7 @@ async function generateSingleFrame(params: {
     previousStartFramePath,
     previousEndFramePath,
     outputPath,
+    videoBackend,
   } = params;
 
   // Build the prompt
@@ -199,7 +212,7 @@ async function generateSingleFrame(params: {
     }
 
     return await remixImage(remixPrompt, limitedReferencePaths, {
-      aspectRatio: "1:1",
+      aspectRatio: getFrameAspectRatio(videoBackend),
       outputPath,
     });
   } else {
@@ -208,7 +221,7 @@ async function generateSingleFrame(params: {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
     return await createImage(prompt, {
-      aspectRatio: "1:1",
+      aspectRatio: getFrameAspectRatio(videoBackend),
       outputPath,
     });
   }

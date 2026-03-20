@@ -1749,6 +1749,20 @@ async function handleSetVideoBackend(
     return;
   }
 
+  // Don't allow changing video backend if frames have been generated
+  // because frame dimensions are tied to the backend
+  const state = loadState(run.outputDir);
+  if (state) {
+    const hasFrames = Object.keys(state.generatedFrames).length > 0;
+    const hasVideos = Object.keys(state.generatedVideos).length > 0;
+    if (hasFrames || hasVideos) {
+      sendJson(res, 409, {
+        error: "Cannot change video backend after frames have been generated — frame dimensions are tied to the backend. Redo from frame_generation to switch.",
+      });
+      return;
+    }
+  }
+
   const body = (await readJsonBody(req)) as Record<string, unknown> | null;
   const videoBackend = body?.videoBackend;
   if (videoBackend !== "veo" && videoBackend !== "comfy") {

@@ -803,6 +803,7 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
           outputDir: options.outputDir,
           dryRun: options.dryRun,
           previousEndFramePath: params.previousEndFramePath,
+          videoBackend: options.videoBackend,
         });
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
