@@ -88,7 +88,7 @@ type GenerateVideoParams = {
 };
 
 /** Shared return type for all video backends. */
-type GenerateVideoResult = { shotNumber: number; path: string; duration: number };
+type GenerateVideoResult = { shotNumber: number; path: string; duration: number; promptSent?: string };
 
 /**
  * Generates video clips for shots.
@@ -144,22 +144,23 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
   const outputPath = join(outputDir, `shot_${String(shotNumber).padStart(3, "0")}.mp4`);
 
+	// Build video prompt from components
+	const promptParts: string[] = [];
+	if (actionPrompt) promptParts.push(actionPrompt);
+	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
+	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
+	const videoPrompt = promptParts.join(". ");
+
   // Dry-run mode: return placeholder
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: Shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
-    return { shotNumber, path: outputPath, duration: durationSeconds };
+	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
   }
 
-  // Build video prompt from components
-  const promptParts: string[] = [];
-  if (actionPrompt) promptParts.push(actionPrompt);
-  if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
-  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-  const videoPrompt = promptParts.join(". ");
-
   console.log(`[generateVideo] Generating shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
-  console.log(`[generateVideo] Prompt: ${videoPrompt.substring(0, 100)}...`);
+	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
 
   try {
     const client = getGoogleClient();
@@ -258,7 +259,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         });
 
         console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
-        return { shotNumber, path: outputPath, duration: 8 };
+	        return { shotNumber, path: outputPath, duration: 8, promptSent: videoPrompt };
       } catch (error: any) {
         lastError = error;
         // Don't retry if cancelled due to pipeline interruption
@@ -333,10 +334,19 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
 
   const outputPath = join(outputDir, `shot_${String(shotNumber).padStart(3, "0")}.mp4`);
 
+	// Build video prompt from components
+	const promptParts: string[] = [];
+	if (actionPrompt) promptParts.push(actionPrompt);
+	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
+	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
+	const videoPrompt = promptParts.join(". ");
+
   // Dry-run mode: return placeholder
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: Shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
-    return { shotNumber, path: outputPath, duration: durationSeconds };
+	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
   }
 
   // Check for a pending job from a previous run
@@ -351,7 +361,7 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
         await downloadAsset(status.outputAssetIds[0], outputPath);
         await pendingJobStore.delete(jobKey);
         console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
-        return { shotNumber, path: outputPath, duration: durationSeconds };
+	        return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
       }
       if (status && (status.status === "running" || status.status === "queued")) {
         // Job is still in progress — poll it to completion instead of re-submitting
@@ -366,7 +376,7 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
           await downloadAsset(result.outputAssetIds[0], outputPath);
           await pendingJobStore.delete(jobKey);
           console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
-          return { shotNumber, path: outputPath, duration: durationSeconds };
+	          return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
         }
         // If poll ended without success, fall through to re-submit
       }
@@ -376,16 +386,8 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
     }
   }
 
-  // Build video prompt from components
-  const promptParts: string[] = [];
-  if (actionPrompt) promptParts.push(actionPrompt);
-  if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
-  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-  const videoPrompt = promptParts.join(". ");
-
   console.log(`[generateVideo] Generating shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
-  console.log(`[generateVideo] Prompt: ${videoPrompt.substring(0, 100)}...`);
+	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
 
   try {
     const maxRetries = 5;
@@ -471,7 +473,7 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
         }
 
         console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
-        return { shotNumber, path: outputPath, duration: durationSeconds };
+	        return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
       } catch (error: any) {
         lastError = error;
         // Don't retry if cancelled due to pipeline interruption
@@ -524,26 +526,27 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
 
   const outputPath = join(outputDir, `shot_${String(shotNumber).padStart(3, "0")}.mp4`);
 
+	// Build video prompt from components
+	const promptParts: string[] = [];
+	if (actionPrompt) promptParts.push(actionPrompt);
+	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
+	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
+	const videoPrompt = promptParts.join(". ");
+
   // Dry-run mode: return placeholder
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: Shot ${shotNumber} (${shotType}, ${durationSeconds}s)`);
-    return { shotNumber, path: outputPath, duration: durationSeconds };
+	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
   }
 
   if (!startFramePath) {
     throw new Error("Grok backend requires startFramePath");
   }
 
-  // Build video prompt from components
-  const promptParts: string[] = [];
-  if (actionPrompt) promptParts.push(actionPrompt);
-  if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
-  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-  const videoPrompt = promptParts.join(". ");
-
   console.log(`[generateVideo] Generating shot ${shotNumber} via Grok (${shotType}, ${durationSeconds}s)`);
-  console.log(`[generateVideo] Prompt: ${videoPrompt.substring(0, 100)}...`);
+	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
 
   // Convert start frame to base64 data URI
   const imageBuffer = readFileSync(startFramePath);
@@ -563,7 +566,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
     });
 
     console.log(`[generateVideo] Shot ${shotNumber} saved to ${result.path}`);
-    return { shotNumber, path: result.path, duration: clampedDuration };
+	    return { shotNumber, path: result.path, duration: clampedDuration, promptSent: videoPrompt };
   } catch (error) {
     console.error(`[generateVideo] Error generating shot ${shotNumber} via Grok:`, error);
     throw error;
