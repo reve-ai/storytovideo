@@ -50,6 +50,14 @@ export async function generateFrame(params: {
     console.log(`[generateFrame] Shot ${shot.shotNumber}: copying previous end frame for continuity`);
     fs.copyFileSync(previousEndFramePath, startPath);
 
+    // Skip end frame for Grok backend (only uses start frames)
+    if (videoBackend === "grok") {
+      return {
+        shotNumber: shot.shotNumber,
+        startPath,
+      };
+    }
+
     // Generate only the end frame
     const endFramePath = await generateSingleFrame({
       shot,
@@ -85,6 +93,14 @@ export async function generateFrame(params: {
       outputPath: startPath,
       videoBackend,
     });
+
+    // Skip end frame for Grok backend (only uses start frames)
+    if (videoBackend === "grok") {
+      return {
+        shotNumber: shot.shotNumber,
+        startPath: startFramePath,
+      };
+    }
 
     // Generate end frame (with start frame as additional input for continuity)
     const endFramePath = await generateSingleFrame({
