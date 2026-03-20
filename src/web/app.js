@@ -199,11 +199,26 @@ async function requestJson(url, options = {}) {
 }
 
 function populateInstructionStageSelect() {
-  for (const stage of STAGE_ORDER) {
+  const currentValue = elements.instructionStage.value;
+  elements.instructionStage.replaceChildren();
+
+  // Add empty "all stages" option
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "All stages";
+  elements.instructionStage.append(emptyOption);
+
+  const stages = getStagesForBackend(state.activeRun);
+  for (const stage of stages) {
     const option = document.createElement("option");
     option.value = stage;
     option.textContent = formatStageLabel(stage);
     elements.instructionStage.append(option);
+  }
+
+  // Restore previous selection if still valid
+  if (stages.includes(currentValue)) {
+    elements.instructionStage.value = currentValue;
   }
 }
 
@@ -231,13 +246,23 @@ function renderRunSelect() {
   }
 }
 
+function getStagesForBackend(run) {
+  const isGrok = run?.options?.videoBackend === "grok";
+  return STAGE_ORDER.filter((stage) => {
+    if (isGrok && (stage === "frame_generation" || stage === "video_generation")) return false;
+    if (!isGrok && stage === "shot_generation") return false;
+    return true;
+  });
+}
+
 function renderStageProgress() {
   elements.stageList.replaceChildren();
   const run = state.activeRun;
   const importMode = isImportRun(run);
   const importProtectedStages = ["analysis", "shot_planning"];
+  const stages = getStagesForBackend(run);
 
-  for (const stage of STAGE_ORDER) {
+  for (const stage of stages) {
     const item = document.createElement("li");
     const stageLabel = formatStageLabel(stage);
     item.textContent = stageLabel;
@@ -390,6 +415,7 @@ function renderRunDetails() {
     elements.retryButton.disabled = true;
     elements.deleteRunButton.disabled = true;
     setReviewLockMessage("Select a run to inspect review control lock state.");
+    populateInstructionStageSelect();
     renderStageProgress();
     return;
   }
@@ -461,6 +487,7 @@ function renderRunDetails() {
   // Delete is available when the run is not actively executing
   elements.deleteRunButton.disabled = isRunActivelyExecuting(run);
 
+  populateInstructionStageSelect();
   renderStageProgress();
 }
 
@@ -1739,6 +1766,12 @@ function bindEvents() {
         method: "POST",
         body: JSON.stringify({ videoBackend: elements.runVideoBackend.value }),
       });
+      // Update local state and re-render stages for the new backend
+      if (state.activeRun?.options) {
+        state.activeRun.options.videoBackend = elements.runVideoBackend.value;
+      }
+      populateInstructionStageSelect();
+      renderStageProgress();
     } catch (error) {
       setGlobalError(`Failed to update video backend: ${error.message}`);
       elements.runVideoBackend.value = previous;
