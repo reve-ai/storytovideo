@@ -137,6 +137,7 @@ interface CreateRunRequest {
     verbose?: boolean;
     reviewMode?: boolean;
     videoBackend?: "veo" | "comfy" | "grok";
+    aspectRatio?: "16:9" | "9:16" | "1:1";
   };
 }
 
@@ -388,6 +389,11 @@ function parseCreateRunRequest(body: unknown): CreateRunRequest {
     throw new Error('options.videoBackend must be "veo", "comfy", or "grok" when provided');
   }
 
+  const aspectRatio = options.aspectRatio;
+  if (aspectRatio !== undefined && aspectRatio !== "16:9" && aspectRatio !== "9:16" && aspectRatio !== "1:1") {
+    throw new Error('options.aspectRatio must be "16:9", "9:16", or "1:1" when provided');
+  }
+
   return {
     storyText,
     outputDir: outputDirValue,
@@ -400,6 +406,7 @@ function parseCreateRunRequest(body: unknown): CreateRunRequest {
       verbose: parseBoolean(options.verbose, false),
       reviewMode: parseBoolean(options.reviewMode, true),
       videoBackend,
+      aspectRatio,
     },
   };
 }
@@ -481,6 +488,7 @@ function buildPipelineOptions(request: CreateRunRequest, runId: string): Pipelin
     verbose: options.verbose ?? false,
     reviewMode: options.reviewMode ?? true,
     videoBackend: options.videoBackend,
+    aspectRatio: options.aspectRatio ?? (options.videoBackend === "comfy" ? "1:1" : "16:9"),
     onToolError: (stage: string, tool: string, error: string) => {
       emitLogEvent(runId, `[${stage}] ${tool} failed: ${error}`, "error");
     },

@@ -742,6 +742,7 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
           dryRun: options.dryRun,
           outputDir: options.outputDir,
           videoBackend: options.videoBackend,
+          aspectRatio: options.aspectRatio,
         });
         state.generatedAssets[result.key] = result.path;
         // Update asset library
@@ -893,6 +894,7 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
           dryRun: options.dryRun,
           previousEndFramePath: params.previousEndFramePath,
           videoBackend: options.videoBackend,
+          aspectRatio: options.aspectRatio,
         });
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
@@ -1179,6 +1181,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
           dryRun: options.dryRun,
           previousEndFramePath: params.previousEndFramePath,
           videoBackend: options.videoBackend,
+          aspectRatio: options.aspectRatio,
         });
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,

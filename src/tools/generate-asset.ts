@@ -17,6 +17,7 @@ export async function generateAsset(params: {
   dryRun?: boolean;
   referenceImagePath?: string;
   videoBackend?: "veo" | "comfy" | "grok";
+  aspectRatio?: string;
 }): Promise<{ key: string; path: string }> {
   const {
     characterName,
@@ -100,11 +101,13 @@ export async function generateAsset(params: {
 
       let resultPath: string;
       const useGrok = params.videoBackend === "grok";
+      // Characters always use 1:1 (portrait references); locations use the run's aspect ratio
+      const assetAspectRatio = assetType === "character" ? "1:1" : (params.aspectRatio ?? "16:9");
 
       if (isEditing) {
         if (useGrok) {
           // Image edit via Grok API (uses remix with single reference image)
-          resultPath = await remixImageGrok(prompt, [referenceImagePath!], { aspectRatio: "1:1", outputPath: filePath });
+          resultPath = await remixImageGrok(prompt, [referenceImagePath!], { aspectRatio: assetAspectRatio, outputPath: filePath });
         } else {
           // Image edit via Reve API
           resultPath = await editImage(referenceImagePath!, prompt, { outputPath: filePath });
@@ -112,10 +115,10 @@ export async function generateAsset(params: {
       } else {
         if (useGrok) {
           // Text to image via Grok API
-          resultPath = await createImageGrok(prompt, { aspectRatio: "1:1", outputPath: filePath });
+          resultPath = await createImageGrok(prompt, { aspectRatio: assetAspectRatio, outputPath: filePath });
         } else {
           // Text to image via Reve API
-          resultPath = await createImage(prompt, { aspectRatio: "1:1", outputPath: filePath });
+          resultPath = await createImage(prompt, { aspectRatio: assetAspectRatio, outputPath: filePath });
         }
       }
 

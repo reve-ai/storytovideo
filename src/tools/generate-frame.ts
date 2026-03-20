@@ -5,13 +5,6 @@ import type { Shot, AssetLibrary, FrameReference } from "../types";
 import * as fs from "fs";
 import * as path from "path";
 
-/**
- * Returns the aspect ratio frames should be generated at for a given video backend.
- */
-export function getFrameAspectRatio(videoBackend?: "veo" | "comfy" | "grok"): string {
-  return (videoBackend === "veo" || videoBackend === "grok") ? "16:9" : "1:1";
-}
-
 type GeneratedSingleFrameResult = {
   path: string;
   referencesUsed: FrameReference[];
@@ -30,6 +23,7 @@ export async function generateFrame(params: {
   dryRun?: boolean;
   previousEndFramePath?: string;
   videoBackend?: "veo" | "comfy" | "grok";
+  aspectRatio?: string;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
@@ -37,7 +31,7 @@ export async function generateFrame(params: {
   startReferences?: FrameReference[];
   endReferences?: FrameReference[];
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend, aspectRatio } = params;
 
   // Create frames directory if it doesn't exist
   const framesDir = path.join(outputDir, "frames");
@@ -87,6 +81,7 @@ export async function generateFrame(params: {
       previousStartFramePath: startPath,
       outputPath: endPath,
       videoBackend,
+      aspectRatio,
     });
 
     return {
@@ -114,6 +109,7 @@ export async function generateFrame(params: {
       previousEndFramePath: continuityRefPath,
       outputPath: startPath,
       videoBackend,
+      aspectRatio,
     });
 
     // Skip end frame for Grok backend (only uses start frames)
@@ -134,6 +130,7 @@ export async function generateFrame(params: {
       previousStartFramePath: startFrameResult.path,
       outputPath: endPath,
       videoBackend,
+      aspectRatio,
     });
 
     return {
@@ -162,6 +159,7 @@ async function generateSingleFrame(params: {
   previousEndFramePath?: string;
   outputPath: string;
   videoBackend?: "veo" | "comfy" | "grok";
+  aspectRatio?: string;
 }): Promise<GeneratedSingleFrameResult> {
   const {
     shot,
@@ -172,6 +170,7 @@ async function generateSingleFrame(params: {
     previousEndFramePath,
     outputPath,
     videoBackend,
+    aspectRatio,
   } = params;
 
   // Build the prompt
@@ -261,7 +260,7 @@ async function generateSingleFrame(params: {
     if (videoBackend === "grok") {
       return {
         path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
-          aspectRatio: getFrameAspectRatio(videoBackend),
+          aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed,
@@ -269,7 +268,7 @@ async function generateSingleFrame(params: {
     } else {
       return {
         path: await remixImage(remixPrompt, limitedReferencePaths, {
-          aspectRatio: getFrameAspectRatio(videoBackend),
+          aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed,
@@ -283,7 +282,7 @@ async function generateSingleFrame(params: {
     if (videoBackend === "grok") {
       return {
         path: await createImageGrok(prompt, {
-          aspectRatio: getFrameAspectRatio(videoBackend),
+          aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed: [],
@@ -291,7 +290,7 @@ async function generateSingleFrame(params: {
     } else {
       return {
         path: await createImage(prompt, {
-          aspectRatio: getFrameAspectRatio(videoBackend),
+          aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed: [],

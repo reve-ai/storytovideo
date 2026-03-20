@@ -463,6 +463,7 @@ function renderRunDetails() {
     elements.runOutput.textContent = "-";
     elements.runVideoBackend.value = "veo";
     elements.runVideoBackend.disabled = true;
+    document.getElementById("run-aspect-ratio").textContent = "-";
     elements.reviewAwaiting.textContent = "no";
     elements.reviewContinueState.textContent = "no";
     elements.reviewPendingCount.textContent = "0";
@@ -490,6 +491,7 @@ function renderRunDetails() {
   elements.runOutput.textContent = run.outputDir;
   elements.runVideoBackend.value = run.options?.videoBackend || "veo";
   elements.runVideoBackend.disabled = false;
+  document.getElementById("run-aspect-ratio").textContent = run.options?.aspectRatio || "16:9";
   setGlobalError(run.error ? `Run error: ${run.error}` : "");
 
   const awaiting = Boolean(run.review?.awaitingUserReview);
@@ -1325,6 +1327,7 @@ async function handleCreateRunSubmit(event) {
   }
 
   const videoBackend = document.getElementById("video-backend").value;
+  const aspectRatio = document.getElementById("aspect-ratio").value;
 
   elements.createRunButton.disabled = true;
   try {
@@ -1335,6 +1338,7 @@ async function handleCreateRunSubmit(event) {
         options: {
           reviewMode: false,
           videoBackend,
+          aspectRatio,
         },
       }),
     });
@@ -1768,6 +1772,16 @@ function bindEvents() {
 
   elements.importVideoForm.addEventListener("submit", (event) => {
     void handleImportVideoSubmit(event);
+  });
+
+  // Update default aspect ratio when video backend changes in the create form
+  document.getElementById("video-backend").addEventListener("change", (e) => {
+    const ar = document.getElementById("aspect-ratio");
+    if (e.target.value === "comfy") {
+      ar.value = "1:1";
+    } else {
+      ar.value = "16:9";
+    }
   });
 
   // Tab switching between New Story and Import Video

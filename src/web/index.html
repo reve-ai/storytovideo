@@ -34,6 +34,7 @@
           <div><dt>Progress</dt><dd id="run-progress">0 / 6 (0%)</dd></div>
           <div><dt>Output</dt><dd id="run-output">-</dd></div>
           <div><dt>Video Backend</dt><dd><select id="run-video-backend"><option value="veo">Veo 3.1</option><option value="comfy">ComfyUI</option><option value="grok">Grok (xAI)</option></select></dd></div>
+          <div><dt>Aspect Ratio</dt><dd id="run-aspect-ratio">-</dd></div>
           <div><dt>SSE</dt><dd id="connection-status">disconnected</dd></div>
         </dl>
         <p id="run-error" class="error hidden"></p>
@@ -119,6 +120,12 @@
                 <option value="veo" selected>Veo 3.1 (Google)</option>
                 <option value="comfy">ComfyUI</option>
                 <option value="grok">Grok (xAI)</option>
+              </select>
+              <label for="aspect-ratio">Aspect Ratio</label>
+              <select id="aspect-ratio" name="aspectRatio">
+                <option value="16:9" selected>16:9 (Landscape)</option>
+                <option value="9:16">9:16 (Portrait)</option>
+                <option value="1:1">1:1 (Square)</option>
               </select>
               <button id="create-run-button" type="submit">Start run</button>
             </form>

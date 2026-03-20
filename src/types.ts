@@ -90,6 +90,7 @@ export interface PipelineOptions {
   verbose: boolean;
   reviewMode?: boolean;
   videoBackend?: "veo" | "comfy" | "grok";
+  aspectRatio?: "16:9" | "9:16" | "1:1";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   onProgress?: (message: string) => void;
   onNameRun?: (name: string) => void;
