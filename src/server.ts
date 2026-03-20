@@ -488,11 +488,30 @@ function buildPipelineOptions(request: CreateRunRequest, runId: string): Pipelin
   };
 }
 
-function toProgress(completedStages: string[]): Progress {
+function getRelevantStages(
+  videoBackend?: PipelineOptions["videoBackend"],
+): (typeof STAGE_ORDER)[number][] {
+  const isGrok = videoBackend === "grok";
+  return STAGE_ORDER.filter((stage) => {
+    if (isGrok && (stage === "frame_generation" || stage === "video_generation")) {
+      return false;
+    }
+    if (!isGrok && stage === "shot_generation") {
+      return false;
+    }
+    return true;
+  });
+}
+
+function toProgress(
+  completedStages: string[],
+  videoBackend?: PipelineOptions["videoBackend"],
+): Progress {
+  const relevantStages = getRelevantStages(videoBackend);
   const completed = completedStages.filter((stage) =>
-    STAGE_ORDER.includes(stage as (typeof STAGE_ORDER)[number]),
+    relevantStages.includes(stage as (typeof STAGE_ORDER)[number]),
   ).length;
-  const total = STAGE_ORDER.length;
+  const total = relevantStages.length;
   const percent = Math.round((completed / total) * 100);
 
   return { completed, total, percent };
@@ -512,7 +531,7 @@ function toRunResponse(record: RunRecord): RunResponse {
     outputDir: record.outputDir,
     currentStage,
     completedStages,
-    progress: toProgress(completedStages),
+    progress: toProgress(completedStages, record.options?.videoBackend),
     createdAt: record.createdAt,
     startedAt: record.startedAt,
     completedAt: record.completedAt,
@@ -1015,7 +1034,8 @@ async function handleSubmitInstruction(
   // This matches the UI's "Add guidance for the next stage..." placeholder
   let stage = parsedRequest.stage;
   if (!stage) {
-    stage = STAGE_ORDER.find(s => !state.completedStages.includes(s)) ?? state.currentStage;
+    const relevantStages = getRelevantStages(run.options?.videoBackend);
+    stage = relevantStages.find((s) => !state.completedStages.includes(s)) ?? state.currentStage;
   }
 
   if (!stage) {
@@ -1093,7 +1113,8 @@ async function handleRetryRun(
       sendJson(res, 409, { error: "No saved state available" });
       return;
     }
-    const allComplete = STAGE_ORDER.every(s => state.completedStages.includes(s));
+    const relevantStages = getRelevantStages(run.options?.videoBackend);
+    const allComplete = relevantStages.every((s) => state.completedStages.includes(s));
     if (allComplete) {
       sendJson(res, 409, { error: "Run is fully complete — nothing to resume" });
       return;
@@ -1174,8 +1195,11 @@ async function handleRedoRun(
   // Import runs cannot redo analysis or shot_planning — the storyText is placeholder
   // and these stages were bootstrapped from the imported video, not from text analysis.
   if (run.mode === "import" && (stage === "analysis" || stage === "shot_planning")) {
+    const validStages = run.options?.videoBackend === "grok"
+      ? "asset_generation, shot_generation, or assembly"
+      : "asset_generation, frame_generation, video_generation, or assembly";
     sendJson(res, 400, {
-      error: `Cannot redo "${stage}" on an imported run. Import runs derive analysis and shot planning from the source video. You can redo from asset_generation, frame_generation, video_generation, or assembly.`,
+      error: `Cannot redo "${stage}" on an imported run. Import runs derive analysis and shot planning from the source video. You can redo from ${validStages}.`,
     });
     return;
   }
@@ -1803,7 +1827,7 @@ async function handleSetVideoBackend(
     const hasVideos = Object.keys(state.generatedVideos).length > 0;
     if (hasFrames || hasVideos) {
       sendJson(res, 409, {
-        error: "Cannot change video backend after frames have been generated — frame dimensions are tied to the backend. Redo from frame_generation to switch.",
+        error: "Cannot change video backend after frames have been generated — frame dimensions are tied to the backend. Redo from the frame/shot generation stage to switch.",
       });
       return;
     }
