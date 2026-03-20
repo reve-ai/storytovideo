@@ -1,7 +1,9 @@
 import { generateText, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
-import { writeFileSync, readdirSync, unlinkSync } from "fs";
+import { writeFileSync, readdirSync, unlinkSync, mkdirSync } from "fs";
+import { execFile as execFileCb } from "child_process";
+import { promisify } from "util";
 import { join } from "path";
 
 import type { PipelineOptions, PipelineState, Shot } from "./types";
@@ -1155,6 +1157,29 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
           },
         });
         state.generatedVideos[result.shotNumber] = result.path;
+
+        // Extract last frame from generated video as end frame
+        if (!options.dryRun && result.path) {
+          const framesDir = join(options.outputDir, "frames");
+          const endFramePath = join(framesDir, `shot_${result.shotNumber}_end.png`);
+          try {
+            mkdirSync(framesDir, { recursive: true });
+            const execFileAsync = promisify(execFileCb);
+            await execFileAsync("ffmpeg", [
+              "-y", "-sseof", "-0.1", "-i", result.path,
+              "-frames:v", "1", "-update", "1",
+              endFramePath,
+            ]);
+            if (!state.generatedFrames[result.shotNumber]) {
+              state.generatedFrames[result.shotNumber] = { start: undefined };
+            }
+            state.generatedFrames[result.shotNumber].end = endFramePath;
+            console.log(`[shot_generation] Extracted end frame for shot ${result.shotNumber}: ${endFramePath}`);
+          } catch (err) {
+            console.warn(`[shot_generation] Failed to extract end frame for shot ${result.shotNumber}:`, err);
+          }
+        }
+
         await saveState({ state });
         return result;
       }, options.onToolError, options.abortSignal),
