@@ -115,13 +115,10 @@ export async function remixImageGrok(
     aspect_ratio: aspectRatio,
   };
 
-  // Single image uses "image", multiple uses "images"
-  if (images.length === 1) {
-    body.image = images[0];
-  } else {
-    body.images = images;
-  }
+  // Always use "images" array — the "image" (singular) field ignores aspect_ratio
+  body.images = images;
 
+  console.log(`[grok-image] Editing with ${images.length} reference(s), aspect_ratio=${aspectRatio}`);
   const data = await requestWithRetry(`${API_BASE_URL}/images/edits`, body);
 
   const imageBuffer = Buffer.from(data.data[0].b64_json, "base64");
