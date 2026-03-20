@@ -904,9 +904,11 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += buildDirectiveControls(`shot:${shot.shotNumber}:video`, isRunActivelyExecuting(state.activeRun));
                 html += `</div>`;
               } else if (showVideoSpinners) {
+                const pct = state.videoProgress?.[shot.shotNumber];
+                const progressText = pct !== undefined ? `Generating… ${pct}%` : "Generating…";
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Video</p>`;
-                html += `<div class="spinner-placeholder spinner-video"><div class="spinner-circle"></div><div class="spinner-label" data-video-progress-shot="${shot.shotNumber}">Generating…</div></div>`;
+                html += `<div class="spinner-placeholder spinner-video"><div class="spinner-circle"></div><div class="spinner-label" data-video-progress-shot="${shot.shotNumber}">${progressText}</div></div>`;
                 html += `</div>`;
               }
               html += `</div>`;
@@ -1048,11 +1050,14 @@ function handleRunEvent(type, messageEvent, source) {
             timestamp,
           }),
         );
-        // Update video generation progress spinners in-place
+        // Track video generation progress per shot
         const progressMatch = message.match(/\[video_generation\] Shot (\d+): (\d+)% complete/);
         if (progressMatch) {
-          const shotNum = progressMatch[1];
-          const pct = progressMatch[2];
+          const shotNum = Number(progressMatch[1]);
+          const pct = Number(progressMatch[2]);
+          state.videoProgress = state.videoProgress || {};
+          state.videoProgress[shotNum] = pct;
+          // Update spinner in-place without waiting for re-render
           const label = document.querySelector(`[data-video-progress-shot="${shotNum}"]`);
           if (label) label.textContent = `Generating… ${pct}%`;
         }
