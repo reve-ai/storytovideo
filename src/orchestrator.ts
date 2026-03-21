@@ -16,6 +16,7 @@ import { generateVideo, generateVideoTool } from "./tools/generate-video";
 import { verifyOutput, verifyOutputTool } from "./tools/verify-output";
 import { assembleVideo, assembleVideoTool } from "./tools/assemble-video";
 import { saveState, loadState, saveStateTool } from "./tools/state";
+import { analyzeClipPacing } from "./tools/analyze-video-pacing";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1026,11 +1027,51 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
             },
           });
+          // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
+          if (options.videoBackend === "grok" && result.path && !options.dryRun) {
+            try {
+              const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration);
+              console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
+
+              const savings = result.duration - analysis.recommendedDuration;
+              if (savings >= 1.5 && analysis.confidence !== "low") {
+                console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
+
+                const regenResult = await generateVideo({
+                  ...params,
+                  actionPrompt,
+                  durationSeconds: Math.round(analysis.recommendedDuration),
+                  dryRun: options.dryRun,
+                  outputDir: join(options.outputDir, "videos"),
+                  abortSignal: options.abortSignal,
+                  videoBackend: options.videoBackend,
+                  onProgress: options.onProgress,
+                  characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+                  pendingJobStore: {
+                    get: (key) => state.pendingJobs[key],
+                    set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
+                    delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
+                  },
+                });
+
+                state.generatedVideos[regenResult.shotNumber] = regenResult.path;
+                if (regenResult.promptSent) {
+                  if (!state.videoPromptsSent) state.videoPromptsSent = {};
+                  state.videoPromptsSent[regenResult.shotNumber] = regenResult.promptSent;
+                }
+                await saveState({ state });
+                return { ...regenResult, pacingAdjusted: true, originalDuration: result.duration, newDuration: analysis.recommendedDuration };
+              }
+            } catch (err) {
+              console.warn(`[pacing] Failed to analyze shot ${result.shotNumber}, keeping original:`, err);
+            }
+          }
+
           state.generatedVideos[result.shotNumber] = result.path;
-	          if (result.promptSent) {
-	            if (!state.videoPromptsSent) state.videoPromptsSent = {};
-	            state.videoPromptsSent[result.shotNumber] = result.promptSent;
-	          }
+          if (result.promptSent) {
+            if (!state.videoPromptsSent) state.videoPromptsSent = {};
+            state.videoPromptsSent[result.shotNumber] = result.promptSent;
+          }
           await saveState({ state });
           return result;
         } catch (error: any) {
@@ -1221,37 +1262,72 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
             delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
           },
         });
-        state.generatedVideos[result.shotNumber] = result.path;
-	        if (result.promptSent) {
-	          if (!state.videoPromptsSent) state.videoPromptsSent = {};
-	          state.videoPromptsSent[result.shotNumber] = result.promptSent;
-	        }
+        // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
+        let finalResult = result;
+        if (options.videoBackend === "grok" && result.path && !options.dryRun) {
+          try {
+            const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration);
+            console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
+
+            const savings = result.duration - analysis.recommendedDuration;
+            if (savings >= 1.5 && analysis.confidence !== "low") {
+              console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
+
+              const regenResult = await generateVideo({
+                ...params,
+                actionPrompt,
+                durationSeconds: Math.round(analysis.recommendedDuration),
+                dryRun: options.dryRun,
+                outputDir: join(options.outputDir, "videos"),
+                abortSignal: options.abortSignal,
+                videoBackend: options.videoBackend,
+                onProgress: options.onProgress,
+                characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+                pendingJobStore: {
+                  get: (key) => state.pendingJobs[key],
+                  set: async (key, value) => { state.pendingJobs[key] = value; await saveState({ state }); },
+                  delete: async (key) => { delete state.pendingJobs[key]; await saveState({ state }); },
+                },
+              });
+
+              finalResult = { ...regenResult, pacingAdjusted: true, originalDuration: result.duration, newDuration: analysis.recommendedDuration } as any;
+            }
+          } catch (err) {
+            console.warn(`[pacing] Failed to analyze shot ${result.shotNumber}, keeping original:`, err);
+          }
+        }
+
+        state.generatedVideos[finalResult.shotNumber] = finalResult.path;
+        if (finalResult.promptSent) {
+          if (!state.videoPromptsSent) state.videoPromptsSent = {};
+          state.videoPromptsSent[finalResult.shotNumber] = finalResult.promptSent;
+        }
 
         // Extract last frame from generated video as end frame
-        if (!options.dryRun && result.path) {
+        if (!options.dryRun && finalResult.path) {
           const framesDir = join(options.outputDir, "frames");
-          const endFramePath = join(framesDir, `shot_${result.shotNumber}_end.png`);
+          const endFramePath = join(framesDir, `shot_${finalResult.shotNumber}_end.png`);
           try {
             mkdirSync(framesDir, { recursive: true });
             const execFileAsync = promisify(execFileCb);
             await execFileAsync("ffmpeg", [
-              "-y", "-sseof", "-0.1", "-i", result.path,
+              "-y", "-sseof", "-0.1", "-i", finalResult.path,
               "-frames:v", "1", "-update", "1",
               endFramePath,
             ]);
-            if (!state.generatedFrames[result.shotNumber]) {
-              state.generatedFrames[result.shotNumber] = { start: undefined };
+            if (!state.generatedFrames[finalResult.shotNumber]) {
+              state.generatedFrames[finalResult.shotNumber] = { start: undefined };
             }
-            state.generatedFrames[result.shotNumber].end = endFramePath;
-            state.generatedFrames[result.shotNumber].endReferences = undefined;
-            console.log(`[shot_generation] Extracted end frame for shot ${result.shotNumber}: ${endFramePath}`);
+            state.generatedFrames[finalResult.shotNumber].end = endFramePath;
+            state.generatedFrames[finalResult.shotNumber].endReferences = undefined;
+            console.log(`[shot_generation] Extracted end frame for shot ${finalResult.shotNumber}: ${endFramePath}`);
           } catch (err) {
-            console.warn(`[shot_generation] Failed to extract end frame for shot ${result.shotNumber}:`, err);
+            console.warn(`[shot_generation] Failed to extract end frame for shot ${finalResult.shotNumber}:`, err);
           }
         }
 
         await saveState({ state });
-        return result;
+        return finalResult;
       }, options.onToolError, options.abortSignal),
     },
     saveState: {
