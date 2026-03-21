@@ -1034,7 +1034,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
               const savings = result.duration - analysis.recommendedDuration;
-              if (savings >= 1.5 && analysis.confidence !== "low") {
+              if (savings >= 1 && analysis.confidence !== "low") {
                 console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
 
                 const regenResult = await generateVideo({
@@ -1270,7 +1270,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
             console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
             const savings = result.duration - analysis.recommendedDuration;
-            if (savings >= 1.5 && analysis.confidence !== "low") {
+            if (savings >= 1 && analysis.confidence !== "low") {
               console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
 
               const regenResult = await generateVideo({

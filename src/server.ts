@@ -32,6 +32,8 @@ import {
   type RunEventType,
 } from "./server-events";
 import { loadState, saveState } from "./tools/state";
+import { analyzeClipPacing } from "./tools/analyze-video-pacing";
+import { generateVideo } from "./tools/generate-video";
 import { setInterrupted } from "./signals";
 import type { GeneratedFrameSet, ItemDirective, PipelineOptions, PipelineState } from "./types";
 import { generateText } from "ai";
@@ -2318,6 +2320,131 @@ async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Pr
   sendJson(res, 201, toRunResponse(record));
 }
 
+async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, runId: string): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: "Run not found" });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 404, { error: "No state found" });
+    return;
+  }
+
+  const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
+  const results = [];
+
+  for (const shot of [...allShots].sort((a, b) => a.shotNumber - b.shotNumber)) {
+    const videoPath = state.generatedVideos[shot.shotNumber];
+    if (!videoPath || !existsSync(videoPath)) continue;
+
+    try {
+      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, shot.durationSeconds);
+      results.push(analysis);
+    } catch (err) {
+      console.error(`[pacing] Failed to analyze shot ${shot.shotNumber}:`, err);
+    }
+  }
+
+  // Store in state
+  (state as any).pacingAnalysis = results;
+  await saveState({ state });
+
+  sendJson(res, 200, { results });
+}
+
+async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, runId: string): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: "Run not found" });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state || !(state as any).pacingAnalysis) {
+    sendJson(res, 400, { error: "No pacing analysis found. Run analyze-pacing first." });
+    return;
+  }
+
+  const pacingAnalysis = (state as any).pacingAnalysis as Array<{
+    shotNumber: number;
+    currentDuration: number;
+    recommendedDuration: number;
+    confidence: string;
+  }>;
+
+  const shotsToRegen = pacingAnalysis.filter(a => {
+    const savings = a.currentDuration - a.recommendedDuration;
+    return savings >= 1 && a.confidence !== "low";
+  });
+
+  if (shotsToRegen.length === 0) {
+    sendJson(res, 200, { message: "No shots need regeneration", regenerated: [] });
+    return;
+  }
+
+  // Return immediately, process in background
+  sendJson(res, 200, {
+    message: `Regenerating ${shotsToRegen.length} shots`,
+    shots: shotsToRegen.map(s => ({ shotNumber: s.shotNumber, from: s.currentDuration, to: s.recommendedDuration })),
+  });
+
+  // Background regeneration
+  const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
+  for (const analysis of shotsToRegen) {
+    const shot = allShots.find(s => s.shotNumber === analysis.shotNumber);
+    if (!shot) continue;
+
+    console.log(`[pacing] Regenerating shot ${analysis.shotNumber}: ${analysis.currentDuration}s → ${analysis.recommendedDuration}s`);
+
+    try {
+      const result = await generateVideo({
+        shotNumber: shot.shotNumber,
+        shotType: shot.shotType,
+        actionPrompt: shot.actionPrompt,
+        dialogue: shot.dialogue,
+        soundEffects: shot.soundEffects,
+        cameraDirection: shot.cameraDirection,
+        durationSeconds: Math.round(analysis.recommendedDuration),
+        startFramePath: state.generatedFrames[shot.shotNumber]?.start ?? "",
+        endFramePath: state.generatedFrames[shot.shotNumber]?.end ?? "",
+        outputDir: join(run.outputDir, "videos"),
+        videoBackend: run.options?.videoBackend || "grok",
+        characterNames: state.storyAnalysis?.characters?.map(c => c.name) ?? [],
+      });
+
+      state.generatedVideos[result.shotNumber] = result.path;
+      await saveState({ state });
+      console.log(`[pacing] Shot ${analysis.shotNumber} regenerated: ${result.path}`);
+    } catch (err) {
+      console.error(`[pacing] Failed to regenerate shot ${analysis.shotNumber}:`, err);
+    }
+  }
+
+  // Re-run assembly
+  console.log("[pacing] All regenerations complete, re-assembling...");
+  state.completedStages = state.completedStages.filter(s => s !== "assembly");
+  state.currentStage = "assembly";
+  await saveState({ state });
+
+  // Re-run the pipeline from assembly stage
+  runStore.patch(runId, {
+    status: "queued",
+    completedAt: undefined,
+    error: undefined,
+    currentStage: "assembly",
+    completedStages: state.completedStages,
+  }) ?? run;
+
+  emitRunStatusEvent(runId, "queued");
+  startRunStateMonitor(runId);
+  setImmediate(() => {
+    void runInBackground(runId, true);
+  });
+}
+
 async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCorsHeaders(res);
 
@@ -2435,6 +2562,18 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "redo-item") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleRedoItem(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "analyze-pacing") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleAnalyzePacing(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "apply-pacing") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleApplyPacing(req, res, runId);
       return;
     }
 

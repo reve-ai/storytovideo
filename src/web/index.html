@@ -76,6 +76,7 @@
 
         <button id="continue-button" type="button">Approve & Continue</button>
         <button id="retry-button" type="button" disabled>Retry</button>
+        <button id="analyze-pacing-btn" type="button" style="display:none">Analyze Pacing</button>
         <button id="delete-run-button" type="button" disabled>Delete Run</button>
       </section>
     </section>
@@ -84,6 +85,12 @@
       <section class="card" id="stage-output-section" style="display:none">
         <h2>Stage Output</h2>
         <div id="stage-output"></div>
+      </section>
+
+      <section class="card" id="pacing-section" style="display:none">
+        <h2>Pacing Analysis</h2>
+        <div id="pacing-results"></div>
+        <button id="apply-pacing-btn" class="btn btn-primary" style="display:none">Apply Pacing Changes</button>
       </section>
 
       <section class="card">

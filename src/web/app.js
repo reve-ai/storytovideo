@@ -549,6 +549,15 @@ function renderRunDetails() {
   // Delete is available when the run is not actively executing
   elements.deleteRunButton.disabled = isRunActivelyExecuting(run);
 
+  // Show/hide Analyze Pacing button based on whether we have videos
+  const analyzePacingBtn = document.getElementById("analyze-pacing-btn");
+  if (analyzePacingBtn) {
+    const hasVideos = run.completedStages?.includes("video_generation") ||
+                      run.completedStages?.includes("shot_generation") ||
+                      run.completedStages?.includes("assembly");
+    analyzePacingBtn.style.display = hasVideos ? "" : "none";
+  }
+
   populateInstructionStageSelect();
   renderStageProgress();
 }
@@ -2119,6 +2128,106 @@ function bindEvents() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Pacing Analysis UI
+// ---------------------------------------------------------------------------
+
+function showPacingResults(results) {
+  const section = document.getElementById("pacing-section");
+  const container = document.getElementById("pacing-results");
+  const applyBtn = document.getElementById("apply-pacing-btn");
+  if (!section || !container) return;
+
+  if (!results || results.length === 0) {
+    container.innerHTML = "<p class='muted'>No pacing data available.</p>";
+    section.style.display = "";
+    if (applyBtn) applyBtn.style.display = "none";
+    return;
+  }
+
+  let html = `<table class="pacing-table">
+    <thead><tr>
+      <th>Shot</th><th>Current</th><th>Recommended</th><th>Savings</th><th>Confidence</th><th>Reason</th>
+    </tr></thead><tbody>`;
+
+  let hasActionable = false;
+  for (const r of results) {
+    const savings = (r.currentDuration - r.recommendedDuration).toFixed(1);
+    const actionable = parseFloat(savings) >= 1 && r.confidence !== "low";
+    if (actionable) hasActionable = true;
+    const rowClass = actionable ? "pacing-row-actionable" : "";
+    html += `<tr class="${rowClass}">
+      <td>${r.shotNumber}</td>
+      <td>${r.currentDuration}s</td>
+      <td>${r.recommendedDuration}s</td>
+      <td>${savings}s</td>
+      <td><span class="pacing-confidence pacing-confidence-${r.confidence}">${r.confidence}</span></td>
+      <td>${escapeHtml(r.reason || "")}</td>
+    </tr>`;
+  }
+  html += "</tbody></table>";
+
+  container.innerHTML = html;
+  section.style.display = "";
+
+  if (applyBtn) {
+    applyBtn.style.display = hasActionable ? "" : "none";
+  }
+}
+
+async function handleAnalyzePacingClick() {
+  if (!state.activeRunId) return;
+  const btn = document.getElementById("analyze-pacing-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Analyzing…";
+  }
+
+  try {
+    const data = await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/analyze-pacing`, {
+      method: "POST",
+      body: "{}",
+    });
+    showPacingResults(data.results);
+    appendEvent(createEventEntry({ title: "Pacing analysis", message: `Analyzed ${data.results?.length ?? 0} shots` }));
+  } catch (error) {
+    setGlobalError(`Pacing analysis failed: ${error.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Analyze Pacing";
+    }
+  }
+}
+
+async function handleApplyPacingClick() {
+  if (!state.activeRunId) return;
+  const btn = document.getElementById("apply-pacing-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Applying…";
+  }
+
+  try {
+    const data = await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/apply-pacing`, {
+      method: "POST",
+      body: "{}",
+    });
+    appendEvent(createEventEntry({
+      title: "Apply pacing",
+      message: data.message || "Pacing changes applied",
+    }));
+    setGlobalError("");
+  } catch (error) {
+    setGlobalError(`Apply pacing failed: ${error.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Apply Pacing Changes";
+    }
+  }
+}
+
 function initialize() {
   populateInstructionStageSelect();
   renderStageProgress();
@@ -2128,6 +2237,16 @@ function initialize() {
   bindEvents();
   startPollingFallback();
   void loadRuns();
+
+  // Pacing button handlers
+  const analyzePacingBtn = document.getElementById("analyze-pacing-btn");
+  if (analyzePacingBtn) {
+    analyzePacingBtn.addEventListener("click", () => void handleAnalyzePacingClick());
+  }
+  const applyPacingBtn = document.getElementById("apply-pacing-btn");
+  if (applyPacingBtn) {
+    applyPacingBtn.addEventListener("click", () => void handleApplyPacingClick());
+  }
 }
 
 initialize();
