@@ -1,12 +1,12 @@
 import { generateText, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
-import { writeFileSync, readdirSync, unlinkSync, mkdirSync } from "fs";
+import { writeFileSync, readdirSync, unlinkSync, mkdirSync, existsSync, renameSync } from "fs";
 import { execFile as execFileCb } from "child_process";
 import { promisify } from "util";
-import { join } from "path";
+import { join, extname } from "path";
 
-import type { PipelineOptions, PipelineState, Shot } from "./types";
+import type { ArtifactVersion, PipelineOptions, PipelineState, Shot } from "./types";
 import { interrupted } from "./signals";
 import { analyzeStory, analyzeStoryTool } from "./tools/analyze-story";
 import { planShotsForScene, planShotsForSceneTool, CINEMATIC_RULES } from "./tools/plan-shots";
@@ -74,6 +74,61 @@ function wrapToolExecute<T>(stageName: string, toolName: string, fn: (params: an
       throw error;
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Version tracking helpers
+// ---------------------------------------------------------------------------
+
+/** Preserve old file by renaming it with a version suffix before overwriting. */
+function preserveOldFile(filePath: string | undefined, versions: ArtifactVersion[] | undefined): void {
+  if (!filePath || !existsSync(filePath) || !versions || versions.length === 0) return;
+  const versionCount = versions.length;
+  const ext = extname(filePath);
+  const base = filePath.replace(ext, '');
+  const versionedPath = `${base}_v${versionCount}${ext}`;
+  if (!existsSync(versionedPath)) {
+    renameSync(filePath, versionedPath);
+    // Update the last version entry's path
+    versions[versions.length - 1].path = versionedPath;
+  }
+}
+
+/** Record a new video version and update selectedVersions. */
+function trackVideoVersion(state: PipelineState, shotNumber: number, path: string, extra?: Partial<ArtifactVersion>): void {
+  if (!state.videoVersions) state.videoVersions = {};
+  if (!state.videoVersions[shotNumber]) state.videoVersions[shotNumber] = [];
+  preserveOldFile(state.generatedVideos[shotNumber], state.videoVersions[shotNumber]);
+  state.videoVersions[shotNumber].push({
+    version: state.videoVersions[shotNumber].length + 1,
+    path,
+    timestamp: new Date().toISOString(),
+    ...extra,
+  });
+  if (!state.selectedVersions) state.selectedVersions = { videos: {}, frames: {} };
+  if (!state.selectedVersions.videos) state.selectedVersions.videos = {};
+  state.selectedVersions.videos[shotNumber] = state.videoVersions[shotNumber].length;
+}
+
+/** Record a new frame version and update selectedVersions. */
+function trackFrameVersion(state: PipelineState, shotNumber: number, frameType: string, path: string, extra?: Partial<ArtifactVersion>): void {
+  if (!state.frameVersions) state.frameVersions = {};
+  if (!state.frameVersions[shotNumber]) state.frameVersions[shotNumber] = {};
+  if (!state.frameVersions[shotNumber][frameType]) state.frameVersions[shotNumber][frameType] = [];
+  // Preserve old frame file
+  const currentFrames = state.generatedFrames[shotNumber];
+  const oldPath = currentFrames ? (currentFrames as any)[frameType] : undefined;
+  preserveOldFile(oldPath, state.frameVersions[shotNumber][frameType]);
+  state.frameVersions[shotNumber][frameType].push({
+    version: state.frameVersions[shotNumber][frameType].length + 1,
+    path,
+    timestamp: new Date().toISOString(),
+    ...extra,
+  });
+  if (!state.selectedVersions) state.selectedVersions = { videos: {}, frames: {} };
+  if (!state.selectedVersions.frames) state.selectedVersions.frames = {};
+  if (!state.selectedVersions.frames[shotNumber]) state.selectedVersions.frames[shotNumber] = {};
+  state.selectedVersions.frames[shotNumber][frameType] = state.frameVersions[shotNumber][frameType].length;
 }
 
 // ---------------------------------------------------------------------------
@@ -897,6 +952,16 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
           videoBackend: options.videoBackend,
           aspectRatio: options.aspectRatio,
         });
+        if (result.startPath) {
+          trackFrameVersion(state, result.shotNumber, "start", result.startPath, {
+            references: result.startReferences,
+          });
+        }
+        if (result.endPath) {
+          trackFrameVersion(state, result.shotNumber, "end", result.endPath, {
+            references: result.endReferences,
+          });
+        }
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
           end: result.endPath,
@@ -1054,6 +1119,11 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
                   },
                 });
 
+                trackVideoVersion(state, regenResult.shotNumber, regenResult.path, {
+                  duration: regenResult.duration,
+                  promptSent: regenResult.promptSent,
+                  pacingAdjusted: true,
+                });
                 state.generatedVideos[regenResult.shotNumber] = regenResult.path;
                 if (regenResult.promptSent) {
                   if (!state.videoPromptsSent) state.videoPromptsSent = {};
@@ -1067,6 +1137,10 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             }
           }
 
+          trackVideoVersion(state, result.shotNumber, result.path, {
+            duration: result.duration,
+            promptSent: result.promptSent,
+          });
           state.generatedVideos[result.shotNumber] = result.path;
           if (result.promptSent) {
             if (!state.videoPromptsSent) state.videoPromptsSent = {};
@@ -1224,6 +1298,16 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
           videoBackend: options.videoBackend,
           aspectRatio: options.aspectRatio,
         });
+        if (result.startPath) {
+          trackFrameVersion(state, result.shotNumber, "start", result.startPath, {
+            references: result.startReferences,
+          });
+        }
+        if (result.endPath) {
+          trackFrameVersion(state, result.shotNumber, "end", result.endPath, {
+            references: result.endReferences,
+          });
+        }
         state.generatedFrames[result.shotNumber] = {
           start: result.startPath,
           end: result.endPath,
@@ -1297,6 +1381,11 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
           }
         }
 
+        trackVideoVersion(state, finalResult.shotNumber, finalResult.path, {
+          duration: finalResult.duration,
+          promptSent: finalResult.promptSent,
+          pacingAdjusted: (finalResult as any).pacingAdjusted,
+        });
         state.generatedVideos[finalResult.shotNumber] = finalResult.path;
         if (finalResult.promptSent) {
           if (!state.videoPromptsSent) state.videoPromptsSent = {};
@@ -1318,6 +1407,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
             if (!state.generatedFrames[finalResult.shotNumber]) {
               state.generatedFrames[finalResult.shotNumber] = { start: undefined };
             }
+            trackFrameVersion(state, finalResult.shotNumber, "end", endFramePath);
             state.generatedFrames[finalResult.shotNumber].end = endFramePath;
             state.generatedFrames[finalResult.shotNumber].endReferences = undefined;
             console.log(`[shot_generation] Extracted end frame for shot ${finalResult.shotNumber}: ${endFramePath}`);

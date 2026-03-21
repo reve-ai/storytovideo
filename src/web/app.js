@@ -982,6 +982,13 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 html += `</div>`;
                 html += `</div>`;
               }
+              const promptSent = state.activeRun?.videoPromptsSent?.[shot.shotNumber];
+              if (promptSent) {
+                html += `<div class="shot-prompt-field">`;
+                html += `<span class="shot-prompt-label">Prompt Sent to API</span>`;
+                html += `<span class="shot-prompt-value">${escapeHtml(promptSent)}</span>`;
+                html += `</div>`;
+              }
               html += `</div>`;
               html += `</details>`;
               html += `</td></tr>`;
@@ -997,15 +1004,25 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             const redoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
 
             if (startFrameAsset || endFrameAsset || videoAsset || showFrameSpinners || showVideoSpinners) {
+              const isRunning = isRunActivelyExecuting(state.activeRun);
+              const startFrameVersions = state.activeRun?.frameVersions?.[shot.shotNumber]?.start;
+              const endFrameVersions = state.activeRun?.frameVersions?.[shot.shotNumber]?.end;
+              const videoVersions = state.activeRun?.videoVersions?.[shot.shotNumber];
+              const selectedStartVersion = state.activeRun?.selectedVersions?.frames?.[shot.shotNumber]?.start ?? (startFrameVersions?.length || 0);
+              const selectedEndVersion = state.activeRun?.selectedVersions?.frames?.[shot.shotNumber]?.end ?? (endFrameVersions?.length || 0);
+              const selectedVideoVersion = state.activeRun?.selectedVersions?.videos?.[shot.shotNumber] ?? (videoVersions?.length || 0);
+
               html += `<tr><td colspan="4">`;
               html += `<div class="shot-assets">`;
               if (startFrameAsset && startFrameAsset.previewUrl) {
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Start Frame</p>`;
                 html += `<img src="${escapeHtml(startFrameAsset.previewUrl)}" alt="Start Frame" class="inline-thumbnail" />`;
-                html += buildFrameReferenceSummary(startFrameAsset);
-                html += `<button class="redo-item-button" data-redo-type="start_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry start frame for shot ${shot.shotNumber}">↻</button>`;
-                html += buildDirectiveControls(`shot:${shot.shotNumber}:start_frame`, isRunActivelyExecuting(state.activeRun));
+                html += buildVersionSelector(shot.shotNumber, "frame", "start", startFrameVersions, selectedStartVersion, isRunning);
+                html += `<div class="shot-asset-controls">`;
+                html += `<button class="redo-item-button" data-redo-type="start_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry start frame">↻</button>`;
+                html += buildDirectiveControls(`shot:${shot.shotNumber}:start_frame`, isRunning);
+                html += `</div>`;
                 html += `</div>`;
               } else if (showFrameSpinners) {
                 html += `<div class="shot-asset-item">`;
@@ -1018,9 +1035,11 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                   html += `<div class="shot-asset-item">`;
                   html += `<p class="shot-asset-label">End Frame</p>`;
                   html += `<img src="${escapeHtml(endFrameAsset.previewUrl)}" alt="End Frame" class="inline-thumbnail" />`;
-                  html += buildFrameReferenceSummary(endFrameAsset);
-                  html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame for shot ${shot.shotNumber}">↻</button>`;
-                  html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunActivelyExecuting(state.activeRun));
+                  html += buildVersionSelector(shot.shotNumber, "frame", "end", endFrameVersions, selectedEndVersion, isRunning);
+                  html += `<div class="shot-asset-controls">`;
+                  html += `<button class="redo-item-button" data-redo-type="end_frame" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry end frame">↻</button>`;
+                  html += buildDirectiveControls(`shot:${shot.shotNumber}:end_frame`, isRunning);
+                  html += `</div>`;
                   html += `</div>`;
                 } else if (showFrameSpinners) {
                   html += `<div class="shot-asset-item">`;
@@ -1030,18 +1049,14 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 }
               }
               if (videoAsset && videoAsset.previewUrl) {
-	                const promptSent = state.activeRun?.videoPromptsSent?.[shot.shotNumber];
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Video</p>`;
                 html += `<video src="${escapeHtml(videoAsset.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
-                html += `<button class="redo-item-button" data-redo-type="video" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry video for shot ${shot.shotNumber}">↻</button>`;
-                html += buildDirectiveControls(`shot:${shot.shotNumber}:video`, isRunActivelyExecuting(state.activeRun));
-	                if (promptSent) {
-	                  html += `<details class="video-prompt-sent">`;
-	                  html += `<summary class="video-prompt-sent-summary">Prompt sent to API ▸</summary>`;
-	                  html += `<p class="video-prompt-sent-text">${escapeHtml(promptSent)}</p>`;
-	                  html += `</details>`;
-	                }
+                html += buildVersionSelector(shot.shotNumber, "video", null, videoVersions, selectedVideoVersion, isRunning);
+                html += `<div class="shot-asset-controls">`;
+                html += `<button class="redo-item-button" data-redo-type="video" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry video">↻</button>`;
+                html += buildDirectiveControls(`shot:${shot.shotNumber}:video`, isRunning);
+                html += `</div>`;
                 html += `</div>`;
               } else if (showVideoSpinners) {
                 const pct = state.videoProgress?.[shot.shotNumber];
@@ -1726,6 +1741,18 @@ function buildDirectiveControls(target, disabled) {
   return html;
 }
 
+function buildVersionSelector(shotNumber, type, subtype, versions, selectedVersion, isRunning) {
+  if (!versions || versions.length <= 1) return "";
+  const disabled = isRunning ? " disabled" : "";
+  return `
+    <div class="version-selector">
+      <button class="version-nav version-prev" data-shot="${shotNumber}" data-type="${type}" data-subtype="${subtype || ''}" data-direction="prev"${disabled}>◀</button>
+      <span class="version-label">v${selectedVersion}/${versions.length}</span>
+      <button class="version-nav version-next" data-shot="${shotNumber}" data-type="${type}" data-subtype="${subtype || ''}" data-direction="next"${disabled}>▶</button>
+    </div>
+  `;
+}
+
 function handleStopClick() {
   if (!state.activeRunId) {
     setGlobalError("No active run selected.");
@@ -1938,6 +1965,43 @@ function bindEvents() {
           handleRedoItem(type, shotNumber);
         }
       }
+    }
+  });
+
+  // Version navigation: ◀ ▶ buttons
+  document.body.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".version-nav");
+    if (!btn || btn.disabled) return;
+
+    const { shot, type, subtype, direction } = btn.dataset;
+    const shotNum = parseInt(shot);
+    const runId = state.activeRunId;
+    if (!runId) return;
+
+    const versions = type === "video"
+      ? state.activeRun?.videoVersions?.[shotNum]
+      : state.activeRun?.frameVersions?.[shotNum]?.[subtype];
+    if (!versions) return;
+
+    const currentVersion = type === "video"
+      ? (state.activeRun?.selectedVersions?.videos?.[shotNum] ?? versions.length)
+      : (state.activeRun?.selectedVersions?.frames?.[shotNum]?.[subtype] ?? versions.length);
+
+    let newVersion = currentVersion;
+    if (direction === "prev" && currentVersion > 1) newVersion--;
+    if (direction === "next" && currentVersion < versions.length) newVersion++;
+    if (newVersion === currentVersion) return;
+
+    try {
+      await requestJson(`/runs/${encodeURIComponent(runId)}/select-version`, {
+        method: "POST",
+        body: JSON.stringify({ shotNumber: shotNum, type, subtype: subtype || undefined, version: newVersion }),
+      });
+      // Update local state and re-render
+      lastStageOutputHtml = null;
+      scheduleRunRefresh();
+    } catch (error) {
+      setGlobalError(`Failed to select version: ${error.message}`);
     }
   });
 

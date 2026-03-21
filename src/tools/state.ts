@@ -14,6 +14,9 @@ function withReviewDefaults(state: PipelineState): PipelineState {
     // Ensure newer fields have defaults for old state files
     pendingJobs: state.pendingJobs ?? {},
     itemDirectives: state.itemDirectives ?? {},
+    videoVersions: state.videoVersions ?? {},
+    frameVersions: state.frameVersions ?? {},
+    selectedVersions: state.selectedVersions ?? { videos: {}, frames: {} },
   };
 }
 

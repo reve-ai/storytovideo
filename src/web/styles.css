@@ -873,6 +873,47 @@ dd {
   text-align: center;
 }
 
+.version-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+.version-nav {
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: var(--text);
+  line-height: 1.4;
+}
+.version-nav:hover:not(:disabled) { background: var(--hover, #e2e8f0); }
+.version-nav:disabled { opacity: 0.3; cursor: default; }
+.version-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  min-width: 2.5rem;
+  text-align: center;
+}
+
+.shot-asset-controls {
+  display: flex;
+  gap: 0.3rem;
+  justify-content: center;
+  margin-top: 0.2rem;
+}
+.shot-asset-controls .redo-item-button,
+.shot-asset-controls .directive-button {
+  width: 22px;
+  height: 22px;
+  font-size: 0.7rem;
+  padding: 0;
+  margin: 0;
+}
+
 .inline-thumbnail {
   max-width: 120px;
   max-height: 120px;

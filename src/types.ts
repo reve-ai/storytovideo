@@ -52,6 +52,16 @@ export interface AssetLibrary {
   locationImages: Record<string, string>;                              // paths
 }
 
+export interface ArtifactVersion {
+  version: number;
+  path: string;
+  timestamp: string;
+  duration?: number;        // for videos
+  promptSent?: string;      // for videos
+  pacingAdjusted?: boolean; // if this was a pacing regen
+  references?: FrameReference[]; // for frames
+}
+
 export interface FrameReference {
   type: "character" | "location" | "continuity";
   name: string;
@@ -133,5 +143,11 @@ export interface PipelineState {
   importedAudio?: Record<number, string>;              // shotNumber → audio file path (from import pipeline)
   itemDirectives: Record<string, ItemDirective>;     // keyed by target
   rollbackTarget?: string;                          // stage to roll back to (set by RAI handler)
+  videoVersions?: Record<number, ArtifactVersion[]>;    // shotNumber -> versions
+  frameVersions?: Record<number, Record<string, ArtifactVersion[]>>; // shotNumber -> { start: versions, end: versions }
+  selectedVersions?: {
+    videos?: Record<number, number>;  // shotNumber -> version number
+    frames?: Record<number, Record<string, number>>; // shotNumber -> { start: version, end: version }
+  };
   lastSavedAt: string;                             // ISO timestamp of last state save
 }

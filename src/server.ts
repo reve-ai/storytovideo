@@ -114,6 +114,9 @@ interface RunResponse {
   error?: string;
   options: PipelineOptions;
 	videoPromptsSent?: PipelineState["videoPromptsSent"];
+  videoVersions?: PipelineState["videoVersions"];
+  frameVersions?: PipelineState["frameVersions"];
+  selectedVersions?: PipelineState["selectedVersions"];
   review: ReviewState;
 }
 
@@ -550,6 +553,9 @@ function toRunResponse(record: RunRecord): RunResponse {
     error: record.error,
     options: record.options,
 	    videoPromptsSent: state?.videoPromptsSent,
+    videoVersions: state?.videoVersions,
+    frameVersions: state?.frameVersions,
+    selectedVersions: state?.selectedVersions,
     review: {
       awaitingUserReview: state?.awaitingUserReview ?? false,
       continueRequested: state?.continueRequested ?? false,
@@ -1478,6 +1484,76 @@ async function handleRedoItem(
   });
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord), type, ...(shotNumber !== undefined && { shotNumber }), ...(assetKey !== undefined && { assetKey }) });
+}
+
+async function handleSelectVersion(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 404, { error: "No state found" });
+    return;
+  }
+
+  const body = await readJsonBody(req) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const { shotNumber, type, subtype, version } = body as {
+    shotNumber?: number; type?: string; subtype?: string; version?: number;
+  };
+
+  if (shotNumber === undefined || typeof shotNumber !== "number") {
+    sendJson(res, 400, { error: "shotNumber is required" });
+    return;
+  }
+  if (type !== "video" && type !== "frame") {
+    sendJson(res, 400, { error: 'type must be "video" or "frame"' });
+    return;
+  }
+  if (typeof version !== "number" || version < 1) {
+    sendJson(res, 400, { error: "version must be a positive integer" });
+    return;
+  }
+
+  if (!state.selectedVersions) state.selectedVersions = { videos: {}, frames: {} };
+
+  if (type === "video") {
+    const versions = state.videoVersions?.[shotNumber];
+    if (!versions || version > versions.length) {
+      sendJson(res, 400, { error: "Invalid version" });
+      return;
+    }
+    if (!state.selectedVersions.videos) state.selectedVersions.videos = {};
+    state.selectedVersions.videos[shotNumber] = version;
+    state.generatedVideos[shotNumber] = versions[version - 1].path;
+  } else {
+    const st = subtype || "start";
+    const versions = state.frameVersions?.[shotNumber]?.[st];
+    if (!versions || version > versions.length) {
+      sendJson(res, 400, { error: "Invalid version" });
+      return;
+    }
+    if (!state.selectedVersions.frames) state.selectedVersions.frames = {};
+    if (!state.selectedVersions.frames[shotNumber]) state.selectedVersions.frames[shotNumber] = {};
+    state.selectedVersions.frames[shotNumber][st] = version;
+    if (state.generatedFrames[shotNumber]) {
+      (state.generatedFrames[shotNumber] as any)[st] = versions[version - 1].path;
+    }
+  }
+
+  await saveState({ state });
+  sendJson(res, 200, { ok: true, shotNumber, type, subtype, version });
 }
 
 async function handleSetDirective(
@@ -2562,6 +2638,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "redo-item") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleRedoItem(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "select-version") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleSelectVersion(req, res, runId);
       return;
     }
 
