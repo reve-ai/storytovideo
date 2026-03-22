@@ -117,6 +117,8 @@ interface RunResponse {
   videoVersions?: PipelineState["videoVersions"];
   frameVersions?: PipelineState["frameVersions"];
   selectedVersions?: PipelineState["selectedVersions"];
+  assetVersions?: PipelineState["assetVersions"];
+  selectedAssetVersions?: PipelineState["selectedAssetVersions"];
   review: ReviewState;
 }
 
@@ -556,6 +558,8 @@ function toRunResponse(record: RunRecord): RunResponse {
     videoVersions: state?.videoVersions,
     frameVersions: state?.frameVersions,
     selectedVersions: state?.selectedVersions,
+    assetVersions: state?.assetVersions,
+    selectedAssetVersions: state?.selectedAssetVersions,
     review: {
       awaitingUserReview: state?.awaitingUserReview ?? false,
       continueRequested: state?.continueRequested ?? false,
@@ -1309,15 +1313,40 @@ async function handleUploadAsset(
   const base64Data = imageData.replace(/^data:image\/[a-z+]+;base64,/, "");
   const imageBuffer = Buffer.from(base64Data, "base64");
 
-  // Determine file path
+  // Version tracking for assets
+  if (!state.assetVersions) state.assetVersions = {};
+  if (!state.selectedAssetVersions) state.selectedAssetVersions = {};
+
+  // If there's an existing asset, record it as a version before replacing
+  const existingPath = state.generatedAssets[key];
+  if (existingPath && !state.assetVersions[key]?.length) {
+    // First upload — record the original generated asset as v1
+    state.assetVersions[key] = [{
+      version: 1,
+      path: existingPath,
+      timestamp: new Date().toISOString(),
+    }];
+  }
+
+  // Save the new upload with a versioned filename
+  const versionNum = (state.assetVersions[key]?.length ?? 0) + 1;
   const safeKey = key.replace(/:/g, "_");
-  const fileName = `${safeKey}_uploaded.png`;
+  const fileName = `${safeKey}_v${versionNum}.png`;
   const relativePath = `assets/${fileName}`;
   const absolutePath = join(run.outputDir, relativePath);
 
   // Ensure directory exists and write file
   mkdirSync(join(run.outputDir, "assets"), { recursive: true });
   writeFileSync(absolutePath, imageBuffer);
+
+  // Record the new version
+  if (!state.assetVersions[key]) state.assetVersions[key] = [];
+  state.assetVersions[key].push({
+    version: versionNum,
+    path: relativePath,
+    timestamp: new Date().toISOString(),
+  });
+  state.selectedAssetVersions[key] = versionNum;
 
   // Update generatedAssets
   state.generatedAssets[key] = relativePath;
@@ -1620,20 +1649,62 @@ async function handleSelectVersion(
     return;
   }
 
-  const { shotNumber, type, subtype, version } = body as {
-    shotNumber?: number; type?: string; subtype?: string; version?: number;
+  const { shotNumber, type, subtype, version, key: assetKey } = body as {
+    shotNumber?: number; type?: string; subtype?: string; version?: number; key?: string;
   };
 
-  if (shotNumber === undefined || typeof shotNumber !== "number") {
-    sendJson(res, 400, { error: "shotNumber is required" });
-    return;
-  }
-  if (type !== "video" && type !== "frame") {
-    sendJson(res, 400, { error: 'type must be "video" or "frame"' });
+  if (type !== "video" && type !== "frame" && type !== "asset") {
+    sendJson(res, 400, { error: 'type must be "video", "frame", or "asset"' });
     return;
   }
   if (typeof version !== "number" || version < 1) {
     sendJson(res, 400, { error: "version must be a positive integer" });
+    return;
+  }
+
+  if (type === "asset") {
+    if (!assetKey || typeof assetKey !== "string") {
+      sendJson(res, 400, { error: '"key" is required for asset version selection' });
+      return;
+    }
+    const versions = state.assetVersions?.[assetKey];
+    if (!versions || version < 1 || version > versions.length) {
+      sendJson(res, 400, { error: "Invalid version" });
+      return;
+    }
+    if (!state.selectedAssetVersions) state.selectedAssetVersions = {};
+    state.selectedAssetVersions[assetKey] = version;
+    state.generatedAssets[assetKey] = versions[version - 1].path;
+
+    // Also update assetLibrary
+    const parts = assetKey.split(":");
+    const assetType = parts[0];
+    const assetName = parts[1];
+    const angleType = parts[2];
+    if (state.assetLibrary) {
+      if (assetType === "character" && angleType === "front") {
+        if (state.assetLibrary.characterImages[assetName]) {
+          state.assetLibrary.characterImages[assetName].front = versions[version - 1].path;
+        }
+      } else if (assetType === "character" && angleType === "angle") {
+        if (state.assetLibrary.characterImages[assetName]) {
+          state.assetLibrary.characterImages[assetName].angle = versions[version - 1].path;
+        }
+      } else if (assetType === "location") {
+        state.assetLibrary.locationImages[assetName] = versions[version - 1].path;
+      } else if (assetType === "object") {
+        if (!state.assetLibrary.objectImages) state.assetLibrary.objectImages = {};
+        state.assetLibrary.objectImages[assetName] = versions[version - 1].path;
+      }
+    }
+
+    await saveState({ state });
+    sendJson(res, 200, { ok: true, key: assetKey, type, version });
+    return;
+  }
+
+  if (shotNumber === undefined || typeof shotNumber !== "number") {
+    sendJson(res, 400, { error: "shotNumber is required" });
     return;
   }
 

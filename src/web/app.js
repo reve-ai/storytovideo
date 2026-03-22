@@ -896,20 +896,29 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const showCharacterSpinners = isStageGenerating("asset_generation");
 
         const charRedoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
+        const isRunning = isRunActivelyExecuting(state.activeRun);
         if (frontAsset || angleAsset || showCharacterSpinners) {
           imagesHtml += `<div class="character-images">`;
           if (frontAsset && frontAsset.previewUrl) {
+            const frontKey = `character:${char.name}:front`;
+            const frontVersions = state.activeRun?.assetVersions?.[frontKey];
+            const selectedFrontVersion = state.activeRun?.selectedAssetVersions?.[frontKey] ?? (frontVersions?.length ?? 1);
             imagesHtml += `<div class="asset-upload-wrapper">`;
             imagesHtml += `<img src="${escapeHtml(frontAsset.previewUrl)}" alt="Front" class="inline-thumbnail" />`;
-            imagesHtml += `<button class="asset-upload-btn" data-asset-key="character:${escapeHtml(char.name)}:front" title="Upload replacement image">📷</button>`;
+            imagesHtml += `<button class="asset-upload-btn" data-asset-key="${escapeHtml(frontKey)}" title="Upload replacement image">📷</button>`;
+            imagesHtml += buildAssetVersionSelector(frontKey, frontVersions, selectedFrontVersion, isRunning);
             imagesHtml += `</div>`;
           } else if (showCharacterSpinners) {
             imagesHtml += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
           }
           if (angleAsset && angleAsset.previewUrl) {
+            const angleKey = `character:${char.name}:angle`;
+            const angleVersions = state.activeRun?.assetVersions?.[angleKey];
+            const selectedAngleVersion = state.activeRun?.selectedAssetVersions?.[angleKey] ?? (angleVersions?.length ?? 1);
             imagesHtml += `<div class="asset-upload-wrapper">`;
             imagesHtml += `<img src="${escapeHtml(angleAsset.previewUrl)}" alt="Angle" class="inline-thumbnail" />`;
-            imagesHtml += `<button class="asset-upload-btn" data-asset-key="character:${escapeHtml(char.name)}:angle" title="Upload replacement image">📷</button>`;
+            imagesHtml += `<button class="asset-upload-btn" data-asset-key="${escapeHtml(angleKey)}" title="Upload replacement image">📷</button>`;
+            imagesHtml += buildAssetVersionSelector(angleKey, angleVersions, selectedAngleVersion, isRunning);
             imagesHtml += `</div>`;
           } else if (showCharacterSpinners) {
             imagesHtml += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
@@ -948,12 +957,16 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const locRedoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
         let locImageHtml = "";
         if (locAsset && locAsset.previewUrl) {
+          const locKey = `location:${loc.name}:front`;
+          const locVersions = state.activeRun?.assetVersions?.[locKey];
+          const selectedLocVersion = state.activeRun?.selectedAssetVersions?.[locKey] ?? (locVersions?.length ?? 1);
           locImageHtml = `<div class="asset-upload-wrapper">`;
           locImageHtml += `<img src="${escapeHtml(locAsset.previewUrl)}" alt="Location" class="inline-thumbnail" />`;
-          locImageHtml += `<button class="asset-upload-btn" data-asset-key="location:${escapeHtml(loc.name)}:front" title="Upload replacement image">📷</button>`;
+          locImageHtml += `<button class="asset-upload-btn" data-asset-key="${escapeHtml(locKey)}" title="Upload replacement image">📷</button>`;
+          locImageHtml += buildAssetVersionSelector(locKey, locVersions, selectedLocVersion, isRunActivelyExecuting(state.activeRun));
           locImageHtml += `</div>`;
-          locImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="location:${escapeHtml(loc.name)}:front"${locRedoItemDisabled} title="Retry image for ${escapeHtml(loc.name)}">↻</button>`;
-          locImageHtml += buildDirectiveControls(`asset:location:${loc.name}:front`, isRunActivelyExecuting(state.activeRun));
+          locImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="${escapeHtml(locKey)}"${locRedoItemDisabled} title="Retry image for ${escapeHtml(loc.name)}">↻</button>`;
+          locImageHtml += buildDirectiveControls(`asset:${locKey}`, isRunActivelyExecuting(state.activeRun));
         } else if (isStageGenerating("asset_generation")) {
           locImageHtml = `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
         }
@@ -985,12 +998,16 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const objRedoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
         let objImageHtml = "";
         if (objAsset && objAsset.previewUrl) {
+          const objKey = `object:${obj.name}:front`;
+          const objVersions = state.activeRun?.assetVersions?.[objKey];
+          const selectedObjVersion = state.activeRun?.selectedAssetVersions?.[objKey] ?? (objVersions?.length ?? 1);
           objImageHtml = `<div class="asset-upload-wrapper">`;
           objImageHtml += `<img src="${escapeHtml(objAsset.previewUrl)}" alt="Object" class="inline-thumbnail" />`;
-          objImageHtml += `<button class="asset-upload-btn" data-asset-key="object:${escapeHtml(obj.name)}:front" title="Upload replacement image">📷</button>`;
+          objImageHtml += `<button class="asset-upload-btn" data-asset-key="${escapeHtml(objKey)}" title="Upload replacement image">📷</button>`;
+          objImageHtml += buildAssetVersionSelector(objKey, objVersions, selectedObjVersion, isRunActivelyExecuting(state.activeRun));
           objImageHtml += `</div>`;
-          objImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="object:${escapeHtml(obj.name)}:front"${objRedoItemDisabled} title="Retry image for ${escapeHtml(obj.name)}">↻</button>`;
-          objImageHtml += buildDirectiveControls(`asset:object:${obj.name}:front`, isRunActivelyExecuting(state.activeRun));
+          objImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="${escapeHtml(objKey)}"${objRedoItemDisabled} title="Retry image for ${escapeHtml(obj.name)}">↻</button>`;
+          objImageHtml += buildDirectiveControls(`asset:${objKey}`, isRunActivelyExecuting(state.activeRun));
         } else if (isStageGenerating("asset_generation")) {
           objImageHtml = `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
         }
@@ -1834,6 +1851,18 @@ function buildVersionSelector(shotNumber, type, subtype, versions, selectedVersi
   `;
 }
 
+function buildAssetVersionSelector(assetKey, versions, selectedVersion, isRunning) {
+  if (!versions || versions.length <= 1) return "";
+  const disabled = isRunning ? " disabled" : "";
+  return `
+    <div class="version-selector">
+      <button class="asset-version-nav version-prev" data-asset-key="${escapeHtml(assetKey)}" data-direction="prev"${disabled}>◀</button>
+      <span class="version-label">v${selectedVersion}/${versions.length}</span>
+      <button class="asset-version-nav version-next" data-asset-key="${escapeHtml(assetKey)}" data-direction="next"${disabled}>▶</button>
+    </div>
+  `;
+}
+
 function handleStopClick() {
   if (!state.activeRunId) {
     setGlobalError("No active run selected.");
@@ -2087,10 +2116,10 @@ function bindEvents() {
   });
 
 
-  // Version navigation: ◀ ▶ buttons
+  // Version navigation: ◀ ▶ buttons (video/frame)
   document.body.addEventListener("click", async (event) => {
     const btn = event.target.closest(".version-nav");
-    if (!btn || btn.disabled) return;
+    if (!btn || btn.disabled || btn.classList.contains("asset-version-nav")) return;
 
     const { shot, type, subtype, direction } = btn.dataset;
     const shotNum = parseInt(shot);
@@ -2121,6 +2150,37 @@ function bindEvents() {
       scheduleRunRefresh();
     } catch (error) {
       setGlobalError(`Failed to select version: ${error.message}`);
+    }
+  });
+
+  // Asset version navigation: ◀ ▶ buttons
+  document.body.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".asset-version-nav");
+    if (!btn || btn.disabled) return;
+
+    const { assetKey, direction } = btn.dataset;
+    const runId = state.activeRunId;
+    if (!runId || !assetKey) return;
+
+    const versions = state.activeRun?.assetVersions?.[assetKey];
+    if (!versions) return;
+
+    const currentVersion = state.activeRun?.selectedAssetVersions?.[assetKey] ?? versions.length;
+
+    let newVersion = currentVersion;
+    if (direction === "prev" && currentVersion > 1) newVersion--;
+    if (direction === "next" && currentVersion < versions.length) newVersion++;
+    if (newVersion === currentVersion) return;
+
+    try {
+      await requestJson(`/runs/${encodeURIComponent(runId)}/select-version`, {
+        method: "POST",
+        body: JSON.stringify({ type: "asset", key: assetKey, version: newVersion }),
+      });
+      lastStageOutputHtml = null;
+      scheduleRunRefresh();
+    } catch (error) {
+      setGlobalError(`Failed to select asset version: ${error.message}`);
     }
   });
 

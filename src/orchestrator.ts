@@ -810,6 +810,14 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
           aspectRatio: options.aspectRatio,
         });
         state.generatedAssets[result.key] = result.path;
+        // Track asset version
+        if (!state.assetVersions) state.assetVersions = {};
+        if (!state.assetVersions[result.key]) state.assetVersions[result.key] = [];
+        state.assetVersions[result.key].push({
+          version: state.assetVersions[result.key].length + 1,
+          path: result.path,
+          timestamp: new Date().toISOString(),
+        });
         // Update asset library
         if (!state.assetLibrary) {
           state.assetLibrary = { characterImages: {}, locationImages: {}, objectImages: {} };

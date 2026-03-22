@@ -157,5 +157,7 @@ export interface PipelineState {
     videos?: Record<number, number>;  // shotNumber -> version number
     frames?: Record<number, Record<string, number>>; // shotNumber -> { start: version, end: version }
   };
+  assetVersions?: Record<string, ArtifactVersion[]>;  // asset key -> versions
+  selectedAssetVersions?: Record<string, number>;      // asset key -> selected version number
   lastSavedAt: string;                             // ISO timestamp of last state save
 }
