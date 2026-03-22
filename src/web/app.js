@@ -964,6 +964,43 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `</div>`;
     }
 
+    // Objects with inline images
+    if (storyAnalysis.objects && storyAnalysis.objects.length > 0) {
+      html += `<div class="stage-output-section">`;
+      html += `<h4>Objects</h4>`;
+      html += `<table class="stage-output-table">`;
+      html += `<thead><tr><th>Name</th><th>Description</th><th>Image</th></tr></thead>`;
+      html += `<tbody>`;
+      for (const obj of storyAnalysis.objects) {
+        const objDescTarget = `analysis:object:${obj.name}`;
+        const objDescDirective = state.directives[objDescTarget];
+        const objDescClass = objDescDirective ? " desc-edited" : "";
+        html += `<tr>`;
+        html += `<td><strong>${escapeHtml(obj.name)}</strong></td>`;
+        const objEditBtn = isImportRun(state.activeRun) ? "" : `<button class="editable-desc-btn" data-edit-target="${escapeHtml(objDescTarget)}" data-edit-current="${escapeHtml(obj.visualDescription)}" title="Edit description">✏️</button>`;
+        html += `<td><span class="${objDescClass}">${escapeHtml(obj.visualDescription)}</span>${objEditBtn}</td>`;
+
+        // Look up object image
+        const objAsset = findAsset(`object:${obj.name}:front`);
+        const objRedoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
+        let objImageHtml = "";
+        if (objAsset && objAsset.previewUrl) {
+          objImageHtml = `<div class="asset-upload-wrapper">`;
+          objImageHtml += `<img src="${escapeHtml(objAsset.previewUrl)}" alt="Object" class="inline-thumbnail" />`;
+          objImageHtml += `<button class="asset-upload-btn" data-asset-key="object:${escapeHtml(obj.name)}:front" title="Upload replacement image">📷</button>`;
+          objImageHtml += `</div>`;
+          objImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="object:${escapeHtml(obj.name)}:front"${objRedoItemDisabled} title="Retry image for ${escapeHtml(obj.name)}">↻</button>`;
+          objImageHtml += buildDirectiveControls(`asset:object:${obj.name}:front`, isRunActivelyExecuting(state.activeRun));
+        } else if (isStageGenerating("asset_generation")) {
+          objImageHtml = `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
+        }
+        html += `<td>${objImageHtml}</td>`;
+        html += `</tr>`;
+      }
+      html += `</tbody></table>`;
+      html += `</div>`;
+    }
+
     // Scenes with shots and inline assets
     if (storyAnalysis.scenes && storyAnalysis.scenes.length > 0) {
       html += `<div class="stage-output-section">`;
