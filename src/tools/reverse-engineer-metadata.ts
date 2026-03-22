@@ -33,6 +33,7 @@ const shotSchema = z.object({
   soundEffects: z.string(),
   cameraDirection: z.string(),
   charactersPresent: z.array(z.string()),
+  objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
   continuousFromPrevious: z.boolean(),
 });
@@ -61,6 +62,10 @@ const storyAnalysisSchema = z.object({
     name: z.string(),
     visualDescription: z.string(),
   })),
+  objects: z.array(z.object({
+    name: z.string(),
+    visualDescription: z.string(),
+  })).optional(),
   scenes: z.array(sceneSchema),
 });
 

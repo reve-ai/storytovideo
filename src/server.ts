@@ -1368,6 +1368,13 @@ async function handleRedoItem(
       if (state.assetLibrary?.locationImages[assetName]) {
         delete state.assetLibrary.locationImages[assetName];
       }
+    } else if (assetType === "object") {
+      // Delete object asset
+      delete state.generatedAssets[assetKey!];
+      // Clear from assetLibrary
+      if (state.assetLibrary?.objectImages?.[assetName]) {
+        delete state.assetLibrary.objectImages[assetName];
+      }
     }
 
     // Cascade: frames and videos depend on assets
@@ -1649,6 +1656,11 @@ async function handleSetDirective(
         delete state.generatedAssets[assetKey];
         if (state.assetLibrary?.locationImages[assetName]) {
           delete state.assetLibrary.locationImages[assetName];
+        }
+      } else if (assetType === "object") {
+        delete state.generatedAssets[assetKey];
+        if (state.assetLibrary?.objectImages?.[assetName]) {
+          delete state.assetLibrary.objectImages[assetName];
         }
       }
       state.completedStages = state.completedStages.filter(

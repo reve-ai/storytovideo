@@ -11,6 +11,7 @@ import * as path from "path";
 export async function generateAsset(params: {
   characterName?: string;
   locationName?: string;
+  objectName?: string;
   description: string;
   artStyle: string;
   outputDir: string;
@@ -22,6 +23,7 @@ export async function generateAsset(params: {
   const {
     characterName,
     locationName,
+    objectName,
     description,
     artStyle,
     outputDir,
@@ -30,7 +32,7 @@ export async function generateAsset(params: {
   } = params;
 
   // Determine asset type and key
-  let assetType: "character" | "location";
+  let assetType: "character" | "location" | "object";
   let assetName: string;
   let angleType: "front" | "angle" = "front";
 
@@ -44,8 +46,11 @@ export async function generateAsset(params: {
   } else if (locationName) {
     assetType = "location";
     assetName = locationName;
+  } else if (objectName) {
+    assetType = "object";
+    assetName = objectName;
   } else {
-    throw new Error("Either characterName or locationName must be provided");
+    throw new Error("Either characterName, locationName, or objectName must be provided");
   }
 
   const key = `${assetType}:${assetName}:${angleType}`;
@@ -75,6 +80,8 @@ export async function generateAsset(params: {
     prompt = `Generate a ${artStyle} style reference image of `;
     if (assetType === "character") {
       prompt += `a character with a completely original appearance (NOT resembling any real celebrity or public figure): ${description}`;
+    } else if (assetType === "object") {
+      prompt += `an object/product: ${description}. Show the object clearly against a neutral background for reference.`;
     } else {
       prompt += `a location: ${description}`;
     }
@@ -101,8 +108,8 @@ export async function generateAsset(params: {
 
       let resultPath: string;
       const useGrok = params.videoBackend === "grok";
-      // Characters always use 1:1 (portrait references); locations use the run's aspect ratio
-      const assetAspectRatio = assetType === "character" ? "1:1" : (params.aspectRatio ?? "16:9");
+      // Characters and objects use 1:1 (reference images); locations use the run's aspect ratio
+      const assetAspectRatio = (assetType === "character" || assetType === "object") ? "1:1" : (params.aspectRatio ?? "16:9");
 
       if (isEditing) {
         if (useGrok) {
@@ -153,6 +160,7 @@ export const generateAssetTool = {
   parameters: z.object({
     characterName: z.string().optional(),
     locationName: z.string().optional(),
+    objectName: z.string().optional(),
     description: z.string(),
     artStyle: z.string(),
     outputDir: z.string(),

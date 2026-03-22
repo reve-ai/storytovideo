@@ -180,13 +180,15 @@ async function generateSingleFrame(params: {
     composition: shot.composition,
     locationDescription: shot.location,
     charactersPresent: shot.charactersPresent,
+    objectsPresent: shot.objectsPresent,
     framePrompt,
     cameraDirection: shot.cameraDirection,
   });
 
   // Collect reference image file paths.
-  // Order: location > character > continuity (previous end frame as low-priority style ref).
+  // Order: location > character > object > continuity (previous end frame as low-priority style ref).
   const characterRefPaths = new Map<string, string>(); // path -> character name
+  const objectRefPaths = new Map<string, string>(); // path -> object name
   const referenceImagePaths: string[] = [];
 
   // Determine continuity reference path (previous end frame for start frames,
@@ -216,6 +218,16 @@ async function generateSingleFrame(params: {
     }
   }
 
+  // Add object reference images for all objects present
+  const objectImages = assetLibrary.objectImages ?? {};
+  for (const objName of (shot.objectsPresent ?? [])) {
+    const objRef = objectImages[objName];
+    if (objRef && fs.existsSync(objRef)) {
+      referenceImagePaths.push(objRef);
+      objectRefPaths.set(objRef, objName);
+    }
+  }
+
   // Add continuity ref LAST (low-priority style reference)
   if (continuityRefPath) {
     referenceImagePaths.push(continuityRefPath);
@@ -230,6 +242,9 @@ async function generateSingleFrame(params: {
     }
     if (characterRefPaths.has(refPath)) {
       return { type: "character", name: characterRefPaths.get(refPath)!, path: refPath };
+    }
+    if (objectRefPaths.has(refPath)) {
+      return { type: "object", name: objectRefPaths.get(refPath)!, path: refPath };
     }
     return {
       type: "continuity",
@@ -247,6 +262,8 @@ async function generateSingleFrame(params: {
         imgTagParts.push(`<img>${i}</img> location`);
       } else if (characterRefPaths.has(refPath)) {
         imgTagParts.push(`<img>${i}</img> ${characterRefPaths.get(refPath)} ref`);
+      } else if (objectRefPaths.has(refPath)) {
+        imgTagParts.push(`<img>${i}</img> ${objectRefPaths.get(refPath)} object ref`);
       } else {
         imgTagParts.push(`<img>${i}</img> continuity (style only)`);
       }
@@ -307,16 +324,18 @@ function buildFramePrompt(params: {
   composition: string;
   locationDescription: string;
   charactersPresent: string[];
+  objectsPresent?: string[];
   framePrompt: string;
   cameraDirection: string;
 }): string {
-  const { artStyle, composition, locationDescription, charactersPresent, framePrompt, cameraDirection } = params;
+  const { artStyle, composition, locationDescription, charactersPresent, objectsPresent, framePrompt, cameraDirection } = params;
 
   const parts = [
     `Style: ${artStyle}.`,
     `${composition} shot, ${cameraDirection}.`,
     `Location: ${locationDescription}.`,
     charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
+    (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
     framePrompt,
   ].filter(Boolean);
 
@@ -344,6 +363,7 @@ export const generateFrameTool = {
       soundEffects: z.string(),
       cameraDirection: z.string(),
       charactersPresent: z.array(z.string()),
+      objectsPresent: z.array(z.string()).optional(),
       location: z.string(),
       continuousFromPrevious: z.boolean(),
     }).describe("The shot to generate keyframes for"),
@@ -351,7 +371,8 @@ export const generateFrameTool = {
     assetLibrary: z.object({
       characterImages: z.record(z.string(), z.object({ front: z.string(), angle: z.string() })),
       locationImages: z.record(z.string(), z.string()),
-    }).describe("AssetLibrary with character and location reference image paths"),
+      objectImages: z.record(z.string(), z.string()).optional(),
+    }).describe("AssetLibrary with character, location, and object reference image paths"),
     outputDir: z.string().describe("Output directory for saving frame images"),
     dryRun: z
       .boolean()

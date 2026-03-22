@@ -78,7 +78,11 @@ function buildPlaceholderAssetLibrary(analysis: StoryAnalysis): AssetLibrary {
   for (const loc of analysis.locations) {
     locationImages[loc.name] = "";
   }
-  return { characterImages, locationImages };
+  const objectImages: Record<string, string> = {};
+  for (const obj of (analysis.objects ?? [])) {
+    objectImages[obj.name] = "";
+  }
+  return { characterImages, locationImages, objectImages };
 }
 
 /**

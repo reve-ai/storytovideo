@@ -10,6 +10,11 @@ export interface Location {
   visualDescription: string;  // architecture, lighting, colors, atmosphere
 }
 
+export interface StoryObject {
+  name: string;
+  visualDescription: string;  // shape, color, size, distinguishing features
+}
+
 export interface Shot {
   shotNumber: number;          // global shot number across entire video
   sceneNumber: number;         // which scene this belongs to
@@ -24,6 +29,7 @@ export interface Shot {
   soundEffects: string;
   cameraDirection: string;
   charactersPresent: string[];
+  objectsPresent: string[];
   location: string;
   continuousFromPrevious: boolean;
 }
@@ -44,12 +50,14 @@ export interface StoryAnalysis {
   artStyle: string;
   characters: Character[];
   locations: Location[];
+  objects: StoryObject[];
   scenes: Scene[];
 }
 
 export interface AssetLibrary {
   characterImages: Record<string, { front: string; angle: string }>;  // paths
   locationImages: Record<string, string>;                              // paths
+  objectImages: Record<string, string>;                                // paths
 }
 
 export interface ArtifactVersion {
@@ -63,7 +71,7 @@ export interface ArtifactVersion {
 }
 
 export interface FrameReference {
-  type: "character" | "location" | "continuity";
+  type: "character" | "location" | "object" | "continuity";
   name: string;
   path: string;
 }

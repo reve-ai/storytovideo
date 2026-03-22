@@ -26,6 +26,10 @@ const storyAnalysisSchema = z.object({
     name: z.string(),
     visualDescription: z.string(),
   })),
+  objects: z.array(z.object({
+    name: z.string(),
+    visualDescription: z.string(),
+  })).optional(),
   scenes: z.array(sceneSchema),
 });
 
@@ -39,11 +43,13 @@ export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
 2. Visual art style (describe the visual aesthetic)
 3. Characters (name, detailed physical description, personality, age range)
 4. Locations (name, visual description with architecture, lighting, colors, atmosphere)
-5. Scenes (numbered, with title, narrative summary, characters present, location, estimated duration)
+5. Objects (name, visual description — products, props, key items, vehicles, or any notable physical object that appears repeatedly or is important to the story)
+6. Scenes (numbered, with title, narrative summary, characters present, location, estimated duration)
 
 For each character, provide vivid physical descriptions that will help generate consistent reference images.
 IMPORTANT: If any character in the story is a real person or celebrity, you MUST rename them to an original fictional name that reflects their personality or role in the story. For example, a tech visionary named "Elon Musk" might become "Nova Sparks", a cooking show host named "Gordon Ramsay" might become "Blaze Thornton". NEVER use real people's names — always invent creative fictional names. Also ensure physical descriptions are completely original and do not resemble any real person.
 For each location, describe the visual mood, lighting, and key objects.
+For each object, describe its shape, color, size, material, and distinguishing visual features. Objects are products, props, vehicles, or key items that appear repeatedly or are important to the story. Only include objects that would benefit from having a consistent reference image.
 Estimate scene duration based on action density and dialogue length.
 Unless the story explicitly specifies an art style, default to "photorealistic" for the visual art style.
 
@@ -58,6 +64,10 @@ ${storyText}`;
     } as any);
 
     const result = object as any;
+    // Default objects to empty array if missing
+    if (!result.objects) {
+      result.objects = [];
+    }
     // Add empty shots arrays (filled by shot planner later)
     if (result.scenes) {
       result.scenes = result.scenes.map((s: any) => ({ ...s, shots: [] }));

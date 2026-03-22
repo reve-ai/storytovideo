@@ -381,10 +381,11 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
     clearDir(join(outputDir, "frames"));
   }
 
-  // asset_generation (2): assets/characters/, assets/locations/
+  // asset_generation (2): assets/characters/, assets/locations/, assets/objects/
   if (stageIdx <= STAGE_ORDER.indexOf("asset_generation")) {
     clearDir(join(outputDir, "assets", "characters"));
     clearDir(join(outputDir, "assets", "locations"));
+    clearDir(join(outputDir, "assets", "objects"));
   }
 
   // shot_planning (1): no files to delete (shots live in state JSON)
@@ -690,6 +691,7 @@ For each scene:
 7. Write action prompts for video generation. In actionPrompt fields, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name. Character names in video prompts trigger content safety filters.
 8. Include dialogue as quoted speech if present
 ${fixedCameraGuidance}
+10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${(state.storyAnalysis?.objects ?? []).length > 0 ? ` Known objects: ${(state.storyAnalysis?.objects ?? []).map(o => o.name).join(", ")}.` : ""}
 
 After planning all scenes, respond with a brief summary of the shots planned.`;
 
@@ -755,6 +757,10 @@ async function runAssetGenerationStage(
     const locKey = `location:${loc.name}:front`;
     if (!state.generatedAssets[locKey]) neededAssets.push(locKey);
   }
+  for (const obj of (analysis.objects ?? [])) {
+    const objKey = `object:${obj.name}:front`;
+    if (!state.generatedAssets[objKey]) neededAssets.push(objKey);
+  }
 
   const hasPendingInstructions = (state.pendingStageInstructions["asset_generation"]?.length ?? 0) > 0;
   const hasDirectives = hasItemDirectivesForStage(state, "asset_generation");
@@ -766,7 +772,7 @@ async function runAssetGenerationStage(
   }
 
   const stateJson = compactState(state, 'asset_generation');
-  const systemPrompt = `You are an asset generation agent. Generate reference images for characters and locations.
+  const systemPrompt = `You are an asset generation agent. Generate reference images for characters, locations, and objects.
 
 Current pipeline state:
 ${stateJson}
@@ -777,6 +783,8 @@ For each character, generate TWO images:
 
 For each location, generate ONE image (call generateAsset with locationName).
 
+For each object, generate ONE image (call generateAsset with objectName).
+
 IMPORTANT:
 - Check state.generatedAssets before generating — skip items that already have paths.
 - After EACH successful generation, call saveState to checkpoint progress.
@@ -786,7 +794,8 @@ IMPORTANT:
 
 Assets still needed: ${JSON.stringify(neededAssets)}`;
 
-  const userPrompt = `Generate all needed reference assets. Characters: ${analysis.characters.map((c) => c.name).join(", ")}. Locations: ${analysis.locations.map((l) => l.name).join(", ")}.`;
+  const objectNames = (analysis.objects ?? []).map((o) => o.name);
+  const userPrompt = `Generate all needed reference assets. Characters: ${analysis.characters.map((c) => c.name).join(", ")}. Locations: ${analysis.locations.map((l) => l.name).join(", ")}.${objectNames.length > 0 ? ` Objects: ${objectNames.join(", ")}.` : ""}`;
 
   const assetTools: Record<string, any> = {
     generateAsset: {
@@ -803,7 +812,10 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
         state.generatedAssets[result.key] = result.path;
         // Update asset library
         if (!state.assetLibrary) {
-          state.assetLibrary = { characterImages: {}, locationImages: {} };
+          state.assetLibrary = { characterImages: {}, locationImages: {}, objectImages: {} };
+        }
+        if (!state.assetLibrary.objectImages) {
+          state.assetLibrary.objectImages = {};
         }
         if (params.characterName) {
           if (!state.assetLibrary.characterImages[params.characterName]) {
@@ -817,6 +829,9 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
         }
         if (params.locationName) {
           state.assetLibrary.locationImages[params.locationName] = result.path;
+        }
+        if (params.objectName) {
+          state.assetLibrary.objectImages[params.objectName] = result.path;
         }
         await saveState({ state });
         return result;
@@ -855,6 +870,10 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
     const locKey = `location:${loc.name}:front`;
     if (!state.generatedAssets[locKey]) remainingAssets.push(locKey);
   }
+  for (const obj of (analysis.objects ?? [])) {
+    const objKey = `object:${obj.name}:front`;
+    if (!state.generatedAssets[objKey]) remainingAssets.push(objKey);
+  }
   if (remainingAssets.length > 0) {
     console.warn(`[asset_generation] WARNING: ${remainingAssets.length} assets still missing. NOT marking as complete — will resume on next run.`);
     return state;
@@ -878,7 +897,10 @@ async function runFrameGenerationStage(
   // assetLibrary may have placeholder entries for imported runs — that's fine.
   // If completely missing, create an empty one so downstream code doesn't crash.
   if (!state.assetLibrary) {
-    state.assetLibrary = { characterImages: {}, locationImages: {} };
+    state.assetLibrary = { characterImages: {}, locationImages: {}, objectImages: {} };
+  }
+  if (!state.assetLibrary.objectImages) {
+    state.assetLibrary.objectImages = {};
   }
 
   const analysis = state.storyAnalysis;
@@ -943,9 +965,9 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
       inputSchema: generateFrameTool.parameters,
       execute: wrapToolExecute("frame_generation", "generateFrame", async (params: z.infer<typeof generateFrameTool.parameters>) => {
         const result = await generateFrame({
-          shot: params.shot,
+          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [] },
           artStyle: params.artStyle,
-          assetLibrary: params.assetLibrary,
+          assetLibrary: { ...params.assetLibrary, objectImages: params.assetLibrary.objectImages ?? {} },
           outputDir: options.outputDir,
           dryRun: options.dryRun,
           previousEndFramePath: params.previousEndFramePath,
@@ -1239,7 +1261,10 @@ async function runShotGenerationStage(
     throw new Error("Shot generation requires storyAnalysis in state");
   }
   if (!state.assetLibrary) {
-    state.assetLibrary = { characterImages: {}, locationImages: {} };
+    state.assetLibrary = { characterImages: {}, locationImages: {}, objectImages: {} };
+  }
+  if (!state.assetLibrary.objectImages) {
+    state.assetLibrary.objectImages = {};
   }
 
   const analysis = state.storyAnalysis;
@@ -1289,9 +1314,9 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
       inputSchema: generateFrameTool.parameters,
       execute: wrapToolExecute("shot_generation", "generateFrame", async (params: z.infer<typeof generateFrameTool.parameters>) => {
         const result = await generateFrame({
-          shot: params.shot,
+          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [] },
           artStyle: params.artStyle,
-          assetLibrary: params.assetLibrary,
+          assetLibrary: { ...params.assetLibrary, objectImages: params.assetLibrary.objectImages ?? {} },
           outputDir: options.outputDir,
           dryRun: options.dryRun,
           previousEndFramePath: params.previousEndFramePath,
