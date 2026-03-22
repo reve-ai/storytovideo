@@ -451,15 +451,15 @@ function parseSubmitInstructionRequest(body: unknown): SubmitInstructionRequest 
   };
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
   let total = 0;
   const chunks: Buffer[] = [];
 
   for await (const chunk of req) {
     const asBuffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
     total += asBuffer.length;
-    if (total > 1_000_000) {
-      throw new Error("Request body exceeds 1MB limit");
+    if (total > maxBytes) {
+      throw new Error(`Request body exceeds ${Math.round(maxBytes / 1_000_000)}MB limit`);
     }
     chunks.push(asBuffer);
   }
@@ -1257,6 +1257,110 @@ async function handleRedoRun(
   });
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord) });
+}
+
+
+async function handleUploadAsset(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  // Accept up to 20MB for base64 image uploads
+  const body = await readJsonBody(req, 20_000_000) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const { key, imageData } = body as { key?: string; imageData?: string };
+  if (!key || typeof key !== "string") {
+    sendJson(res, 400, { error: '"key" is required (e.g. "character:Bolt:front")' });
+    return;
+  }
+  if (!imageData || typeof imageData !== "string") {
+    sendJson(res, 400, { error: '"imageData" is required (base64-encoded image)' });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available" });
+    return;
+  }
+
+  // Parse asset key: "character:Name:front", "character:Name:angle", "location:Name:front", "object:Name:front"
+  const parts = key.split(":");
+  const assetType = parts[0];
+  const assetName = parts[1];
+  const angleType = parts[2];
+
+  if (!assetType || !assetName) {
+    sendJson(res, 400, { error: "Invalid asset key format. Expected type:name[:subtype]" });
+    return;
+  }
+
+  // Strip data URI prefix if present
+  const base64Data = imageData.replace(/^data:image\/[a-z+]+;base64,/, "");
+  const imageBuffer = Buffer.from(base64Data, "base64");
+
+  // Determine file path
+  const safeKey = key.replace(/:/g, "_");
+  const fileName = `${safeKey}_uploaded.png`;
+  const relativePath = `assets/${fileName}`;
+  const absolutePath = join(run.outputDir, relativePath);
+
+  // Ensure directory exists and write file
+  mkdirSync(join(run.outputDir, "assets"), { recursive: true });
+  writeFileSync(absolutePath, imageBuffer);
+
+  // Update generatedAssets
+  state.generatedAssets[key] = relativePath;
+
+  // Update assetLibrary
+  if (!state.assetLibrary) {
+    state.assetLibrary = { characterImages: {}, locationImages: {}, objectImages: {} };
+  }
+
+  if (assetType === "character" && angleType === "front") {
+    if (!state.assetLibrary.characterImages[assetName]) {
+      state.assetLibrary.characterImages[assetName] = { front: "", angle: "" };
+    }
+    state.assetLibrary.characterImages[assetName].front = relativePath;
+  } else if (assetType === "character" && angleType === "angle") {
+    if (!state.assetLibrary.characterImages[assetName]) {
+      state.assetLibrary.characterImages[assetName] = { front: "", angle: "" };
+    }
+    state.assetLibrary.characterImages[assetName].angle = relativePath;
+  } else if (assetType === "location") {
+    state.assetLibrary.locationImages[assetName] = relativePath;
+  } else if (assetType === "object") {
+    if (!state.assetLibrary.objectImages) {
+      state.assetLibrary.objectImages = {};
+    }
+    state.assetLibrary.objectImages[assetName] = relativePath;
+  }
+
+  await saveState({ state });
+
+  // Emit asset event so the UI updates in real time
+  const feedItem = createAssetFeedItemFromState({
+    runId,
+    outputDir: state.outputDir,
+    id: `asset:${key}`,
+    type: "asset",
+    key,
+    path: relativePath,
+    fallbackTimestamp: new Date().toISOString(),
+  });
+  emitAssetEvent(runId, feedItem);
+
+  sendJson(res, 200, { ok: true, key, path: relativePath });
 }
 
 async function handleRedoItem(
@@ -2652,6 +2756,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       await handleRedoItem(req, res, runId);
       return;
     }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "upload-asset") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleUploadAsset(req, res, runId);
+      return;
+    }
+
 
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "select-version") {
       const runId = decodeURIComponent(pathParts[1]);

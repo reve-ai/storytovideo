@@ -204,6 +204,41 @@ function setReviewLockMessage(message, tone = "locked") {
   elements.reviewLockMessage.classList.add(tone === "ready" ? "lock-message-ready" : "lock-message-locked");
 }
 
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function showAssetUploadNotification(assetKey) {
+  // Remove any existing notification
+  const existing = document.querySelector(".asset-upload-notification");
+  if (existing) existing.remove();
+
+  const notification = document.createElement("div");
+  notification.className = "asset-upload-notification";
+  notification.innerHTML = `
+    <span>✅ Asset updated (<strong>${escapeHtml(assetKey)}</strong>). Frames using this reference may need regeneration.</span>
+    <button class="notification-dismiss" title="Dismiss">✕</button>
+  `;
+  notification.querySelector(".notification-dismiss").addEventListener("click", () => {
+    notification.remove();
+  });
+  // Auto-dismiss after 8 seconds
+  setTimeout(() => notification.remove(), 8000);
+
+  // Insert at top of stage output section
+  const target = elements.stageOutputSection;
+  if (target) {
+    target.prepend(notification);
+  }
+}
+
+
 function setGlobalError(message) {
   if (!message) {
     elements.runError.textContent = "";
@@ -864,12 +899,18 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         if (frontAsset || angleAsset || showCharacterSpinners) {
           imagesHtml += `<div class="character-images">`;
           if (frontAsset && frontAsset.previewUrl) {
+            imagesHtml += `<div class="asset-upload-wrapper">`;
             imagesHtml += `<img src="${escapeHtml(frontAsset.previewUrl)}" alt="Front" class="inline-thumbnail" />`;
+            imagesHtml += `<button class="asset-upload-btn" data-asset-key="character:${escapeHtml(char.name)}:front" title="Upload replacement image">📷</button>`;
+            imagesHtml += `</div>`;
           } else if (showCharacterSpinners) {
             imagesHtml += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
           }
           if (angleAsset && angleAsset.previewUrl) {
+            imagesHtml += `<div class="asset-upload-wrapper">`;
             imagesHtml += `<img src="${escapeHtml(angleAsset.previewUrl)}" alt="Angle" class="inline-thumbnail" />`;
+            imagesHtml += `<button class="asset-upload-btn" data-asset-key="character:${escapeHtml(char.name)}:angle" title="Upload replacement image">📷</button>`;
+            imagesHtml += `</div>`;
           } else if (showCharacterSpinners) {
             imagesHtml += `<div class="spinner-placeholder spinner-image"><div class="spinner-circle"></div><div class="spinner-label">Generating…</div></div>`;
           }
@@ -907,7 +948,10 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         const locRedoItemDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
         let locImageHtml = "";
         if (locAsset && locAsset.previewUrl) {
-          locImageHtml = `<img src="${escapeHtml(locAsset.previewUrl)}" alt="Location" class="inline-thumbnail" />`;
+          locImageHtml = `<div class="asset-upload-wrapper">`;
+          locImageHtml += `<img src="${escapeHtml(locAsset.previewUrl)}" alt="Location" class="inline-thumbnail" />`;
+          locImageHtml += `<button class="asset-upload-btn" data-asset-key="location:${escapeHtml(loc.name)}:front" title="Upload replacement image">📷</button>`;
+          locImageHtml += `</div>`;
           locImageHtml += `<button class="redo-item-button" data-redo-type="asset" data-redo-asset-key="location:${escapeHtml(loc.name)}:front"${locRedoItemDisabled} title="Retry image for ${escapeHtml(loc.name)}">↻</button>`;
           locImageHtml += buildDirectiveControls(`asset:location:${loc.name}:front`, isRunActivelyExecuting(state.activeRun));
         } else if (isStageGenerating("asset_generation")) {
@@ -1967,6 +2011,44 @@ function bindEvents() {
       }
     }
   });
+
+  // Asset upload: delegated click on upload buttons
+  document.body.addEventListener("click", (event) => {
+    const btn = event.target.closest(".asset-upload-btn");
+    if (!btn) return;
+    const assetKey = btn.dataset.assetKey;
+    if (!assetKey) return;
+
+    // Create and trigger a file input
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        const base64 = await readFileAsBase64(file);
+        await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/upload-asset`, {
+          method: "POST",
+          body: JSON.stringify({ key: assetKey, imageData: base64 }),
+        });
+        // Show notification
+        showAssetUploadNotification(assetKey);
+        // Refresh assets and re-render
+        lastStageOutputHtml = null;
+        await refreshAssets({ silent: true });
+        await fetchAndRenderStageOutput({ silent: true });
+      } catch (error) {
+        setGlobalError(`Failed to upload asset: ${error.message}`);
+      } finally {
+        fileInput.remove();
+      }
+    });
+    document.body.appendChild(fileInput);
+    fileInput.click();
+  });
+
 
   // Version navigation: ◀ ▶ buttons
   document.body.addEventListener("click", async (event) => {
