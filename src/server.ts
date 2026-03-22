@@ -2675,6 +2675,7 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
         endFramePath: state.generatedFrames[shot.shotNumber]?.end ?? "",
         outputDir: join(run.outputDir, "videos"),
         videoBackend: run.options?.videoBackend || "grok",
+        aspectRatio: run.options?.aspectRatio,
         characterNames: state.storyAnalysis?.characters?.map(c => c.name) ?? [],
       });
 

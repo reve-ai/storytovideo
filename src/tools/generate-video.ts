@@ -78,6 +78,8 @@ type GenerateVideoParams = {
   characterNames?: string[];
   /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
   videoBackend?: "veo" | "comfy" | "grok";
+  /** Aspect ratio for the generated video (e.g. "16:9", "9:16"). */
+  aspectRatio?: string;
   /** Progress callback for UI updates */
   onProgress?: (message: string) => void;
   pendingJobStore?: {
@@ -561,9 +563,15 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
     const result = await grokGenerateVideo(videoPrompt, {
       image: dataUri,
       duration: clampedDuration,
+      aspectRatio: params.aspectRatio || "16:9",
+      resolution: "720p",
       outputPath,
       abortSignal,
     });
+
+    if (result.duration !== clampedDuration) {
+      console.warn(`[generateVideo] WARNING: Requested ${clampedDuration}s but Grok returned ${result.duration}s`);
+    }
 
     console.log(`[generateVideo] Shot ${shotNumber} saved to ${result.path}`);
 	    return { shotNumber, path: result.path, duration: clampedDuration, promptSent: videoPrompt };
