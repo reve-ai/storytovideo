@@ -102,6 +102,7 @@ interface ReviewState {
 interface RunResponse {
   id: string;
   name?: string;
+  storyText: string;
   status: RunStatus;
   outputDir: string;
   currentStage: string;
@@ -543,6 +544,7 @@ function toRunResponse(record: RunRecord): RunResponse {
   return {
     id: record.id,
     name: record.name,
+    storyText: record.storyText,
     status: record.status,
     outputDir: record.outputDir,
     currentStage,
@@ -867,7 +869,7 @@ function sendRunMutationLockedResponse(res: ServerResponse, run: RunRecord): voi
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
 }
 
 async function runInBackground(runId: string, resume = false): Promise<void> {
@@ -2165,6 +2167,83 @@ async function handleStopRun(
   });
 }
 
+async function handleUpdateStory(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  if (isRunActivelyExecuting(run.status)) {
+    sendRunMutationLockedResponse(res, run);
+    return;
+  }
+
+  const body = await readJsonBody(req) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+
+  const newStoryText = typeof body.storyText === "string" ? body.storyText.trim() : undefined;
+  const newConvertedScript = typeof body.convertedScript === "string" ? body.convertedScript.trim() : undefined;
+
+  if (!newStoryText && !newConvertedScript) {
+    sendJson(res, 400, { error: "At least one of storyText or convertedScript must be provided" });
+    return;
+  }
+
+  // Load state
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available" });
+    return;
+  }
+
+  // Update story text on the run record
+  if (newStoryText) {
+    runStore.patch(runId, { storyText: newStoryText });
+    // If only story text changed, clear convertedScript so storyToScript runs again
+    if (!newConvertedScript) {
+      delete state.convertedScript;
+    }
+  }
+
+  // Update converted script in state
+  if (newConvertedScript) {
+    state.convertedScript = newConvertedScript;
+  }
+
+  // Clear from analysis stage onward
+  clearStageData(state, "analysis" as any, run.outputDir);
+
+  // Save cleared state
+  await saveState({ state });
+
+  // Update run to queued and start pipeline
+  const updatedRecord = runStore.patch(runId, {
+    status: "queued",
+    completedAt: undefined,
+    error: undefined,
+    currentStage: "analysis",
+    completedStages: state.completedStages,
+  }) ?? run;
+
+  emitRunStatusEvent(runId, "queued");
+  emitLogEvent(runId, "Story/script updated — regenerating from analysis");
+  startRunStateMonitor(runId);
+  setImmediate(() => {
+    void runInBackground(runId, true);
+  });
+
+  sendJson(res, 200, { run: toRunResponse(updatedRecord) });
+}
+
+
 async function handleSetReviewMode(
   req: IncomingMessage,
   res: ServerResponse,
@@ -2841,6 +2920,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
+    if (method === "PATCH" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "story") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleUpdateStory(req, res, runId);
+      return;
+    }
+
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "review-mode") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleSetReviewMode(req, res, runId);
@@ -3012,6 +3097,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         completedStages: state.completedStages,
         assetLibrary: state.assetLibrary,
         itemDirectives: state.itemDirectives ?? {},
+        convertedScript: state.convertedScript ?? null,
         ...(importAnalysisProgress !== undefined && { importAnalysisProgress }),
       });
       return;

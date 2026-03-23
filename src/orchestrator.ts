@@ -600,7 +600,12 @@ Also call the nameRun tool to give this run a short, creative name (2-5 words) t
 
 After receiving the analysis, respond with a brief summary of what was found.`;
 
-  const userPrompt = `Analyze this story:\n\n${storyText}`;
+  let effectiveStoryText = storyText;
+  if (state.convertedScript) {
+    effectiveStoryText = state.convertedScript;
+    console.log("[analysis] Using existing converted script instead of raw story");
+  }
+  const userPrompt = `Analyze this story:\n\n${effectiveStoryText}`;
 
   const analysisTools = {
     storyToScript: {

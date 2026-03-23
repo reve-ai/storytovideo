@@ -71,6 +71,14 @@ const elements = {
   lightboxOverlay: getElement("lightbox-overlay"),
   lightboxImage: getElement("lightbox-image"),
   lightboxClose: getElement("lightbox-overlay").querySelector(".lightbox-close"),
+  storyScriptSection: getElement("story-script-section"),
+  storyScriptToggle: getElement("story-script-toggle"),
+  storyScriptContent: getElement("story-script-content"),
+  editStoryText: getElement("edit-story-text"),
+  editConvertedScript: getElement("edit-converted-script"),
+  saveStoryButton: getElement("save-story-button"),
+  storySaveStatus: getElement("story-save-status"),
+  scriptStatus: getElement("script-status"),
 };
 
 function getElement(id) {
@@ -202,6 +210,55 @@ function setReviewLockMessage(message, tone = "locked") {
   elements.reviewLockMessage.textContent = message;
   elements.reviewLockMessage.classList.remove("lock-message-locked", "lock-message-ready");
   elements.reviewLockMessage.classList.add(tone === "ready" ? "lock-message-ready" : "lock-message-locked");
+}
+
+
+function renderStoryScript(run, stateData) {
+  if (!run) {
+    elements.storyScriptSection.style.display = "none";
+    return;
+  }
+
+  // Hide for import runs where storyText is a placeholder
+  const isImport = run.storyText === "(imported video)" || run.storyText === "(uploaded video)";
+
+  elements.storyScriptSection.style.display = "";
+
+  // Populate story text (read-only for imports)
+  elements.editStoryText.value = run.storyText || "";
+  elements.editStoryText.readOnly = isImport;
+  if (isImport) {
+    elements.editStoryText.placeholder = "Story text not available for imported videos";
+  }
+
+  // Populate converted script
+  const convertedScript = stateData?.convertedScript || "";
+  elements.editConvertedScript.value = convertedScript;
+  elements.scriptStatus.textContent = convertedScript ? "(auto-generated from story)" : "";
+
+  // Store originals for change detection
+  state.originalStoryText = run.storyText || "";
+  state.originalConvertedScript = convertedScript;
+
+  // Disable save button when pipeline is running
+  const running = isRunActivelyExecuting(run);
+  elements.saveStoryButton.disabled = running || isImport;
+  elements.storySaveStatus.textContent = "";
+
+  checkStoryChanged();
+}
+
+function checkStoryChanged() {
+  const run = state.activeRun;
+  if (!run || isRunActivelyExecuting(run)) return;
+  const isImport = run.storyText === "(imported video)" || run.storyText === "(uploaded video)";
+  if (isImport) {
+    elements.saveStoryButton.disabled = true;
+    return;
+  }
+  const storyChanged = elements.editStoryText.value.trim() !== (state.originalStoryText || "");
+  const scriptChanged = elements.editConvertedScript.value.trim() !== (state.originalConvertedScript || "");
+  elements.saveStoryButton.disabled = !storyChanged && !scriptChanged;
 }
 
 
@@ -839,6 +896,8 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
     if (itemDirectives) {
       state.directives = itemDirectives;
     }
+    // Render story/script editing section
+    renderStoryScript(state.activeRun, response);
     // Build the unified story document HTML
     let html = "";
 
@@ -1917,6 +1976,49 @@ function startPollingFallback() {
 }
 
 function bindEvents() {
+  // Story & Script section
+  elements.storyScriptToggle.addEventListener("click", () => {
+    const content = elements.storyScriptContent;
+    const isHidden = content.style.display === "none";
+    content.style.display = isHidden ? "" : "none";
+    elements.storyScriptToggle.textContent = (isHidden ? "▼" : "▶") + " Story & Script";
+  });
+
+  elements.editStoryText.addEventListener("input", checkStoryChanged);
+  elements.editConvertedScript.addEventListener("input", checkStoryChanged);
+
+  elements.saveStoryButton.addEventListener("click", async () => {
+    const runId = state.activeRunId;
+    if (!runId) return;
+
+    const body = {};
+    const currentStory = elements.editStoryText.value.trim();
+    const currentScript = elements.editConvertedScript.value.trim();
+
+    if (currentStory !== (state.originalStoryText || "")) body.storyText = currentStory;
+    if (currentScript !== (state.originalConvertedScript || "")) body.convertedScript = currentScript || undefined;
+
+    if (Object.keys(body).length === 0) return;
+
+    elements.saveStoryButton.disabled = true;
+    elements.storySaveStatus.textContent = "Saving...";
+
+    try {
+      await requestJson(`/runs/${encodeURIComponent(runId)}/story`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      elements.storySaveStatus.textContent = "Saved! Regenerating...";
+      state.originalStoryText = currentStory;
+      state.originalConvertedScript = currentScript;
+      await refreshRun({ silent: false });
+    } catch (err) {
+      elements.storySaveStatus.textContent = "Error: " + err.message;
+    } finally {
+      elements.saveStoryButton.disabled = false;
+    }
+  });
+
   elements.newRunButton.addEventListener("click", () => {
     showCreateView();
   });

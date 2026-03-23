@@ -81,6 +81,24 @@
     </section>
 
     <section class="panel panel-feed">
+      <section id="story-script-section" class="card" style="display:none;">
+        <h3 class="collapsible-header" id="story-script-toggle">▶ Story &amp; Script</h3>
+        <div id="story-script-content" class="collapsible-content" style="display:none;">
+          <div class="story-edit-group">
+            <label for="edit-story-text">Original Story</label>
+            <textarea id="edit-story-text" rows="10" placeholder="Original story text..."></textarea>
+          </div>
+          <div class="story-edit-group">
+            <label for="edit-converted-script">Converted Script <span class="muted" id="script-status"></span></label>
+            <textarea id="edit-converted-script" rows="10" placeholder="No script generated yet..."></textarea>
+          </div>
+          <div class="story-edit-actions">
+            <button id="save-story-button" type="button" disabled>Save &amp; Regenerate from Analysis</button>
+            <span class="muted" id="story-save-status"></span>
+          </div>
+        </div>
+      </section>
+
       <section class="card" id="stage-output-section" style="display:none">
         <h2>Stage Output</h2>
         <div id="stage-output"></div>

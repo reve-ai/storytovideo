@@ -1464,3 +1464,42 @@ dd {
     transform: translateY(0);
   }
 }
+
+
+/* Story & Script editing section */
+.story-edit-group {
+  margin-bottom: 1rem;
+}
+.story-edit-group label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+.story-edit-group textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  resize: vertical;
+  background: var(--panel);
+  color: var(--text);
+}
+.story-edit-group textarea[readonly] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.story-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+}
+.collapsible-header:hover {
+  opacity: 0.8;
+}
