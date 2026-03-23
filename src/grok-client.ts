@@ -92,7 +92,7 @@ async function submitGeneration(
   if (options.image) {
     body.image = typeof options.image === "string" ? { url: options.image } : options.image;
   }
-  if (options.duration !== undefined) body.duration = options.duration;
+  if (options.duration !== undefined) body.duration = Math.max(2, Math.round(options.duration));
   if (options.aspectRatio) body.aspect_ratio = options.aspectRatio;
   if (options.resolution) body.resolution = options.resolution;
   const resp = await apiRequest<GenerationResponse>("POST", "/videos/generations", body, abortSignal);
