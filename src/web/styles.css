@@ -1009,6 +1009,12 @@ dd {
   background: #000;
 }
 
+.final-video-actions {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
 /* Shot prompts collapsible */
 .shot-prompts-row td {
   padding: 0 0.5rem 0.5rem !important;

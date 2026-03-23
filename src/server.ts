@@ -32,7 +32,7 @@ import {
   type RunEventType,
 } from "./server-events";
 import { loadState, saveState } from "./tools/state";
-import { analyzeClipPacing } from "./tools/analyze-video-pacing";
+import { analyzeClipPacing, getClipDuration } from "./tools/analyze-video-pacing";
 import { generateVideo } from "./tools/generate-video";
 import { setInterrupted } from "./signals";
 import type { GeneratedFrameSet, ItemDirective, PipelineOptions, PipelineState } from "./types";
@@ -1261,6 +1261,67 @@ async function handleRedoRun(
   });
 
   sendJson(res, 200, { run: toRunResponse(updatedRecord) });
+}
+
+async function handleReassemble(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  // Load state
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available for reassembly" });
+    return;
+  }
+
+  // If there's a running pipeline, abort and wait for it to finish
+  const existing = runningPipelines.get(runId);
+  if (existing) {
+    console.log('[handleReassemble] Aborting running pipeline for ' + runId + '...');
+    existing.abortController.abort();
+    const timeoutPromise = new Promise<'timeout'>(r => setTimeout(() => r('timeout'), 30_000));
+    const result = await Promise.race([
+      existing.promise.then(() => 'done' as const),
+      timeoutPromise,
+    ]);
+    if (result === 'timeout') {
+      console.warn(`[handleReassemble] Pipeline for ${runId} did not stop within 30s, force-removing`);
+      runningPipelines.delete(runId);
+    } else {
+      console.log('[handleReassemble] Pipeline for ' + runId + ' stopped successfully');
+    }
+  }
+
+  // Remove "assembly" from completedStages and set currentStage
+  state.completedStages = state.completedStages.filter(s => s !== "assembly");
+  state.currentStage = "assembly";
+  await saveState({ state });
+
+  // Update run record
+  const updatedRecord = runStore.patch(runId, {
+    status: "queued",
+    completedAt: undefined,
+    error: undefined,
+    currentStage: "assembly",
+    completedStages: state.completedStages,
+  }) ?? run;
+
+  // Emit events and start pipeline
+  emitRunStatusEvent(runId, "queued");
+  emitLogEvent(runId, "Reassembly started");
+  startRunStateMonitor(runId);
+  setImmediate(() => {
+    void runInBackground(runId, true);
+  });
+
+  sendJson(res, 200, { ok: true, message: "Reassembly started", run: toRunResponse(updatedRecord) });
 }
 
 
@@ -2604,7 +2665,8 @@ async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, r
     if (!videoPath || !existsSync(videoPath)) continue;
 
     try {
-      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, shot.durationSeconds);
+      const actualDuration = await getClipDuration(videoPath);
+      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, actualDuration);
       results.push(analysis);
     } catch (err) {
       console.error(`[pacing] Failed to analyze shot ${shot.shotNumber}:`, err);
@@ -2826,6 +2888,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "redo-item") {
       const runId = decodeURIComponent(pathParts[1]);
       await handleRedoItem(req, res, runId);
+      return;
+    }
+
+    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "reassemble") {
+      const runId = decodeURIComponent(pathParts[1]);
+      await handleReassemble(req, res, runId);
       return;
     }
 

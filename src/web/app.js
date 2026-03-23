@@ -1183,6 +1183,9 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<div class="stage-output-section final-video-section">`;
       html += `<h4>Final Video</h4>`;
       html += `<video src="${escapeHtml(finalVideoAsset.previewUrl)}" class="final-video" controls preload="metadata"></video>`;
+      html += `<div class="final-video-actions">`;
+      html += `<button class="btn btn-secondary reassemble-btn" data-run-id="${escapeHtml(run.id)}">↻ Reassemble</button>`;
+      html += `</div>`;
       html += `</div>`;
     } else if (showFinalVideoSpinner) {
       html += `<div class="stage-output-section final-video-section">`;
@@ -2075,6 +2078,30 @@ function bindEvents() {
           handleRedoItem(type, shotNumber);
         }
       }
+    }
+  });
+
+  // Reassemble: delegated click on reassemble button
+  document.body.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".reassemble-btn");
+    if (!btn) return;
+
+    const runId = btn.dataset.runId;
+    btn.disabled = true;
+    btn.textContent = "Reassembling...";
+
+    try {
+      const resp = await fetch(`/api/runs/${runId}/reassemble`, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error || "Failed to start reassembly");
+      }
+      // The UI will auto-update via polling when assembly completes
+    } catch (err) {
+      alert("Failed to start reassembly: " + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "↻ Reassemble";
     }
   });
 
