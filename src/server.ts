@@ -986,28 +986,6 @@ async function runInBackground(runId: string, resume = false): Promise<void> {
   runningPipelines.set(runId, { promise: pipeline, abortController });
 }
 
-async function handleConvertToScript(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const body = await readJsonBody(req);
-  if (typeof body !== "object" || body === null) {
-    sendJson(res, 400, { error: "Request body must be a JSON object" });
-    return;
-  }
-  const { storyText } = body as { storyText?: string };
-  if (typeof storyText !== "string" || storyText.trim().length === 0) {
-    sendJson(res, 400, { error: "storyText is required and must be a non-empty string" });
-    return;
-  }
-  try {
-    const { storyToScript } = await import("./tools/story-to-script");
-    const script = await storyToScript(storyText);
-    sendJson(res, 200, { script });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Error converting story to script:", message);
-    sendJson(res, 500, { error: `Failed to convert story to script: ${message}` });
-  }
-}
-
 async function handleCreateRun(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const parsedBody = await readJsonBody(req);
   const request = parseCreateRunRequest(parsedBody);
@@ -2714,11 +2692,6 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
       }
-    }
-
-    if (method === "POST" && url.pathname === "/convert-to-script") {
-      await handleConvertToScript(req, res);
-      return;
     }
 
     if (method === "POST" && url.pathname === "/runs/import/upload") {

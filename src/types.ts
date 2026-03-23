@@ -159,5 +159,6 @@ export interface PipelineState {
   };
   assetVersions?: Record<string, ArtifactVersion[]>;  // asset key -> versions
   selectedAssetVersions?: Record<string, number>;      // asset key -> selected version number
+  convertedScript?: string;                        // visual script generated from raw story by storyToScript
   lastSavedAt: string;                             // ISO timestamp of last state save
 }

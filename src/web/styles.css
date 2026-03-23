@@ -111,18 +111,6 @@ body {
   min-height: 200px;
 }
 
-.create-run-actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-}
-
-#convert-to-script-button {
-  background: var(--surface-2, #333);
-  color: var(--text-1, #eee);
-  border: 1px solid var(--border, #555);
-}
-
 .create-tabs {
   display: flex;
   gap: 0;
@@ -1405,64 +1393,6 @@ dd {
   padding: 0.1rem 0.3rem;
 }
 
-
-/* Pacing Analysis */
-.pacing-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-  margin-top: 0.5rem;
-}
-
-.pacing-table th,
-.pacing-table td {
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-}
-
-.pacing-table th {
-  font-weight: 700;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.pacing-row-actionable {
-  background: #fffbe6;
-}
-
-.pacing-confidence {
-  display: inline-block;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.pacing-confidence-high {
-  background: #effaf2;
-  color: #0a6a55;
-}
-
-.pacing-confidence-medium {
-  background: #fff7e6;
-  color: #9c5514;
-}
-
-.pacing-confidence-low {
-  background: var(--panel-alt);
-  color: var(--muted);
-}
-
-.pacing-progress {
-  display: inline-block;
-  font-size: 0.82rem;
-  color: var(--muted);
-  margin-left: 0.5rem;
-  font-style: italic;
-}
 
 /* Asset upload button overlay */
 .asset-upload-wrapper {
