@@ -110,7 +110,7 @@ CROSS-SHOT CONTINUITY:
 
 const perSceneShotSchema = z.object({
   shotInScene: z.number(),
-  durationSeconds: z.number().min(0.5).max(10),
+  durationSeconds: z.number().min(2).max(10),
   shotType: z.literal("first_last_frame"),
   composition: z.string(),
   startFramePrompt: z.string(),
@@ -177,7 +177,7 @@ export function planShotsForScene(
     shotNumber: nextShotNumber++,
     sceneNumber,
     shotType: "first_last_frame" as const,
-    durationSeconds: shot.durationSeconds,
+    durationSeconds: Math.max(2, Math.ceil(shot.durationSeconds)),
     objectsPresent: shot.objectsPresent ?? [],
   }));
 
