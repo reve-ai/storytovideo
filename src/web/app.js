@@ -1189,7 +1189,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
       html += `<h4>Final Video</h4>`;
       html += `<video src="${escapeHtml(finalVideoAsset.previewUrl)}" class="final-video" controls preload="metadata"></video>`;
       html += `<div class="final-video-actions">`;
-      html += `<button class="btn btn-secondary reassemble-btn" data-run-id="${escapeHtml(run.id)}">↻ Reassemble</button>`;
+      html += `<button class="btn btn-secondary reassemble-btn" data-run-id="${escapeHtml(runId)}">↻ Reassemble</button>`;
       html += `</div>`;
       html += `</div>`;
     } else if (showFinalVideoSpinner) {
@@ -1336,6 +1336,10 @@ function handleRunEvent(type, messageEvent, source) {
           }
 
           // Detect completion of analysis or apply
+          if (message.includes("All regenerations complete")) {
+            const pacingSection = document.getElementById("pacing-section");
+            if (pacingSection) pacingSection.style.display = "none";
+          }
           if (message.includes("Analysis complete") || message.includes("All regenerations complete")) {
             if (progressEl) {
               // Keep the completion message visible briefly, then hide
