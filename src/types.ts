@@ -33,6 +33,7 @@ export interface Shot {
   objectsPresent: string[];
   location: string;
   continuousFromPrevious: boolean;
+  skipped?: boolean;           // if true, excluded from final assembly and generation
 }
 
 export interface Scene {

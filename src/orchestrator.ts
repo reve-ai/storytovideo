@@ -953,7 +953,9 @@ async function runFrameGenerationStage(
   }
 
   // Determine which frames still need generation (all shots use first_last_frame)
+  // Skip shots marked as skipped — don't waste API calls generating frames for them
   const neededFrames = allShots.filter((s) => {
+    if (s.skipped) return false;
     const existing = state.generatedFrames[s.shotNumber];
     if (!existing || !existing.start || !existing.end) return true;
     // Check files actually exist — clear ghost references
@@ -1067,6 +1069,7 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
 
   // Recompute remaining frames after stage execution (also check files exist)
   const remainingFrames = allShots.filter((s) => {
+    if (s.skipped) return false;
     const existing = state.generatedFrames[s.shotNumber];
     if (!existing || !existing.start || !existing.end) return true;
     if (!existsSync(existing.start) || !existsSync(existing.end)) return true;
@@ -1096,8 +1099,9 @@ async function runVideoGenerationStage(
   const analysis = state.storyAnalysis;
   const allShots = analysis.scenes.flatMap((s) => s.shots || []);
 
-  // Determine which videos still need generation
+  // Determine which videos still need generation (skip shots marked as skipped)
   const neededVideos = allShots.filter((s) => {
+    if (s.skipped) return false;
     const videoPath = state.generatedVideos[s.shotNumber];
     const frameData = state.generatedFrames[s.shotNumber];
     const startFrame = frameData?.start;
@@ -1313,6 +1317,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
 
   // Recompute remaining videos after stage execution (also check files exist)
   const remainingVideos = allShots.filter((s) => {
+    if (s.skipped) return false;
     const videoPath = state.generatedVideos[s.shotNumber];
     return !videoPath || !existsSync(videoPath);
   });
@@ -1359,7 +1364,9 @@ async function runShotGenerationStage(
   const allShots = analysis.scenes.flatMap((s) => s.shots || []);
 
   // Determine which shots still need video generation (the final output)
+  // Skip shots marked as skipped — don't waste API calls generating them
   const neededShots = allShots.filter((s) => {
+    if (s.skipped) return false;
     const videoPath = state.generatedVideos[s.shotNumber];
     const frameData = state.generatedFrames[s.shotNumber];
     const startFrame = frameData?.start;
@@ -1587,6 +1594,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
 
   // Recompute remaining shots after stage execution (also check files exist)
   const remainingShots = allShots.filter((s) => {
+    if (s.skipped) return false;
     const videoPath = state.generatedVideos[s.shotNumber];
     return !videoPath || !existsSync(videoPath);
   });
@@ -1611,9 +1619,10 @@ async function runAssemblyStage(
     throw new Error("Assembly requires storyAnalysis in state");
   }
 
-  // Collect all video paths in shot order
+  // Collect all video paths in shot order, excluding skipped shots
   const allShots = state.storyAnalysis.scenes.flatMap((s) => s.shots || []);
-  const sortedShots = [...allShots].sort((a, b) => a.shotNumber - b.shotNumber);
+  const sortedShots = [...allShots].sort((a, b) => a.shotNumber - b.shotNumber)
+    .filter((s) => !s.skipped);
   const videoPaths = sortedShots
     .map((s) => state.generatedVideos[s.shotNumber])
     .filter((p): p is string => !!p);

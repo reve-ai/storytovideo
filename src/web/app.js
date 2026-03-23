@@ -1091,14 +1091,16 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
         // Show shots if they exist and are populated
         if (scene.shots && scene.shots.length > 0) {
           html += `<table class="stage-output-table scene-shots-table">`;
-          html += `<thead><tr><th>Shot</th><th>Composition</th><th>Duration</th><th>Dialogue</th></tr></thead>`;
+          html += `<thead><tr><th>Shot</th><th>Composition</th><th>Duration</th><th>Dialogue</th><th></th></tr></thead>`;
           html += `<tbody>`;
           for (const shot of scene.shots) {
             const dialogue = shot.dialogue ? escapeHtml(shot.dialogue) : "<em>—</em>";
             const isGrok = state.activeRun?.options?.videoBackend === "grok";
             const videoAssetExists = Boolean(findAsset(`video:${shot.shotNumber}`));
             const regenDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
-            html += `<tr>`;
+            const isSkipped = shot.skipped === true;
+            const skipRowClass = isSkipped ? " shot-skipped" : "";
+            html += `<tr class="${skipRowClass}">`;
             html += `<td>${shot.shotNumber}</td>`;
             html += `<td>${escapeHtml(shot.composition)}</td>`;
             html += `<td class="duration-cell">`;
@@ -1109,6 +1111,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             }
             html += `</td>`;
             html += `<td>${dialogue}</td>`;
+            html += `<td><button class="skip-shot-btn" data-shot="${shot.shotNumber}" title="${isSkipped ? "Include this shot in the final video" : "Skip this shot from the final video"}">${isSkipped ? "Unskip" : "Skip"}</button></td>`;
             html += `</tr>`;
 
             // Add collapsible prompts row
@@ -1122,7 +1125,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             const shotReferenceAssets = collectShotReferenceAssets(shot);
             const hasAnyPrompt = promptFields.some(f => f.value);
             if (hasAnyPrompt || shotReferenceAssets.length > 0) {
-              html += `<tr class="shot-prompts-row"><td colspan="4">`;
+              html += `<tr class="shot-prompts-row"><td colspan="5">`;
               html += `<details class="shot-prompts-details">`;
               html += `<summary class="shot-prompts-summary">Prompts ▸</summary>`;
               html += `<div class="shot-prompts-content">`;
@@ -1178,7 +1181,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
               const selectedEndVersion = state.activeRun?.selectedVersions?.frames?.[shot.shotNumber]?.end ?? (endFrameVersions?.length || 0);
               const selectedVideoVersion = state.activeRun?.selectedVersions?.videos?.[shot.shotNumber] ?? (videoVersions?.length || 0);
 
-              html += `<tr><td colspan="4">`;
+              html += `<tr><td colspan="5">`;
               html += `<div class="shot-assets">`;
               if (startFrameAsset && startFrameAsset.previewUrl) {
                 html += `<div class="shot-asset-item">`;
@@ -2201,6 +2204,36 @@ function bindEvents() {
           handleRedoItem(type, shotNumber);
         }
       }
+    }
+  });
+
+  // Skip/unskip shot: delegated click on skip buttons
+  document.body.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".skip-shot-btn");
+    if (!btn) return;
+    const shotNumber = Number(btn.dataset.shot);
+    if (Number.isNaN(shotNumber)) return;
+    const runId = state.activeRun?.id;
+    if (!runId) return;
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/runs/${encodeURIComponent(runId)}/shots/${shotNumber}/skip`, { method: "POST" });
+      if (!resp.ok) {
+        const err = await resp.json();
+        setGlobalError(err.error || "Failed to toggle skip");
+        return;
+      }
+      const result = await resp.json();
+      // Update local state
+      const shot = state.storyAnalysis?.scenes
+        ?.flatMap(s => s.shots || [])
+        ?.find(s => s.shotNumber === shotNumber);
+      if (shot) shot.skipped = result.skipped;
+      renderStageOutput();
+    } catch (e) {
+      setGlobalError("Failed to toggle skip: " + e.message);
+    } finally {
+      btn.disabled = false;
     }
   });
 

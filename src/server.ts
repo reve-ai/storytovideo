@@ -2762,6 +2762,37 @@ async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Pr
   sendJson(res, 201, toRunResponse(record));
 }
 
+async function handleToggleShotSkip(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+  shotNumber: number,
+): Promise<void> {
+  const run = runStore.get(runId);
+  if (!run) {
+    sendJson(res, 404, { error: `Run not found: ${runId}` });
+    return;
+  }
+
+  const state = loadState(run.outputDir);
+  if (!state) {
+    sendJson(res, 409, { error: "No saved state available" });
+    return;
+  }
+
+  const shot = state.storyAnalysis?.scenes
+    ?.flatMap((s) => s.shots || [])
+    ?.find((s) => s.shotNumber === shotNumber);
+  if (!shot) {
+    sendJson(res, 404, { error: `Shot not found: ${shotNumber}` });
+    return;
+  }
+
+  shot.skipped = !shot.skipped;
+  await saveState({ state });
+  sendJson(res, 200, { shotNumber, skipped: shot.skipped });
+}
+
 async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCorsHeaders(res);
 
@@ -2920,6 +2951,17 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
+
+    if (method === "POST" && pathParts.length === 5 && pathParts[0] === "runs" && pathParts[2] === "shots" && pathParts[4] === "skip") {
+      const runId = decodeURIComponent(pathParts[1]);
+      const shotNumber = parseInt(pathParts[3], 10);
+      if (Number.isNaN(shotNumber)) {
+        sendJson(res, 400, { error: "Invalid shot number" });
+        return;
+      }
+      await handleToggleShotSkip(req, res, runId, shotNumber);
+      return;
+    }
 
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "stop") {
       const runId = decodeURIComponent(pathParts[1]);

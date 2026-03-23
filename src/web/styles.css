@@ -1503,3 +1503,31 @@ dd {
 .collapsible-header:hover {
   opacity: 0.8;
 }
+
+
+/* Skip/unskip shot button */
+.skip-shot-btn {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary, #2a2a2a);
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.skip-shot-btn:hover {
+  background: var(--accent, #4a9eff);
+  color: #fff;
+  border-color: var(--accent, #4a9eff);
+}
+
+/* Skipped shot row styling */
+tr.shot-skipped > td {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+tr.shot-skipped > td:last-child {
+  opacity: 1;
+  text-decoration: none;
+}
