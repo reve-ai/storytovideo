@@ -77,6 +77,28 @@ export function loadState(outputDir: string): PipelineState | null {
   try {
     const content = fs.readFileSync(statePath, "utf-8");
     const parsed = JSON.parse(content) as PipelineState;
+
+    // Recover generatedVideos from videoVersions if empty
+    if (parsed.videoVersions && Object.keys(parsed.videoVersions).length > 0) {
+      if (!parsed.generatedVideos || Object.keys(parsed.generatedVideos).length === 0) {
+        parsed.generatedVideos = {} as Record<number, string>;
+        for (const [shotNum, versions] of Object.entries(parsed.videoVersions)) {
+          if (Array.isArray(versions) && versions.length > 0) {
+            parsed.generatedVideos[Number(shotNum)] = versions[versions.length - 1].path;
+          }
+        }
+        console.log(`[loadState] Recovered ${Object.keys(parsed.generatedVideos).length} generatedVideos from videoVersions`);
+      }
+    }
+
+    // Recover status if null but assembly was completed
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsedAny = parsed as any;
+    if (!parsedAny.status && parsed.completedStages?.includes('assembly')) {
+      parsedAny.status = 'completed';
+      console.log('[loadState] Recovered status to completed (assembly was in completedStages)');
+    }
+
     return withReviewDefaults(parsed);
   } catch (error) {
     console.error(`Failed to load state from ${statePath}:`, error);
