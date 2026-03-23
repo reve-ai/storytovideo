@@ -709,11 +709,11 @@ For each scene:
 1. Choose a transition type (Scene 1 is always "cut")
 2. ${durationGuidance}
 3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
-4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, AI/system voice commands, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, system prompt, or internal thought, include it as dialogue in the appropriate shot. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s minimum.
+4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, or internal thought, include it as dialogue in the appropriate shot. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s minimum.
 5. All shots use first_last_frame generation strategy
 6. Write detailed frame prompts that include the composition type
 7. Write action prompts for video generation. In actionPrompt fields, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name. Character names in video prompts trigger content safety filters.
-8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue, AI/system voice. If the scene has narration or a voice giving instructions, those words go in the dialogue field.
+8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field.
 ${fixedCameraGuidance}
 10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${(state.storyAnalysis?.objects ?? []).length > 0 ? ` Known objects: ${(state.storyAnalysis?.objects ?? []).map(o => o.name).join(", ")}.` : ""}
 
