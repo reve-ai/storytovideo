@@ -2751,26 +2751,9 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
     }
   }
 
-  // Re-run assembly
-  console.log("[pacing] All regenerations complete, re-assembling...");
-  state.completedStages = state.completedStages.filter(s => s !== "assembly");
-  state.currentStage = "assembly";
-  await saveState({ state });
-
-  // Re-run the pipeline from assembly stage
-  runStore.patch(runId, {
-    status: "queued",
-    completedAt: undefined,
-    error: undefined,
-    currentStage: "assembly",
-    completedStages: state.completedStages,
-  }) ?? run;
-
-  emitRunStatusEvent(runId, "queued");
-  startRunStateMonitor(runId);
-  setImmediate(() => {
-    void runInBackground(runId, true);
-  });
+  // Notify UI that videos were updated (don't change run status or re-run pipeline)
+  console.log("[pacing] All regenerations complete. Use Reassemble to rebuild final video.");
+  emitRunStatusEvent(runId, "completed");
 }
 
 async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
