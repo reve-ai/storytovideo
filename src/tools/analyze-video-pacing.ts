@@ -98,7 +98,7 @@ Return your analysis as JSON:${shotContext}
 \`\`\`json
 {
   "totalDuration": <current total in seconds>,
-  "recommendedDuration": <estimated total after trims>,
+  "recommendedDuration": <integer - estimated total after trims, whole seconds>,
   "shots": [
     {
       "shotIndex": 1,
@@ -194,7 +194,7 @@ Return JSON:
 {
   "shotNumber": ${shotNumber},
   "currentDuration": ${originalDuration},
-  "recommendedDuration": <number - how long this clip should be>,
+  "recommendedDuration": <integer - whole seconds, minimum 2>,
   "trimFromStart": <seconds to trim from beginning, 0 if none>,
   "trimFromEnd": <seconds to trim from end, 0 if none>,
   "reason": "<brief explanation>",
@@ -215,7 +215,9 @@ Return JSON:
   });
 
   const text = response.text ?? "";
-  return JSON.parse(text);
+  const result = JSON.parse(text) as ClipAnalysis;
+  result.recommendedDuration = Math.max(2, Math.ceil(result.recommendedDuration));
+  return result;
 }
 
 export async function getClipDuration(clipPath: string): Promise<number> {
