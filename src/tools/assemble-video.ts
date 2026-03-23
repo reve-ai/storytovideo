@@ -378,10 +378,11 @@ async function assembleWithXfade(
     const transitionDurationSec = transition.durationMs / 1000;
 
     if (transition.type === "cut") {
-      // For cuts, just concatenate without xfade
-      const nextLabel = `concat${i}`;
-      filterComplex += `[${previousLabel}][norm_${i}]concat=n=2:v=1:a=0[${nextLabel}];`;
-      previousLabel = nextLabel;
+      // For cuts, concatenate then re-normalize timebase so subsequent xfade filters work
+      const concatLabel = `concat${i}`;
+      const normLabel = `cnorm${i}`;
+      filterComplex += `[${previousLabel}][norm_${i}]concat=n=2:v=1:a=0[${concatLabel}];[${concatLabel}]settb=AVTB,fps=24[${normLabel}];`;
+      previousLabel = normLabel;
       cumulativeDuration += durations[i];
     } else {
       // For transitions, use xfade
