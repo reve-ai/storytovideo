@@ -30,6 +30,7 @@ const shotSchema = z.object({
   endFramePrompt: z.string(),
   actionPrompt: z.string(),
   dialogue: z.string(),
+  speaker: z.string(),
   soundEffects: z.string(),
   cameraDirection: z.string(),
   charactersPresent: z.array(z.string()),
@@ -207,6 +208,7 @@ INSTRUCTIONS:
    - endFramePrompt: a detailed visual prompt describing the last frame
    - actionPrompt: describe the action/movement in the shot
    - dialogue: quoted speech if any, empty string if none
+   - speaker: who is speaking the dialogue (character name, "narrator", "voiceover", etc). Empty string if no dialogue
    - soundEffects: described sound effects, empty string if none
    - cameraDirection: camera movement description
    - charactersPresent: array of fictional character names present
