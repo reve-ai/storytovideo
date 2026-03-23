@@ -95,7 +95,7 @@ function preserveOldFile(filePath: string | undefined, versions: ArtifactVersion
 }
 
 /** Record a new video version and update selectedVersions. */
-function trackVideoVersion(state: PipelineState, shotNumber: number, path: string, extra?: Partial<ArtifactVersion>): void {
+export function trackVideoVersion(state: PipelineState, shotNumber: number, path: string, extra?: Partial<ArtifactVersion>): void {
   if (!state.videoVersions) state.videoVersions = {};
   if (!state.videoVersions[shotNumber]) state.videoVersions[shotNumber] = [];
   preserveOldFile(state.generatedVideos[shotNumber], state.videoVersions[shotNumber]);

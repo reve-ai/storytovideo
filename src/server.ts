@@ -17,7 +17,7 @@ import { join, resolve } from "path";
 import { pipeline as streamPipeline } from "stream/promises";
 
 import { runImportPipeline } from "./import-orchestrator";
-import { runPipeline, clearStageData, STAGE_ORDER } from "./orchestrator";
+import { runPipeline, clearStageData, STAGE_ORDER, trackVideoVersion } from "./orchestrator";
 import {
   buildAssetFeed as buildAssetFeedFromState,
   createAssetFeedItem as createAssetFeedItemFromState,
@@ -2764,6 +2764,11 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
         characterNames: state.storyAnalysis?.characters?.map(c => c.name) ?? [],
       });
 
+      trackVideoVersion(state, result.shotNumber, result.path, {
+        duration: result.duration,
+        promptSent: result.promptSent,
+        pacingAdjusted: true,
+      });
       state.generatedVideos[result.shotNumber] = result.path;
       await saveState({ state });
       regenerated++;

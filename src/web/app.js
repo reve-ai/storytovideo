@@ -2127,7 +2127,7 @@ function bindEvents() {
     btn.textContent = "Reassembling...";
 
     try {
-      const resp = await fetch(`/api/runs/${runId}/reassemble`, { method: "POST" });
+      const resp = await fetch(`/runs/${runId}/reassemble`, { method: "POST" });
       const data = await resp.json();
       if (!resp.ok) {
         alert(data.error || "Failed to start reassembly");
