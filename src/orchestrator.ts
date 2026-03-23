@@ -34,8 +34,8 @@ type StageName =
 
 const STAGE_ORDER: StageName[] = [
   "analysis",
-  "shot_planning",
   "asset_generation",
+  "shot_planning",
   "frame_generation",
   "video_generation",
   "shot_generation",
@@ -403,8 +403,8 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
  *
  * Data clearing rules by stage:
  * - analysis (0): clear storyAnalysis, assetLibrary, generatedAssets, generatedFrames, generatedVideos
- * - shot_planning (1): clear assetLibrary, generatedAssets, generatedFrames, generatedVideos
- * - asset_generation (2): clear generatedAssets, generatedFrames, generatedVideos
+ * - asset_generation (1): clear generatedAssets, generatedFrames, generatedVideos
+ * - shot_planning (2): clear assetLibrary, generatedFrames, generatedVideos
  * - frame_generation (3): clear generatedFrames, generatedVideos
  * - video_generation (4): clear generatedVideos
  * - shot_generation (5): clear generatedFrames, generatedVideos (combined grok stage)
@@ -430,21 +430,20 @@ export function clearStageData(state: PipelineState, fromStage: StageName, outpu
     state.generatedFrames = {};
     state.generatedVideos = {};
 	  state.videoPromptsSent = {};
+  } else if (fromStage === "asset_generation") {
+    // asset_generation: clear generated assets and downstream
+    state.generatedAssets = {};
+    state.generatedFrames = {};
+    state.generatedVideos = {};
+	  state.videoPromptsSent = {};
   } else if (fromStage === "shot_planning") {
-    // shot_planning: clear asset-related and downstream
+    // shot_planning: clear shots and downstream, but NOT assets (generated before shots)
     state.assetLibrary = null;
     if (state.storyAnalysis) {
       for (const scene of state.storyAnalysis.scenes) {
         scene.shots = [];
       }
     }
-    state.generatedAssets = {};
-    state.generatedFrames = {};
-    state.generatedVideos = {};
-	  state.videoPromptsSent = {};
-  } else if (fromStage === "asset_generation") {
-    // asset_generation: clear generated assets and downstream
-    state.generatedAssets = {};
     state.generatedFrames = {};
     state.generatedVideos = {};
 	  state.videoPromptsSent = {};
@@ -651,12 +650,12 @@ After receiving the analysis, respond with a brief summary of what was found.`;
   }
 
   state.completedStages.push("analysis");
-  state.currentStage = "shot_planning";
+  state.currentStage = "asset_generation";
   return state;
 }
 
 // ---------------------------------------------------------------------------
-// Stage 2: Shot Planning
+// Stage 3: Shot Planning
 // ---------------------------------------------------------------------------
 
 async function runShotPlanningStage(
@@ -751,12 +750,12 @@ After planning all scenes, respond with a brief summary of the shots planned.`;
   }
 
   state.completedStages.push("shot_planning");
-  state.currentStage = "asset_generation";
+  state.currentStage = "frame_generation";
   return state;
 }
 
 // ---------------------------------------------------------------------------
-// Stage 3: Asset Generation
+// Stage 2: Asset Generation
 // ---------------------------------------------------------------------------
 
 async function runAssetGenerationStage(
@@ -791,7 +790,7 @@ async function runAssetGenerationStage(
   if (neededAssets.length === 0 && !hasPendingInstructions && !hasDirectives) {
     console.log("[asset_generation] All assets already generated, skipping.");
     state.completedStages.push("asset_generation");
-    state.currentStage = "frame_generation";
+    state.currentStage = "shot_planning";
     return state;
   }
 
@@ -911,7 +910,7 @@ Assets still needed: ${JSON.stringify(neededAssets)}`;
     return state;
   }
   state.completedStages.push("asset_generation");
-  state.currentStage = "frame_generation";
+  state.currentStage = "shot_planning";
   return state;
 }
 
@@ -1715,8 +1714,8 @@ export async function runPipeline(
   const isGrok = options.videoBackend === "grok";
   const stageRunners: Record<StageName, (s: PipelineState, o: PipelineOptions) => Promise<PipelineState>> = {
     analysis: (s, o) => runAnalysisStage(s, storyText, o),
-    shot_planning: runShotPlanningStage,
     asset_generation: runAssetGenerationStage,
+    shot_planning: runShotPlanningStage,
     frame_generation: runFrameGenerationStage,
     video_generation: runVideoGenerationStage,
     shot_generation: runShotGenerationStage,
