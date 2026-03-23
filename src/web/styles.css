@@ -1386,6 +1386,13 @@ dd {
   color: var(--muted);
 }
 
+.pacing-progress {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-left: 0.5rem;
+  font-style: italic;
+}
 
 /* Asset upload button overlay */
 .asset-upload-wrapper {

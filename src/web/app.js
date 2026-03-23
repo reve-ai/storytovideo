@@ -1322,6 +1322,37 @@ function handleRunEvent(type, messageEvent, source) {
           const label = document.querySelector(`[data-video-progress-shot="${shotNum}"]`);
           if (label) label.textContent = `Generating… ${pct}%`;
         }
+
+        // Track pacing analysis / apply progress
+        if (message.startsWith("[pacing]")) {
+          const progressEl = document.getElementById("pacing-progress");
+          const analyzeBtn = document.getElementById("analyze-pacing-btn");
+          const applyBtn = document.getElementById("apply-pacing-btn");
+
+          if (progressEl) {
+            // Strip the [pacing] prefix for display
+            progressEl.textContent = message.replace(/^\[pacing\]\s*/, "");
+            progressEl.style.display = "";
+          }
+
+          // Detect completion of analysis or apply
+          if (message.includes("Analysis complete") || message.includes("All regenerations complete")) {
+            if (progressEl) {
+              // Keep the completion message visible briefly, then hide
+              setTimeout(() => { progressEl.style.display = "none"; }, 5000);
+            }
+            if (analyzeBtn) {
+              analyzeBtn.disabled = false;
+              analyzeBtn.textContent = "Analyze Pacing";
+            }
+            if (applyBtn) {
+              applyBtn.disabled = false;
+              applyBtn.textContent = "Apply Pacing Changes";
+            }
+            // Refresh run to pick up updated pacingAnalysis / regenerated videos
+            scheduleRunRefresh();
+          }
+        }
         break;
       }
       default:
@@ -2453,34 +2484,48 @@ function showPacingResults(results) {
 async function handleAnalyzePacingClick() {
   if (!state.activeRunId) return;
   const btn = document.getElementById("analyze-pacing-btn");
+  const progressEl = document.getElementById("pacing-progress");
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Analyzing…";
   }
+  if (progressEl) {
+    progressEl.textContent = "Starting analysis...";
+    progressEl.style.display = "";
+  }
 
   try {
-    const data = await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/analyze-pacing`, {
+    await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/analyze-pacing`, {
       method: "POST",
       body: "{}",
     });
-    showPacingResults(data.results);
-    appendEvent(createEventEntry({ title: "Pacing analysis", message: `Analyzed ${data.results?.length ?? 0} shots` }));
+    // Server returns immediately; results arrive via SSE events.
+    // The run_status event at the end triggers a refresh which picks up pacingAnalysis.
+    appendEvent(createEventEntry({ title: "Pacing analysis", message: "Analysis started in background" }));
   } catch (error) {
     setGlobalError(`Pacing analysis failed: ${error.message}`);
-  } finally {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Analyze Pacing";
     }
+    if (progressEl) {
+      progressEl.style.display = "none";
+    }
   }
+  // Button stays disabled until analysis completes (detected via SSE log events)
 }
 
 async function handleApplyPacingClick() {
   if (!state.activeRunId) return;
   const btn = document.getElementById("apply-pacing-btn");
+  const progressEl = document.getElementById("pacing-progress");
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Applying…";
+  }
+  if (progressEl) {
+    progressEl.textContent = "Starting regeneration...";
+    progressEl.style.display = "";
   }
 
   try {
@@ -2490,17 +2535,20 @@ async function handleApplyPacingClick() {
     });
     appendEvent(createEventEntry({
       title: "Apply pacing",
-      message: data.message || "Pacing changes applied",
+      message: data.message || "Regeneration started in background",
     }));
     setGlobalError("");
   } catch (error) {
     setGlobalError(`Apply pacing failed: ${error.message}`);
-  } finally {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Apply Pacing Changes";
     }
+    if (progressEl) {
+      progressEl.style.display = "none";
+    }
   }
+  // Button stays disabled until regeneration completes (detected via SSE log events)
 }
 
 function initialize() {

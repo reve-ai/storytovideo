@@ -2659,19 +2659,34 @@ async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, r
     return;
   }
 
+  // Return immediately, process in background
+  sendJson(res, 200, { message: "Pacing analysis started" });
+
   const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
+  const sortedShots = [...allShots].sort((a, b) => a.shotNumber - b.shotNumber);
+  const eligibleShots = sortedShots.filter(shot => {
+    const videoPath = state.generatedVideos[shot.shotNumber];
+    return videoPath && existsSync(videoPath);
+  });
   const results = [];
 
-  for (const shot of [...allShots].sort((a, b) => a.shotNumber - b.shotNumber)) {
+  emitLogEvent(runId, `[pacing] Starting pacing analysis for ${eligibleShots.length} shots...`);
+
+  for (let i = 0; i < eligibleShots.length; i++) {
+    const shot = eligibleShots[i];
     const videoPath = state.generatedVideos[shot.shotNumber];
-    if (!videoPath || !existsSync(videoPath)) continue;
+
+    emitLogEvent(runId, `[pacing] Analyzing shot ${shot.shotNumber} (${i + 1}/${eligibleShots.length})...`);
 
     try {
       const actualDuration = await getClipDuration(videoPath);
       const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, actualDuration);
       results.push(analysis);
+
+      emitLogEvent(runId, `[pacing] Shot ${shot.shotNumber}: ${actualDuration.toFixed(1)}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
     } catch (err) {
       console.error(`[pacing] Failed to analyze shot ${shot.shotNumber}:`, err);
+      emitLogEvent(runId, `[pacing] Failed to analyze shot ${shot.shotNumber}: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
@@ -2679,7 +2694,9 @@ async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, r
   (state as any).pacingAnalysis = results;
   await saveState({ state });
 
-  sendJson(res, 200, { results });
+  emitLogEvent(runId, `[pacing] Analysis complete. ${results.length} shots analyzed.`);
+  // Trigger a run_status event so the UI refreshes and picks up pacingAnalysis
+  emitRunStatusEvent(runId, run.status as RunStatus);
 }
 
 async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, runId: string): Promise<void> {
@@ -2719,12 +2736,16 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
   });
 
   // Background regeneration
+  emitLogEvent(runId, `[pacing] Regenerating ${shotsToRegen.length} shots...`);
+
   const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
-  for (const analysis of shotsToRegen) {
+  let regenerated = 0;
+  for (let i = 0; i < shotsToRegen.length; i++) {
+    const analysis = shotsToRegen[i];
     const shot = allShots.find(s => s.shotNumber === analysis.shotNumber);
     if (!shot) continue;
 
-    console.log(`[pacing] Regenerating shot ${analysis.shotNumber}: ${analysis.currentDuration}s → ${analysis.recommendedDuration}s`);
+    emitLogEvent(runId, `[pacing] Regenerating shot ${analysis.shotNumber} (${i + 1}/${shotsToRegen.length}): ${analysis.currentDuration}s → ${analysis.recommendedDuration}s`);
 
     try {
       const result = await generateVideo({
@@ -2745,14 +2766,16 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
 
       state.generatedVideos[result.shotNumber] = result.path;
       await saveState({ state });
-      console.log(`[pacing] Shot ${analysis.shotNumber} regenerated: ${result.path}`);
+      regenerated++;
+      emitLogEvent(runId, `[pacing] Shot ${analysis.shotNumber} regenerated successfully (${regenerated}/${shotsToRegen.length})`);
     } catch (err) {
       console.error(`[pacing] Failed to regenerate shot ${analysis.shotNumber}:`, err);
+      emitLogEvent(runId, `[pacing] Failed to regenerate shot ${analysis.shotNumber}: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   }
 
-  // Notify UI that videos were updated (don't change run status or re-run pipeline)
-  console.log("[pacing] All regenerations complete. Use Reassemble to rebuild final video.");
+  // Notify UI that videos were updated
+  emitLogEvent(runId, `[pacing] All regenerations complete. ${regenerated} shots regenerated. Click Reassemble to rebuild final video.`);
   emitRunStatusEvent(runId, "completed");
 }
 
