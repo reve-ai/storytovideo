@@ -1216,10 +1216,9 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
               };
             }
 
-            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Deleting frames for regeneration.`);
+            console.warn(`[video_generation] Shot ${params.shotNumber}: RAI celebrity filter triggered. Marking frames for regeneration.`);
 
-            // Delete the offending frames from state so frame_generation will regenerate them
-            delete state.generatedFrames[params.shotNumber];
+            // Leave existing frame paths so trackFrameVersion can archive them
 
             // Ensure frame_generation re-runs on the next pass.
             state.completedStages = state.completedStages.filter(

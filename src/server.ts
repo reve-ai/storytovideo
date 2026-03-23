@@ -1532,43 +1532,7 @@ async function handleRedoItem(
       return;
     }
 
-    // Parse the asset key: "character:Name:front", "character:Name:angle", "location:Name:front"
-    const parts = assetKey!.split(":");
-    const assetType = parts[0]; // "character" or "location"
-    const assetName = parts[1];
-    const angleType = parts[2]; // "front" or "angle"
-
-    if (assetType === "character" && angleType === "front") {
-      // Deleting front → also delete angle (angle is derived from front via image editing)
-      delete state.generatedAssets[assetKey!];
-      const angleKey = `character:${assetName}:angle`;
-      delete state.generatedAssets[angleKey];
-      // Clear entire character from assetLibrary
-      if (state.assetLibrary?.characterImages[assetName]) {
-        delete state.assetLibrary.characterImages[assetName];
-      }
-    } else if (assetType === "character" && angleType === "angle") {
-      // Deleting angle only — keep front
-      delete state.generatedAssets[assetKey!];
-      // Update assetLibrary: clear angle, keep front
-      if (state.assetLibrary?.characterImages[assetName]) {
-        state.assetLibrary.characterImages[assetName].angle = "";
-      }
-    } else if (assetType === "location") {
-      // Delete location asset
-      delete state.generatedAssets[assetKey!];
-      // Clear from assetLibrary
-      if (state.assetLibrary?.locationImages[assetName]) {
-        delete state.assetLibrary.locationImages[assetName];
-      }
-    } else if (assetType === "object") {
-      // Delete object asset
-      delete state.generatedAssets[assetKey!];
-      // Clear from assetLibrary
-      if (state.assetLibrary?.objectImages?.[assetName]) {
-        delete state.assetLibrary.objectImages[assetName];
-      }
-    }
+    // Leave generatedAssets entries — pipeline will track versions when it regenerates
 
     // Cascade: frames and videos depend on assets
     state.completedStages = state.completedStages.filter(
@@ -1884,34 +1848,7 @@ async function handleSetDirective(
     // e.g. "asset:character:Lupov:front"
     const assetKey = trimmedTarget.slice("asset:".length);
     if (state.generatedAssets[assetKey]) {
-      const parts = assetKey.split(":");
-      const assetType = parts[0];
-      const assetName = parts[1];
-      const angleType = parts[2];
-
-      if (assetType === "character" && angleType === "front") {
-        delete state.generatedAssets[assetKey];
-        const angleKey = `character:${assetName}:angle`;
-        delete state.generatedAssets[angleKey];
-        if (state.assetLibrary?.characterImages[assetName]) {
-          delete state.assetLibrary.characterImages[assetName];
-        }
-      } else if (assetType === "character" && angleType === "angle") {
-        delete state.generatedAssets[assetKey];
-        if (state.assetLibrary?.characterImages[assetName]) {
-          state.assetLibrary.characterImages[assetName].angle = "";
-        }
-      } else if (assetType === "location") {
-        delete state.generatedAssets[assetKey];
-        if (state.assetLibrary?.locationImages[assetName]) {
-          delete state.assetLibrary.locationImages[assetName];
-        }
-      } else if (assetType === "object") {
-        delete state.generatedAssets[assetKey];
-        if (state.assetLibrary?.objectImages?.[assetName]) {
-          delete state.assetLibrary.objectImages[assetName];
-        }
-      }
+      // Leave generatedAssets entries — pipeline will track versions when it regenerates
       state.completedStages = state.completedStages.filter(
         s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1924,75 +1861,54 @@ async function handleSetDirective(
     const itemType = parts.slice(2).join(":");
 
     if (itemType === "start_frame") {
-      if (state.generatedFrames[shotNum]) {
-        state.generatedFrames[shotNum].start = undefined;
-        state.generatedFrames[shotNum].end = undefined;
-        state.generatedFrames[shotNum].startReferences = undefined;
-        state.generatedFrames[shotNum].endReferences = undefined;
-      }
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing frame paths so trackFrameVersion can archive them
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "end_frame") {
-      if (state.generatedFrames[shotNum]) {
-        state.generatedFrames[shotNum].end = undefined;
-        state.generatedFrames[shotNum].endReferences = undefined;
-      }
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing frame paths so trackFrameVersion can archive them
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "video") {
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing video entry so trackVideoVersion can archive it
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "start_frame_prompt" || itemType === "end_frame_prompt") {
       // Prompt edit → regenerate frames (and downstream video/assembly)
-      if (state.generatedFrames[shotNum]) {
-        if (itemType === "start_frame_prompt") {
-          state.generatedFrames[shotNum].start = undefined;
-          state.generatedFrames[shotNum].end = undefined;
-          state.generatedFrames[shotNum].startReferences = undefined;
-          state.generatedFrames[shotNum].endReferences = undefined;
-        } else {
-          state.generatedFrames[shotNum].end = undefined;
-          state.generatedFrames[shotNum].endReferences = undefined;
-        }
-      }
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing frame/video paths so version tracking can archive them
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "action_prompt") {
       // Action prompt edit → regenerate video (and downstream assembly)
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing video entry so trackVideoVersion can archive it
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "camera_direction") {
       // Camera direction edit → regenerate video (and downstream assembly)
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing video entry so trackVideoVersion can archive it
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "sound_effects") {
       // Sound effects edit → regenerate video and assembly
-      delete state.generatedVideos[shotNum];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
+      // Leave existing video entry so trackVideoVersion can archive it
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
