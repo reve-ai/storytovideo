@@ -34,7 +34,6 @@ const elements = {
   createRunForm: getElement("create-run-form"),
   storyText: getElement("story-text"),
   createRunButton: getElement("create-run-button"),
-  convertToScriptButton: getElement("convert-to-script-button"),
   tabNewStory: getElement("tab-new-story"),
   tabImportVideo: getElement("tab-import-video"),
   panelNewStory: getElement("panel-new-story"),
@@ -1318,40 +1317,6 @@ function handleRunEvent(type, messageEvent, source) {
           if (label) label.textContent = `Generating… ${pct}%`;
         }
 
-        // Track pacing analysis / apply progress
-        if (message.startsWith("[pacing]")) {
-          const progressEl = document.getElementById("pacing-progress");
-          const analyzeBtn = document.getElementById("analyze-pacing-btn");
-          const applyBtn = document.getElementById("apply-pacing-btn");
-
-          if (progressEl) {
-            // Strip the [pacing] prefix for display
-            progressEl.textContent = message.replace(/^\[pacing\]\s*/, "");
-            progressEl.style.display = "";
-          }
-
-          // Detect completion of analysis or apply
-          if (message.includes("All regenerations complete")) {
-            const pacingSection = document.getElementById("pacing-section");
-            if (pacingSection) pacingSection.style.display = "none";
-          }
-          if (message.includes("Analysis complete") || message.includes("All regenerations complete")) {
-            if (progressEl) {
-              // Keep the completion message visible briefly, then hide
-              setTimeout(() => { progressEl.style.display = "none"; }, 5000);
-            }
-            if (analyzeBtn) {
-              analyzeBtn.disabled = false;
-              analyzeBtn.textContent = "Analyze Pacing";
-            }
-            if (applyBtn) {
-              applyBtn.disabled = false;
-              applyBtn.textContent = "Apply Pacing Changes";
-            }
-            // Refresh run to pick up updated pacingAnalysis / regenerated videos
-            scheduleRunRefresh();
-          }
-        }
         break;
       }
       default:
@@ -1517,30 +1482,6 @@ async function handleCreateRunSubmit(event) {
     setGlobalError(`Failed to create run: ${error.message}`);
   } finally {
     elements.createRunButton.disabled = false;
-  }
-}
-
-async function handleConvertToScript() {
-  const storyText = elements.storyText.value.trim();
-  if (!storyText) {
-    setGlobalError("Story text is required to convert to script.");
-    return;
-  }
-
-  elements.convertToScriptButton.disabled = true;
-  elements.convertToScriptButton.textContent = "Converting…";
-  try {
-    const result = await requestJson("/convert-to-script", {
-      method: "POST",
-      body: JSON.stringify({ storyText }),
-    });
-    elements.storyText.value = result.script;
-    setGlobalError("");
-  } catch (error) {
-    setGlobalError(`Failed to convert to script: ${error.message}`);
-  } finally {
-    elements.convertToScriptButton.disabled = false;
-    elements.convertToScriptButton.textContent = "Convert to Script";
   }
 }
 
@@ -1982,10 +1923,6 @@ function bindEvents() {
 
   elements.createRunForm.addEventListener("submit", (event) => {
     void handleCreateRunSubmit(event);
-  });
-
-  elements.convertToScriptButton.addEventListener("click", () => {
-    void handleConvertToScript();
   });
 
   elements.importVideoForm.addEventListener("submit", (event) => {
@@ -2484,123 +2421,6 @@ function bindEvents() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Pacing Analysis UI
-// ---------------------------------------------------------------------------
-
-function showPacingResults(results) {
-  const section = document.getElementById("pacing-section");
-  const container = document.getElementById("pacing-results");
-  const applyBtn = document.getElementById("apply-pacing-btn");
-  if (!section || !container) return;
-
-  if (!results || results.length === 0) {
-    container.innerHTML = "<p class='muted'>No pacing data available.</p>";
-    section.style.display = "";
-    if (applyBtn) applyBtn.style.display = "none";
-    return;
-  }
-
-  let html = `<table class="pacing-table">
-    <thead><tr>
-      <th>Shot</th><th>Current</th><th>Recommended</th><th>Savings</th><th>Confidence</th><th>Reason</th>
-    </tr></thead><tbody>`;
-
-  let hasActionable = false;
-  for (const r of results) {
-    const savings = (r.currentDuration - r.recommendedDuration).toFixed(1);
-    const actionable = parseFloat(savings) >= 1 && r.confidence !== "low";
-    if (actionable) hasActionable = true;
-    const rowClass = actionable ? "pacing-row-actionable" : "";
-    html += `<tr class="${rowClass}">
-      <td>${r.shotNumber}</td>
-      <td>${r.currentDuration}s</td>
-      <td>${r.recommendedDuration}s</td>
-      <td>${savings}s</td>
-      <td><span class="pacing-confidence pacing-confidence-${r.confidence}">${r.confidence}</span></td>
-      <td>${escapeHtml(r.reason || "")}</td>
-    </tr>`;
-  }
-  html += "</tbody></table>";
-
-  container.innerHTML = html;
-  section.style.display = "";
-
-  if (applyBtn) {
-    applyBtn.style.display = hasActionable ? "" : "none";
-  }
-}
-
-async function handleAnalyzePacingClick() {
-  if (!state.activeRunId) return;
-  const btn = document.getElementById("analyze-pacing-btn");
-  const progressEl = document.getElementById("pacing-progress");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Analyzing…";
-  }
-  if (progressEl) {
-    progressEl.textContent = "Starting analysis...";
-    progressEl.style.display = "";
-  }
-
-  try {
-    await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/analyze-pacing`, {
-      method: "POST",
-      body: "{}",
-    });
-    // Server returns immediately; results arrive via SSE events.
-    // The run_status event at the end triggers a refresh which picks up pacingAnalysis.
-    appendEvent(createEventEntry({ title: "Pacing analysis", message: "Analysis started in background" }));
-  } catch (error) {
-    setGlobalError(`Pacing analysis failed: ${error.message}`);
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Analyze Pacing";
-    }
-    if (progressEl) {
-      progressEl.style.display = "none";
-    }
-  }
-  // Button stays disabled until analysis completes (detected via SSE log events)
-}
-
-async function handleApplyPacingClick() {
-  if (!state.activeRunId) return;
-  const btn = document.getElementById("apply-pacing-btn");
-  const progressEl = document.getElementById("pacing-progress");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Applying…";
-  }
-  if (progressEl) {
-    progressEl.textContent = "Starting regeneration...";
-    progressEl.style.display = "";
-  }
-
-  try {
-    const data = await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/apply-pacing`, {
-      method: "POST",
-      body: "{}",
-    });
-    appendEvent(createEventEntry({
-      title: "Apply pacing",
-      message: data.message || "Regeneration started in background",
-    }));
-    setGlobalError("");
-  } catch (error) {
-    setGlobalError(`Apply pacing failed: ${error.message}`);
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Apply Pacing Changes";
-    }
-    if (progressEl) {
-      progressEl.style.display = "none";
-    }
-  }
-  // Button stays disabled until regeneration completes (detected via SSE log events)
-}
-
 function initialize() {
   populateInstructionStageSelect();
   renderStageProgress();
@@ -2610,16 +2430,6 @@ function initialize() {
   bindEvents();
   startPollingFallback();
   void loadRuns();
-
-  // Pacing button handlers
-  const analyzePacingBtn = document.getElementById("analyze-pacing-btn");
-  if (analyzePacingBtn) {
-    analyzePacingBtn.addEventListener("click", () => void handleAnalyzePacingClick());
-  }
-  const applyPacingBtn = document.getElementById("apply-pacing-btn");
-  if (applyPacingBtn) {
-    applyPacingBtn.addEventListener("click", () => void handleApplyPacingClick());
-  }
 }
 
 initialize();

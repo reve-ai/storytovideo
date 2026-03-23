@@ -9,6 +9,7 @@ import { join, extname } from "path";
 import type { ArtifactVersion, PipelineOptions, PipelineState, Shot } from "./types";
 import { interrupted } from "./signals";
 import { analyzeStory, analyzeStoryTool } from "./tools/analyze-story";
+import { storyToScript, storyToScriptTool } from "./tools/story-to-script";
 import { planShotsForScene, planShotsForSceneTool, CINEMATIC_RULES } from "./tools/plan-shots";
 import { generateAsset, generateAssetTool } from "./tools/generate-asset";
 import { generateFrame, generateFrameTool } from "./tools/generate-frame";
@@ -586,7 +587,11 @@ async function runAnalysisStage(
 ): Promise<PipelineState> {
   const systemPrompt = `You are a story analysis agent. Your job is to analyze the provided story text and extract structured information.
 
-Call the analyzeStory tool with the full story text. The tool will return a StoryAnalysis object with characters, locations, art style, and scenes.
+Before analyzing, evaluate whether the input is a raw story or an already-scripted piece. If it reads like a summary, narration, or outline rather than a detailed visual script with action, dialogue, and sensory details, call storyToScript first to convert it into a visual prose script. Then analyze the converted script (not the original).
+
+If the input already reads like a detailed visual script with scene descriptions, action, and dialogue, skip the conversion and analyze it directly.
+
+Call the analyzeStory tool with the story text (or converted script). The tool will return a StoryAnalysis object with characters, locations, art style, and scenes.
 
 Also call the nameRun tool to give this run a short, creative name (2-5 words) that captures the story's essence.
 
@@ -595,6 +600,17 @@ After receiving the analysis, respond with a brief summary of what was found.`;
   const userPrompt = `Analyze this story:\n\n${storyText}`;
 
   const analysisTools = {
+    storyToScript: {
+      description: storyToScriptTool.description,
+      inputSchema: storyToScriptTool.parameters,
+      execute: wrapToolExecute("analysis", "storyToScript", async (params: z.infer<typeof storyToScriptTool.parameters>) => {
+        console.log("[analysis] Converting raw story to visual script...");
+        const script = await storyToScript(params.storyText);
+        state.convertedScript = script;
+        console.log(`[analysis] Script conversion complete (${script.length} chars)`);
+        return { script };
+      }, options.onToolError, options.abortSignal),
+    },
     analyzeStory: {
       description: analyzeStoryTool.description,
       inputSchema: analyzeStoryTool.parameters,
@@ -620,7 +636,7 @@ After receiving the analysis, respond with a brief summary of what was found.`;
     },
   };
 
-  await runStage("analysis", state, options, systemPrompt, userPrompt, analysisTools, 5, options.verbose);
+  await runStage("analysis", state, options, systemPrompt, userPrompt, analysisTools, 8, options.verbose);
 
   if (!state.storyAnalysis) {
     throw new Error("Analysis stage did not produce a StoryAnalysis");
@@ -1126,7 +1142,8 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
           // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
           if (options.videoBackend === "grok" && result.path && !options.dryRun) {
             try {
-              const shotDialogue = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber)?.dialogue;
+              const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
+              const shotDialogue = shotObj?.dialogue;
               const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration, shotDialogue);
               console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
@@ -1137,7 +1154,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
                 const regenResult = await generateVideo({
                   ...params,
                   actionPrompt,
-                  durationSeconds: Math.round(analysis.recommendedDuration),
+                  durationSeconds: analysis.recommendedDuration,
                   dryRun: options.dryRun,
                   outputDir: join(options.outputDir, "videos"),
                   abortSignal: options.abortSignal,
@@ -1162,6 +1179,7 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
                   if (!state.videoPromptsSent) state.videoPromptsSent = {};
                   state.videoPromptsSent[regenResult.shotNumber] = regenResult.promptSent;
                 }
+                if (shotObj) shotObj.durationSeconds = analysis.recommendedDuration;
                 await saveState({ state });
                 return { ...regenResult, pacingAdjusted: true, originalDuration: result.duration, newDuration: analysis.recommendedDuration };
               }
@@ -1387,7 +1405,8 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
         let finalResult = result;
         if (options.videoBackend === "grok" && result.path && !options.dryRun) {
           try {
-            const shotDialogue = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber)?.dialogue;
+            const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
+            const shotDialogue = shotObj?.dialogue;
             const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration, shotDialogue);
             console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
@@ -1398,7 +1417,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
               const regenResult = await generateVideo({
                 ...params,
                 actionPrompt,
-                durationSeconds: Math.round(analysis.recommendedDuration),
+                durationSeconds: analysis.recommendedDuration,
                 dryRun: options.dryRun,
                 outputDir: join(options.outputDir, "videos"),
                 abortSignal: options.abortSignal,
@@ -1413,6 +1432,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
                 },
               });
 
+              if (shotObj) shotObj.durationSeconds = analysis.recommendedDuration;
               finalResult = { ...regenResult, pacingAdjusted: true, originalDuration: result.duration, newDuration: analysis.recommendedDuration } as any;
             }
           } catch (err) {
