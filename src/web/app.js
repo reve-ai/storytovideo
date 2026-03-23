@@ -1,7 +1,7 @@
 const STAGE_ORDER = [
   "analysis",
-  "shot_planning",
   "asset_generation",
+  "shot_planning",
   "frame_generation",
   "video_generation",
   "shot_generation",
