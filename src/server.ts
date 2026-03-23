@@ -1586,9 +1586,8 @@ async function handleRedoItem(
     }
 
     if (type === "frame") {
-      // Delete frame and its dependent video
-      delete state.generatedFrames[shotNumber!];
-      delete state.generatedVideos[shotNumber!];
+      // Clear frame and its dependent video — don't delete entries so the pipeline
+      // can track old versions before overwriting them.
 	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
@@ -1602,7 +1601,6 @@ async function handleRedoItem(
         state.generatedFrames[shotNumber!].startReferences = undefined;
         state.generatedFrames[shotNumber!].endReferences = undefined;
       }
-      delete state.generatedVideos[shotNumber!];
 	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
@@ -1614,16 +1612,14 @@ async function handleRedoItem(
         state.generatedFrames[shotNumber!].end = undefined;
         state.generatedFrames[shotNumber!].endReferences = undefined;
       }
-      delete state.generatedVideos[shotNumber!];
 	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else {
-      // type === "video"
-      delete state.generatedVideos[shotNumber!];
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
+      // type === "video" — don't delete entry so the pipeline
+      // can track the old version before overwriting.
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
