@@ -363,9 +363,15 @@ async function assembleWithXfade(
     inputs.push(videoPath);
   }
 
+  // Normalize all inputs to common timebase and framerate to avoid
+  // "First input link main timebase do not match" xfade errors
+  for (let i = 0; i < videoPaths.length; i++) {
+    filterComplex += `[${i}:v]settb=AVTB,fps=24[norm_${i}];`;
+  }
+
   // Build filter chain
   let cumulativeDuration = durations[0];
-  let previousLabel = "0:v";
+  let previousLabel = "norm_0";
 
   for (let i = 1; i < videoPaths.length; i++) {
     const transition = transitions[i - 1] || { type: "cut", durationMs: 500 };
@@ -374,7 +380,7 @@ async function assembleWithXfade(
     if (transition.type === "cut") {
       // For cuts, just concatenate without xfade
       const nextLabel = `concat${i}`;
-      filterComplex += `[${previousLabel}][${i}:v]concat=n=2:v=1:a=0[${nextLabel}];`;
+      filterComplex += `[${previousLabel}][norm_${i}]concat=n=2:v=1:a=0[${nextLabel}];`;
       previousLabel = nextLabel;
       cumulativeDuration += durations[i];
     } else {
@@ -382,7 +388,7 @@ async function assembleWithXfade(
       const xfadeType = getXfadeTransitionName(transition.type);
       const offset = cumulativeDuration - transitionDurationSec;
       const xfadeLabel = `xfade${i}`;
-      filterComplex += `[${previousLabel}][${i}:v]xfade=transition=${xfadeType}:duration=${transitionDurationSec}:offset=${offset}[${xfadeLabel}];`;
+      filterComplex += `[${previousLabel}][norm_${i}]xfade=transition=${xfadeType}:duration=${transitionDurationSec}:offset=${offset}[${xfadeLabel}];`;
       previousLabel = xfadeLabel;
       cumulativeDuration += durations[i] - transitionDurationSec;
     }

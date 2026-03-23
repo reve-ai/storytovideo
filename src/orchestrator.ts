@@ -15,7 +15,7 @@ import { generateAsset, generateAssetTool } from "./tools/generate-asset";
 import { generateFrame, generateFrameTool } from "./tools/generate-frame";
 import { generateVideo, generateVideoTool } from "./tools/generate-video";
 import { verifyOutput, verifyOutputTool } from "./tools/verify-output";
-import { assembleVideo, assembleVideoTool } from "./tools/assemble-video";
+import { assembleVideo } from "./tools/assemble-video";
 import { saveState, loadState, saveStateTool } from "./tools/state";
 import { analyzeClipPacing } from "./tools/analyze-video-pacing";
 
@@ -1594,46 +1594,19 @@ async function runAssemblyStage(
     cumulativeTime += duration;
   }
 
-  const subtitleInfo = subtitles.length > 0
-    ? `\nSubtitles (${subtitles.length} dialogue entries): ${JSON.stringify(subtitles)}`
-    : "\nNo dialogue subtitles to burn.";
+  console.log(`[assembly] Assembling ${videoPaths.length} clips with ${transitions.length} scene transitions and ${subtitles.length} subtitle entries`);
 
-  const systemPrompt = `You are a video assembly agent. Assemble all generated video clips into a single final video with scene transitions.
+  const assemblyResult = await assembleVideo({
+    videoPaths,
+    transitions,
+    subtitles,
+    importedAudio: state.importedAudio,
+    outputDir: options.outputDir,
+    dryRun: options.dryRun,
+  });
 
-Scene transitions from the shot plan:
-${JSON.stringify(state.storyAnalysis.scenes.map(s => ({ scene: s.sceneNumber, transition: s.transition || "cut" })))}
-
-Call assembleVideo with the ordered list of video paths, transitions array, and subtitles. Then call saveState to checkpoint.
-
-Video paths (in order): ${JSON.stringify(videoPaths)}
-Transitions (one per scene boundary): ${JSON.stringify(transitions)}${subtitleInfo}
-Output directory: "${options.outputDir}"`;
-
-  const userPrompt = `Assemble ${videoPaths.length} video clips into the final video with ${transitions.length} scene transitions and ${subtitles.length} subtitle entries.`;
-
-  const assemblyTools = {
-    assembleVideo: {
-      description: assembleVideoTool.description,
-      inputSchema: assembleVideoTool.parameters,
-      execute: wrapToolExecute("assembly", "assembleVideo", async (params: z.infer<typeof assembleVideoTool.parameters>) => {
-        return assembleVideo({
-          ...params,
-          subtitles,
-          importedAudio: state.importedAudio,
-          dryRun: options.dryRun,
-        });
-      }, options.onToolError, options.abortSignal),
-    },
-    saveState: {
-      description: saveStateTool.description,
-      inputSchema: saveStateTool.parameters,
-      execute: wrapToolExecute("assembly", "saveState", async () => {
-        return saveState({ state });
-      }, options.onToolError, options.abortSignal),
-    },
-  };
-
-  await runStage("assembly", state, options, systemPrompt, userPrompt, assemblyTools, 10, options.verbose);
+  console.log(`[assembly] Final video: ${assemblyResult.path}`);
+  await saveState({ state });
 
   state.completedStages.push("assembly");
   return state;
