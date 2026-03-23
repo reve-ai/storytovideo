@@ -136,6 +136,9 @@ export async function reverseEngineerMetadata(params: {
       model: anthropic("claude-sonnet-4-20250514"),
       schema: storyAnalysisSchema,
       messages: [{ role: "user" as const, content: contentParts as any }],
+      providerOptions: {
+        anthropic: { cacheControl: { type: 'ephemeral' } },
+      },
     } as any);
 
     // Log progress as partial object arrives

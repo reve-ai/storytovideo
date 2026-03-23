@@ -32,6 +32,9 @@ ${storyText}`;
       model: anthropic("claude-opus-4-6"),
       prompt,
       maxTokens: 16384,
+      providerOptions: {
+        anthropic: { cacheControl: { type: 'ephemeral' } },
+      },
     } as any);
 
     return text;

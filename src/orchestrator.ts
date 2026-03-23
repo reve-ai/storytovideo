@@ -523,6 +523,9 @@ async function runStage(
       tools,
       abortSignal: localAbort.signal,
       stopWhen: stepCountIs(maxSteps),
+      providerOptions: {
+        anthropic: { cacheControl: { type: 'ephemeral' } },
+      },
       onStepFinish: (step: any) => {
         if (interrupted || _options.abortSignal?.aborted) {
           localAbort.abort();

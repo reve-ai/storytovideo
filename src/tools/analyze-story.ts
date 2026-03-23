@@ -61,6 +61,9 @@ ${storyText}`;
       model: anthropic("claude-opus-4-6"),
       schema: storyAnalysisSchema,
       prompt,
+      providerOptions: {
+        anthropic: { cacheControl: { type: 'ephemeral' } },
+      },
     } as any);
 
     const result = object as any;

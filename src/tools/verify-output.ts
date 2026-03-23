@@ -68,6 +68,9 @@ export async function verifyOutput(params: {
       model: anthropic("claude-opus-4-6"),
       schema: verificationSchema,
       prompt: `${prompt}\n\nReturn JSON with: passed (bool), score (0-1), issues (array), suggestions (array).`,
+      providerOptions: {
+        anthropic: { cacheControl: { type: 'ephemeral' } },
+      },
       messages: [
         {
           role: "user",
