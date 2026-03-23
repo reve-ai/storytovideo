@@ -346,15 +346,22 @@ function clearStageFiles(outputDir: string, fromStage: StageName): void {
   const stageIdx = STAGE_ORDER.indexOf(fromStage);
   if (stageIdx < 0) return;
 
+  console.log(`[clearStageFiles] Clearing files from stage "${fromStage}" (index ${stageIdx}) in ${outputDir}`);
+
   /** Delete a single file, ignoring missing-file errors. */
   function tryUnlink(filePath: string): void {
-    try { unlinkSync(filePath); } catch (_) { /* file may not exist */ }
+    try {
+      unlinkSync(filePath);
+      console.log(`[clearStageFiles] Deleted: ${filePath}`);
+    } catch (_) { /* file may not exist */ }
   }
 
   /** Delete all files inside a directory (non-recursive), ignoring errors. */
   function clearDir(dirPath: string): void {
     try {
-      for (const entry of readdirSync(dirPath)) {
+      const entries = readdirSync(dirPath);
+      console.log(`[clearDir] ${dirPath} — entries: ${entries.length}`);
+      for (const entry of entries) {
         tryUnlink(join(dirPath, entry));
       }
     } catch (_) { /* directory may not exist */ }
