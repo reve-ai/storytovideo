@@ -117,6 +117,7 @@ const perSceneShotSchema = z.object({
   endFramePrompt: z.string(),
   actionPrompt: z.string(),
   dialogue: z.string(),
+  speaker: z.string().describe("Who is speaking the dialogue (character name, 'narrator', 'voiceover', etc). Empty if no dialogue"),
   soundEffects: z.string(),
   cameraDirection: z.string(),
   charactersPresent: z.array(z.string()),

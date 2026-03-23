@@ -719,7 +719,7 @@ For each scene:
 5. All shots use first_last_frame generation strategy
 6. Write detailed frame prompts that include the composition type
 7. Write action prompts for video generation. In actionPrompt and startFramePrompt and endFramePrompt fields ONLY, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name — character names in video prompts trigger content safety filters. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
-8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field.
+8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
 ${fixedCameraGuidance}
 10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${(state.storyAnalysis?.objects ?? []).length > 0 ? ` Known objects: ${(state.storyAnalysis?.objects ?? []).map(o => o.name).join(", ")}.` : ""}
 
@@ -1015,7 +1015,7 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
       inputSchema: generateFrameTool.parameters,
       execute: wrapToolExecute("frame_generation", "generateFrame", async (params: z.infer<typeof generateFrameTool.parameters>) => {
         const result = await generateFrame({
-          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [] },
+          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [], speaker: params.shot.speaker ?? "" },
           artStyle: params.artStyle,
           assetLibrary: { ...params.assetLibrary, objectImages: params.assetLibrary.objectImages ?? {} },
           outputDir: options.outputDir,
@@ -1424,7 +1424,7 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
       inputSchema: generateFrameTool.parameters,
       execute: wrapToolExecute("shot_generation", "generateFrame", async (params: z.infer<typeof generateFrameTool.parameters>) => {
         const result = await generateFrame({
-          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [] },
+          shot: { ...params.shot, objectsPresent: params.shot.objectsPresent ?? [], speaker: params.shot.speaker ?? "" },
           artStyle: params.artStyle,
           assetLibrary: { ...params.assetLibrary, objectImages: params.assetLibrary.objectImages ?? {} },
           outputDir: options.outputDir,

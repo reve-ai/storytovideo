@@ -26,6 +26,7 @@ export interface Shot {
   endFramePrompt: string;      // only for first_last_frame
   actionPrompt: string;
   dialogue: string;            // quoted speech (empty if none)
+  speaker: string;             // who is speaking (character name, "narrator", "voiceover", etc; empty if no dialogue)
   soundEffects: string;
   cameraDirection: string;
   charactersPresent: string[];

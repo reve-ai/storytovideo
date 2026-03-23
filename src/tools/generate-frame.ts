@@ -360,6 +360,7 @@ export const generateFrameTool = {
       endFramePrompt: z.string(),
       actionPrompt: z.string(),
       dialogue: z.string(),
+      speaker: z.string().optional(),
       soundEffects: z.string(),
       cameraDirection: z.string(),
       charactersPresent: z.array(z.string()),
