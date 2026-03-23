@@ -79,6 +79,7 @@ export function loadState(outputDir: string): PipelineState | null {
     const parsed = JSON.parse(content) as PipelineState;
 
     // Recover generatedVideos from videoVersions if empty
+    let recovered = false;
     if (parsed.videoVersions && Object.keys(parsed.videoVersions).length > 0) {
       if (!parsed.generatedVideos || Object.keys(parsed.generatedVideos).length === 0) {
         parsed.generatedVideos = {} as Record<number, string>;
@@ -88,6 +89,7 @@ export function loadState(outputDir: string): PipelineState | null {
           }
         }
         console.log(`[loadState] Recovered ${Object.keys(parsed.generatedVideos).length} generatedVideos from videoVersions`);
+        recovered = true;
       }
     }
 
@@ -97,6 +99,11 @@ export function loadState(outputDir: string): PipelineState | null {
     if (!parsedAny.status && parsed.completedStages?.includes('assembly')) {
       parsedAny.status = 'completed';
       console.log('[loadState] Recovered status to completed (assembly was in completedStages)');
+      recovered = true;
+    }
+
+    if (recovered) {
+      fs.writeFileSync(statePath, JSON.stringify(parsed, null, 2));
     }
 
     return withReviewDefaults(parsed);
