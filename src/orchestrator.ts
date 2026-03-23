@@ -685,7 +685,7 @@ For each scene:
 1. Choose a transition type (Scene 1 is always "cut")
 2. ${durationGuidance}
 3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
-4. Distribute dialogue across shots respecting pacing rules
+4. Distribute dialogue across shots. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s minimum.
 5. All shots use first_last_frame generation strategy
 6. Write detailed frame prompts that include the composition type
 7. Write action prompts for video generation. In actionPrompt fields, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name. Character names in video prompts trigger content safety filters.
@@ -1126,7 +1126,8 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
           // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
           if (options.videoBackend === "grok" && result.path && !options.dryRun) {
             try {
-              const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration);
+              const shotDialogue = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber)?.dialogue;
+              const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration, shotDialogue);
               console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
               const savings = result.duration - analysis.recommendedDuration;
@@ -1386,7 +1387,8 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
         let finalResult = result;
         if (options.videoBackend === "grok" && result.path && !options.dryRun) {
           try {
-            const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration);
+            const shotDialogue = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber)?.dialogue;
+            const analysis = await analyzeClipPacing(result.path, result.shotNumber, result.duration, shotDialogue);
             console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
 
             const savings = result.duration - analysis.recommendedDuration;

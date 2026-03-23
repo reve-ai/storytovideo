@@ -2680,7 +2680,7 @@ async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, r
 
     try {
       const actualDuration = await getClipDuration(videoPath);
-      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, actualDuration);
+      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, actualDuration, shot.dialogue);
       results.push(analysis);
 
       emitLogEvent(runId, `[pacing] Shot ${shot.shotNumber}: ${actualDuration.toFixed(1)}s → ${analysis.recommendedDuration}s (${analysis.reason})`);

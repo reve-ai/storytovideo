@@ -153,6 +153,7 @@ export async function analyzeClipPacing(
   clipPath: string,
   shotNumber: number,
   originalDuration: number,
+  dialogue?: string,
 ): Promise<ClipAnalysis> {
   const client = getGoogleClient();
 
@@ -183,6 +184,10 @@ Look for:
 - Repetitive or redundant motion
 - The action completing before the clip ends
 - Unnecessary pauses or holds
+
+${dialogue && dialogue.trim().length > 0
+  ? `This shot has dialogue: "${dialogue}". Dialogue requires ~2.5 words/second. Count the words and ensure recommendedDuration is never shorter than wordCount/2.5 + 0.5s.`
+  : `This shot has no dialogue.`}
 
 Return JSON:
 \`\`\`json
