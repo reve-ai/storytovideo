@@ -112,7 +112,7 @@ export function trackVideoVersion(state: PipelineState, shotNumber: number, path
 }
 
 /** Record a new frame version and update selectedVersions. */
-function trackFrameVersion(state: PipelineState, shotNumber: number, frameType: string, path: string, extra?: Partial<ArtifactVersion>): void {
+export function trackFrameVersion(state: PipelineState, shotNumber: number, frameType: string, path: string, extra?: Partial<ArtifactVersion>): void {
   if (!state.frameVersions) state.frameVersions = {};
   if (!state.frameVersions[shotNumber]) state.frameVersions[shotNumber] = {};
   if (!state.frameVersions[shotNumber][frameType]) state.frameVersions[shotNumber][frameType] = [];

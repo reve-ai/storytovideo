@@ -68,6 +68,7 @@ export interface ArtifactVersion {
   promptSent?: string;      // for videos
   pacingAdjusted?: boolean; // if this was a pacing regen
   references?: FrameReference[]; // for frames
+  reason?: string;          // why this version was created (e.g. "redo", "directive")
 }
 
 export interface FrameReference {

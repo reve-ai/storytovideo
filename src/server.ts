@@ -17,7 +17,7 @@ import { join, resolve } from "path";
 import { pipeline as streamPipeline } from "stream/promises";
 
 import { runImportPipeline } from "./import-orchestrator";
-import { runPipeline, clearStageData, STAGE_ORDER } from "./orchestrator";
+import { runPipeline, clearStageData, STAGE_ORDER, trackVideoVersion, trackFrameVersion } from "./orchestrator";
 import {
   buildAssetFeed as buildAssetFeedFromState,
   createAssetFeedItem as createAssetFeedItemFromState,
@@ -1532,7 +1532,12 @@ async function handleRedoItem(
       return;
     }
 
-    // Leave generatedAssets entries — pipeline will track versions when it regenerates
+    // Track the old asset version, then set to empty string so the pipeline treats it as needing regeneration
+    const oldPath = state.generatedAssets[assetKey!];
+    if (!state.assetVersions) state.assetVersions = {};
+    if (!state.assetVersions[assetKey!]) state.assetVersions[assetKey!] = [];
+    state.assetVersions[assetKey!].push({ version: state.assetVersions[assetKey!].length + 1, path: oldPath, timestamp: new Date().toISOString(), reason: "redo" });
+    state.generatedAssets[assetKey!] = "";
 
     // Cascade: frames and videos depend on assets
     state.completedStages = state.completedStages.filter(
@@ -1550,40 +1555,76 @@ async function handleRedoItem(
     }
 
     if (type === "frame") {
-      // Clear frame and its dependent video — don't delete entries so the pipeline
-      // can track old versions before overwriting them.
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
+      // Track versions and set to empty string so pipeline treats as needing regeneration
+      const existing = state.generatedFrames[shotNumber!];
+      if (existing?.start) {
+        trackFrameVersion(state, shotNumber!, "start", existing.start, { reason: "redo" });
+        existing.start = "";
+      }
+      if (existing?.end) {
+        trackFrameVersion(state, shotNumber!, "end", existing.end, { reason: "redo" });
+        existing.end = "";
+      }
+      // Also clear the dependent video
+      if (state.generatedVideos[shotNumber!]) {
+        trackVideoVersion(state, shotNumber!, state.generatedVideos[shotNumber!], { reason: "redo-frame" });
+        state.generatedVideos[shotNumber!] = "";
+      }
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (type === "start_frame") {
-      // Delete start frame → also cascade to end frame (end uses start as reference) and video
-      if (state.generatedFrames[shotNumber!]) {
-        state.generatedFrames[shotNumber!].start = undefined;
-        state.generatedFrames[shotNumber!].end = undefined;
-        state.generatedFrames[shotNumber!].startReferences = undefined;
-        state.generatedFrames[shotNumber!].endReferences = undefined;
+      // Track start frame version and set to empty string; cascade to end frame and video
+      const existing = state.generatedFrames[shotNumber!];
+      if (existing?.start) {
+        trackFrameVersion(state, shotNumber!, "start", existing.start, { reason: "redo" });
+        existing.start = "";
       }
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
+      if (existing) {
+        existing.startReferences = undefined;
+        // Cascade: end frame depends on start frame
+        if (existing.end) {
+          trackFrameVersion(state, shotNumber!, "end", existing.end, { reason: "redo-start" });
+          existing.end = "";
+        }
+        existing.endReferences = undefined;
+      }
+      if (state.generatedVideos[shotNumber!]) {
+        trackVideoVersion(state, shotNumber!, state.generatedVideos[shotNumber!], { reason: "redo-frame" });
+        state.generatedVideos[shotNumber!] = "";
+      }
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (type === "end_frame") {
-      // Delete end frame only → cascade to video
-      if (state.generatedFrames[shotNumber!]) {
-        state.generatedFrames[shotNumber!].end = undefined;
-        state.generatedFrames[shotNumber!].endReferences = undefined;
+      // Track end frame version and set to empty string; cascade to video
+      const existing = state.generatedFrames[shotNumber!];
+      if (existing?.end) {
+        trackFrameVersion(state, shotNumber!, "end", existing.end, { reason: "redo" });
+        existing.end = "";
       }
-	      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
+      if (existing) {
+        existing.endReferences = undefined;
+      }
+      if (state.generatedVideos[shotNumber!]) {
+        trackVideoVersion(state, shotNumber!, state.generatedVideos[shotNumber!], { reason: "redo-frame" });
+        state.generatedVideos[shotNumber!] = "";
+      }
+      if (state.videoPromptsSent) delete state.videoPromptsSent[shotNumber!];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else {
-      // type === "video" — don't delete entry so the pipeline
-      // can track the old version before overwriting.
+      // type === "video" — track version and set to empty string
+      if (state.generatedVideos[shotNumber!]) {
+        trackVideoVersion(state, shotNumber!, state.generatedVideos[shotNumber!], { reason: "redo" });
+        state.generatedVideos[shotNumber!] = "";
+      }
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1848,7 +1889,12 @@ async function handleSetDirective(
     // e.g. "asset:character:Lupov:front"
     const assetKey = trimmedTarget.slice("asset:".length);
     if (state.generatedAssets[assetKey]) {
-      // Leave generatedAssets entries — pipeline will track versions when it regenerates
+      // Track the old asset version, then set to empty string so the pipeline treats it as needing regeneration
+      const oldPath = state.generatedAssets[assetKey];
+      if (!state.assetVersions) state.assetVersions = {};
+      if (!state.assetVersions[assetKey]) state.assetVersions[assetKey] = [];
+      state.assetVersions[assetKey].push({ version: state.assetVersions[assetKey].length + 1, path: oldPath, timestamp: new Date().toISOString(), reason: "directive" });
+      state.generatedAssets[assetKey] = "";
       state.completedStages = state.completedStages.filter(
         s => s !== "asset_generation" && s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
@@ -1861,53 +1907,107 @@ async function handleSetDirective(
     const itemType = parts.slice(2).join(":");
 
     if (itemType === "start_frame") {
-      // Leave existing frame paths so trackFrameVersion can archive them
+      // Track start frame version and set to empty string; cascade to end frame and video
+      const existing = state.generatedFrames[shotNum];
+      if (existing?.start) {
+        trackFrameVersion(state, shotNum, "start", existing.start, { reason: "directive" });
+        existing.start = "";
+      }
+      if (existing) {
+        existing.startReferences = undefined;
+        if (existing.end) {
+          trackFrameVersion(state, shotNum, "end", existing.end, { reason: "directive-start" });
+          existing.end = "";
+        }
+        existing.endReferences = undefined;
+      }
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-frame" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "end_frame") {
-      // Leave existing frame paths so trackFrameVersion can archive them
+      // Track end frame version and set to empty string; cascade to video
+      const existing = state.generatedFrames[shotNum];
+      if (existing?.end) {
+        trackFrameVersion(state, shotNum, "end", existing.end, { reason: "directive" });
+        existing.end = "";
+      }
+      if (existing) {
+        existing.endReferences = undefined;
+      }
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-frame" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "video") {
-      // Leave existing video entry so trackVideoVersion can archive it
+      // Track video version and set to empty string
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "start_frame_prompt" || itemType === "end_frame_prompt") {
-      // Prompt edit → regenerate frames (and downstream video/assembly)
-      // Leave existing frame/video paths so version tracking can archive them
+      // Prompt edit → track versions and set to empty string for frames and video
+      const existing = state.generatedFrames[shotNum];
+      if (existing?.start) {
+        trackFrameVersion(state, shotNum, "start", existing.start, { reason: "directive-prompt" });
+        existing.start = "";
+      }
+      if (existing?.end) {
+        trackFrameVersion(state, shotNum, "end", existing.end, { reason: "directive-prompt" });
+        existing.end = "";
+      }
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-prompt" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "frame_generation" && s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "frame_generation";
     } else if (itemType === "action_prompt") {
-      // Action prompt edit → regenerate video (and downstream assembly)
-      // Leave existing video entry so trackVideoVersion can archive it
+      // Action prompt edit → track video version and set to empty string
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-action" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "camera_direction") {
-      // Camera direction edit → regenerate video (and downstream assembly)
-      // Leave existing video entry so trackVideoVersion can archive it
+      // Camera direction edit → track video version and set to empty string
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-camera" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
       );
       earliestStage = isGrok ? "shot_generation" : "video_generation";
     } else if (itemType === "sound_effects") {
-      // Sound effects edit → regenerate video and assembly
-      // Leave existing video entry so trackVideoVersion can archive it
+      // Sound effects edit → track video version and set to empty string
+      if (state.generatedVideos[shotNum]) {
+        trackVideoVersion(state, shotNum, state.generatedVideos[shotNum], { reason: "directive-sfx" });
+        state.generatedVideos[shotNum] = "";
+      }
       if (state.videoPromptsSent) delete state.videoPromptsSent[shotNum];
       state.completedStages = state.completedStages.filter(
         s => s !== "video_generation" && s !== "shot_generation" && s !== "assembly"
