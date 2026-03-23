@@ -34,6 +34,7 @@ const elements = {
   createRunForm: getElement("create-run-form"),
   storyText: getElement("story-text"),
   createRunButton: getElement("create-run-button"),
+  convertToScriptButton: getElement("convert-to-script-button"),
   tabNewStory: getElement("tab-new-story"),
   tabImportVideo: getElement("tab-import-video"),
   panelNewStory: getElement("panel-new-story"),
@@ -584,22 +585,8 @@ function renderRunDetails() {
   // Delete is available when the run is not actively executing
   elements.deleteRunButton.disabled = isRunActivelyExecuting(run);
 
-  // Show/hide Analyze Pacing button based on whether we have videos
-  const analyzePacingBtn = document.getElementById("analyze-pacing-btn");
-  if (analyzePacingBtn) {
-    const hasVideos = run.completedStages?.includes("video_generation") ||
-                      run.completedStages?.includes("shot_generation") ||
-                      run.completedStages?.includes("assembly");
-    analyzePacingBtn.style.display = hasVideos ? "" : "none";
-  }
-
   populateInstructionStageSelect();
   renderStageProgress();
-
-  // Restore pacing results if available from server state
-  if (run.pacingAnalysis && run.pacingAnalysis.length > 0) {
-    showPacingResults(run.pacingAnalysis);
-  }
 }
 
 function createEventEntry({ level = "info", title, message, timestamp }) {
@@ -1041,10 +1028,18 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
           for (const shot of scene.shots) {
             const dialogue = shot.dialogue ? escapeHtml(shot.dialogue) : "<em>—</em>";
             const isGrok = state.activeRun?.options?.videoBackend === "grok";
+            const videoAssetExists = Boolean(findAsset(`video:${shot.shotNumber}`));
+            const regenDisabled = isRunActivelyExecuting(state.activeRun) ? " disabled" : "";
             html += `<tr>`;
             html += `<td>${shot.shotNumber}</td>`;
             html += `<td>${escapeHtml(shot.composition)}</td>`;
-            html += `<td>${shot.durationSeconds}s</td>`;
+            html += `<td class="duration-cell">`;
+            html += `<input type="number" class="duration-input" data-shot="${shot.shotNumber}" value="${shot.durationSeconds}" min="0.5" max="15" step="0.5" title="Shot duration in seconds" />`;
+            html += `<span class="duration-unit">s</span>`;
+            if (videoAssetExists) {
+              html += `<button class="regen-duration-btn" data-shot="${shot.shotNumber}"${regenDisabled} title="Regenerate video with new duration">⟳</button>`;
+            }
+            html += `</td>`;
             html += `<td>${dialogue}</td>`;
             html += `</tr>`;
 
@@ -1525,6 +1520,30 @@ async function handleCreateRunSubmit(event) {
   }
 }
 
+async function handleConvertToScript() {
+  const storyText = elements.storyText.value.trim();
+  if (!storyText) {
+    setGlobalError("Story text is required to convert to script.");
+    return;
+  }
+
+  elements.convertToScriptButton.disabled = true;
+  elements.convertToScriptButton.textContent = "Converting…";
+  try {
+    const result = await requestJson("/convert-to-script", {
+      method: "POST",
+      body: JSON.stringify({ storyText }),
+    });
+    elements.storyText.value = result.script;
+    setGlobalError("");
+  } catch (error) {
+    setGlobalError(`Failed to convert to script: ${error.message}`);
+  } finally {
+    elements.convertToScriptButton.disabled = false;
+    elements.convertToScriptButton.textContent = "Convert to Script";
+  }
+}
+
 async function handleImportVideoSubmit(event) {
   event.preventDefault();
   const url = elements.importVideoUrl.value.trim();
@@ -1771,7 +1790,7 @@ async function handleRedoClick(stage) {
   }
 }
 
-async function handleRedoItem(type, shotNumber, assetKey) {
+async function handleRedoItem(type, shotNumber, assetKey, { durationOverride } = {}) {
   if (!state.activeRunId) {
     setGlobalError("No active run selected.");
     return;
@@ -1783,16 +1802,22 @@ async function handleRedoItem(type, shotNumber, assetKey) {
 
   try {
     const body = type === "asset" ? { type, assetKey } : { type, shotNumber };
+    if (durationOverride !== undefined) {
+      body.durationOverride = durationOverride;
+    }
     await requestJson(`/runs/${encodeURIComponent(state.activeRunId)}/redo-item`, {
       method: "POST",
       body: JSON.stringify(body),
     });
     const labelMap = { start_frame: "start frame", end_frame: "end frame", video: "video", asset: "asset" };
     const label = labelMap[type] || type;
-    const message =
+    let message =
       type === "asset"
         ? `Retrying asset: ${assetKey}`
         : `Retrying ${label} for shot ${shotNumber}`;
+    if (durationOverride !== undefined) {
+      message += ` (duration: ${durationOverride}s)`;
+    }
     appendEvent(
       createEventEntry({
         title: `Redo ${label}`,
@@ -1959,6 +1984,10 @@ function bindEvents() {
     void handleCreateRunSubmit(event);
   });
 
+  elements.convertToScriptButton.addEventListener("click", () => {
+    void handleConvertToScript();
+  });
+
   elements.importVideoForm.addEventListener("submit", (event) => {
     void handleImportVideoSubmit(event);
   });
@@ -2118,6 +2147,23 @@ function bindEvents() {
           handleRedoItem(type, shotNumber);
         }
       }
+    }
+  });
+
+  // Regenerate video with new duration: delegated click on regen-duration buttons
+  document.body.addEventListener("click", (event) => {
+    const btn = event.target.closest(".regen-duration-btn");
+    if (btn && !btn.disabled) {
+      const shotNumber = Number(btn.dataset.shot);
+      if (Number.isNaN(shotNumber)) return;
+      const input = document.querySelector(`.duration-input[data-shot="${shotNumber}"]`);
+      if (!input) return;
+      const newDuration = parseFloat(input.value);
+      if (Number.isNaN(newDuration) || newDuration <= 0) {
+        setGlobalError("Invalid duration value.");
+        return;
+      }
+      handleRedoItem("video", shotNumber, undefined, { durationOverride: newDuration });
     }
   });
 

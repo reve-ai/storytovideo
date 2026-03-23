@@ -17,7 +17,7 @@ import { join, resolve } from "path";
 import { pipeline as streamPipeline } from "stream/promises";
 
 import { runImportPipeline } from "./import-orchestrator";
-import { runPipeline, clearStageData, STAGE_ORDER, trackVideoVersion } from "./orchestrator";
+import { runPipeline, clearStageData, STAGE_ORDER } from "./orchestrator";
 import {
   buildAssetFeed as buildAssetFeedFromState,
   createAssetFeedItem as createAssetFeedItemFromState,
@@ -32,8 +32,7 @@ import {
   type RunEventType,
 } from "./server-events";
 import { loadState, saveState } from "./tools/state";
-import { analyzeClipPacing, getClipDuration } from "./tools/analyze-video-pacing";
-import { generateVideo } from "./tools/generate-video";
+
 import { setInterrupted } from "./signals";
 import type { GeneratedFrameSet, ItemDirective, PipelineOptions, PipelineState } from "./types";
 import { generateText } from "ai";
@@ -119,7 +118,6 @@ interface RunResponse {
   selectedVersions?: PipelineState["selectedVersions"];
   assetVersions?: PipelineState["assetVersions"];
   selectedAssetVersions?: PipelineState["selectedAssetVersions"];
-  pacingAnalysis?: unknown[] | null;
   review: ReviewState;
 }
 
@@ -561,7 +559,6 @@ function toRunResponse(record: RunRecord): RunResponse {
     selectedVersions: state?.selectedVersions,
     assetVersions: state?.assetVersions,
     selectedAssetVersions: state?.selectedAssetVersions,
-    pacingAnalysis: (state as any)?.pacingAnalysis ?? null,
     review: {
       awaitingUserReview: state?.awaitingUserReview ?? false,
       continueRequested: state?.continueRequested ?? false,
@@ -987,6 +984,28 @@ async function runInBackground(runId: string, resume = false): Promise<void> {
   })();
 
   runningPipelines.set(runId, { promise: pipeline, abortController });
+}
+
+async function handleConvertToScript(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const body = await readJsonBody(req);
+  if (typeof body !== "object" || body === null) {
+    sendJson(res, 400, { error: "Request body must be a JSON object" });
+    return;
+  }
+  const { storyText } = body as { storyText?: string };
+  if (typeof storyText !== "string" || storyText.trim().length === 0) {
+    sendJson(res, 400, { error: "storyText is required and must be a non-empty string" });
+    return;
+  }
+  try {
+    const { storyToScript } = await import("./tools/story-to-script");
+    const script = await storyToScript(storyText);
+    sendJson(res, 200, { script });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Error converting story to script:", message);
+    sendJson(res, 500, { error: `Failed to convert story to script: ${message}` });
+  }
 }
 
 async function handleCreateRun(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1477,7 +1496,7 @@ async function handleRedoItem(
     return;
   }
 
-  const { type, shotNumber, assetKey, directive } = body as { type?: string; shotNumber?: number; assetKey?: string; directive?: string };
+  const { type, shotNumber, assetKey, directive, durationOverride } = body as { type?: string; shotNumber?: number; assetKey?: string; directive?: string; durationOverride?: number };
 
   const validTypes = ["frame", "video", "asset", "start_frame", "end_frame"];
   if (!type || !validTypes.includes(type)) {
@@ -1657,6 +1676,24 @@ async function handleRedoItem(
       createdAt: state.itemDirectives[directiveTarget]?.createdAt ?? now,
       updatedAt: now,
     };
+  }
+
+  // Apply duration override if provided (update shot in storyAnalysis)
+  if (
+    durationOverride !== undefined &&
+    typeof durationOverride === "number" &&
+    durationOverride > 0 &&
+    shotNumber !== undefined &&
+    state.storyAnalysis
+  ) {
+    for (const scene of state.storyAnalysis.scenes) {
+      const shot = scene.shots?.find((s) => s.shotNumber === shotNumber);
+      if (shot) {
+        console.log(`[handleRedoItem] Updating shot ${shotNumber} duration: ${shot.durationSeconds}s → ${durationOverride}s`);
+        shot.durationSeconds = durationOverride;
+        break;
+      }
+    }
   }
 
   // Set currentStage to the earliest cleared stage
@@ -2646,145 +2683,6 @@ async function handleImportUpload(req: IncomingMessage, res: ServerResponse): Pr
   sendJson(res, 201, toRunResponse(record));
 }
 
-async function handleAnalyzePacing(_req: IncomingMessage, res: ServerResponse, runId: string): Promise<void> {
-  const run = runStore.get(runId);
-  if (!run) {
-    sendJson(res, 404, { error: "Run not found" });
-    return;
-  }
-
-  const state = loadState(run.outputDir);
-  if (!state) {
-    sendJson(res, 404, { error: "No state found" });
-    return;
-  }
-
-  // Return immediately, process in background
-  sendJson(res, 200, { message: "Pacing analysis started" });
-
-  const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
-  const sortedShots = [...allShots].sort((a, b) => a.shotNumber - b.shotNumber);
-  const eligibleShots = sortedShots.filter(shot => {
-    const videoPath = state.generatedVideos[shot.shotNumber];
-    return videoPath && existsSync(videoPath);
-  });
-  const results = [];
-
-  emitLogEvent(runId, `[pacing] Starting pacing analysis for ${eligibleShots.length} shots...`);
-
-  for (let i = 0; i < eligibleShots.length; i++) {
-    const shot = eligibleShots[i];
-    const videoPath = state.generatedVideos[shot.shotNumber];
-
-    emitLogEvent(runId, `[pacing] Analyzing shot ${shot.shotNumber} (${i + 1}/${eligibleShots.length})...`);
-
-    try {
-      const actualDuration = await getClipDuration(videoPath);
-      const analysis = await analyzeClipPacing(videoPath, shot.shotNumber, actualDuration, shot.dialogue);
-      results.push(analysis);
-
-      emitLogEvent(runId, `[pacing] Shot ${shot.shotNumber}: ${actualDuration.toFixed(1)}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
-    } catch (err) {
-      console.error(`[pacing] Failed to analyze shot ${shot.shotNumber}:`, err);
-      emitLogEvent(runId, `[pacing] Failed to analyze shot ${shot.shotNumber}: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-  }
-
-  // Store in state
-  (state as any).pacingAnalysis = results;
-  await saveState({ state });
-
-  emitLogEvent(runId, `[pacing] Analysis complete. ${results.length} shots analyzed.`);
-  // Trigger a run_status event so the UI refreshes and picks up pacingAnalysis
-  emitRunStatusEvent(runId, run.status as RunStatus);
-}
-
-async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, runId: string): Promise<void> {
-  const run = runStore.get(runId);
-  if (!run) {
-    sendJson(res, 404, { error: "Run not found" });
-    return;
-  }
-
-  const state = loadState(run.outputDir);
-  if (!state || !(state as any).pacingAnalysis) {
-    sendJson(res, 400, { error: "No pacing analysis found. Run analyze-pacing first." });
-    return;
-  }
-
-  const pacingAnalysis = (state as any).pacingAnalysis as Array<{
-    shotNumber: number;
-    currentDuration: number;
-    recommendedDuration: number;
-    confidence: string;
-  }>;
-
-  const shotsToRegen = pacingAnalysis.filter(a => {
-    const savings = a.currentDuration - a.recommendedDuration;
-    return savings >= 1 && a.confidence !== "low";
-  });
-
-  if (shotsToRegen.length === 0) {
-    sendJson(res, 200, { message: "No shots need regeneration", regenerated: [] });
-    return;
-  }
-
-  // Return immediately, process in background
-  sendJson(res, 200, {
-    message: `Regenerating ${shotsToRegen.length} shots`,
-    shots: shotsToRegen.map(s => ({ shotNumber: s.shotNumber, from: s.currentDuration, to: s.recommendedDuration })),
-  });
-
-  // Background regeneration
-  emitLogEvent(runId, `[pacing] Regenerating ${shotsToRegen.length} shots...`);
-
-  const allShots = state.storyAnalysis?.scenes?.flatMap(s => s.shots || []) ?? [];
-  let regenerated = 0;
-  for (let i = 0; i < shotsToRegen.length; i++) {
-    const analysis = shotsToRegen[i];
-    const shot = allShots.find(s => s.shotNumber === analysis.shotNumber);
-    if (!shot) continue;
-
-    emitLogEvent(runId, `[pacing] Regenerating shot ${analysis.shotNumber} (${i + 1}/${shotsToRegen.length}): ${analysis.currentDuration}s → ${analysis.recommendedDuration}s`);
-
-    try {
-      const result = await generateVideo({
-        shotNumber: shot.shotNumber,
-        shotType: shot.shotType,
-        actionPrompt: shot.actionPrompt,
-        dialogue: shot.dialogue,
-        soundEffects: shot.soundEffects,
-        cameraDirection: shot.cameraDirection,
-        durationSeconds: analysis.recommendedDuration,
-        startFramePath: state.generatedFrames[shot.shotNumber]?.start ?? "",
-        endFramePath: state.generatedFrames[shot.shotNumber]?.end ?? "",
-        outputDir: join(run.outputDir, "videos"),
-        videoBackend: run.options?.videoBackend || "grok",
-        aspectRatio: run.options?.aspectRatio,
-        characterNames: state.storyAnalysis?.characters?.map(c => c.name) ?? [],
-      });
-
-      trackVideoVersion(state, result.shotNumber, result.path, {
-        duration: result.duration,
-        promptSent: result.promptSent,
-        pacingAdjusted: true,
-      });
-      state.generatedVideos[result.shotNumber] = result.path;
-      shot.durationSeconds = analysis.recommendedDuration;
-      await saveState({ state });
-      regenerated++;
-      emitLogEvent(runId, `[pacing] Shot ${analysis.shotNumber} regenerated successfully (${regenerated}/${shotsToRegen.length})`);
-    } catch (err) {
-      console.error(`[pacing] Failed to regenerate shot ${analysis.shotNumber}:`, err);
-      emitLogEvent(runId, `[pacing] Failed to regenerate shot ${analysis.shotNumber}: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-  }
-
-  // Notify UI that videos were updated
-  emitLogEvent(runId, `[pacing] All regenerations complete. ${regenerated} shots regenerated. Click Reassemble to rebuild final video.`);
-  emitRunStatusEvent(runId, "completed");
-}
-
 async function requestHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   setCorsHeaders(res);
 
@@ -2816,6 +2714,11 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
       }
+    }
+
+    if (method === "POST" && url.pathname === "/convert-to-script") {
+      await handleConvertToScript(req, res);
+      return;
     }
 
     if (method === "POST" && url.pathname === "/runs/import/upload") {
@@ -2924,17 +2827,6 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
-    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "analyze-pacing") {
-      const runId = decodeURIComponent(pathParts[1]);
-      await handleAnalyzePacing(req, res, runId);
-      return;
-    }
-
-    if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "apply-pacing") {
-      const runId = decodeURIComponent(pathParts[1]);
-      await handleApplyPacing(req, res, runId);
-      return;
-    }
 
     if (method === "POST" && pathParts.length === 3 && pathParts[0] === "runs" && pathParts[2] === "directive") {
       const runId = decodeURIComponent(pathParts[1]);
