@@ -1670,6 +1670,9 @@ async function handleRedoItem(
       if (shot) {
         console.log(`[handleRedoItem] Updating shot ${shotNumber} duration: ${shot.durationSeconds}s → ${durationOverride}s`);
         shot.durationSeconds = durationOverride;
+        if (!state.manualDurations) state.manualDurations = {};
+        state.manualDurations[shotNumber] = true;
+        console.log(`[handleRedoItem] Marked shot ${shotNumber} duration as manually set (${durationOverride}s)`);
         break;
       }
     }

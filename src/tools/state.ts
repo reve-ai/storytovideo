@@ -17,6 +17,7 @@ function withReviewDefaults(state: PipelineState): PipelineState {
     videoVersions: state.videoVersions ?? {},
     frameVersions: state.frameVersions ?? {},
     selectedVersions: state.selectedVersions ?? { videos: {}, frames: {} },
+    manualDurations: state.manualDurations ?? {},
   };
 }
 

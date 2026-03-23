@@ -1143,7 +1143,11 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
             },
           });
           // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
-          if (options.videoBackend === "grok" && result.path && !options.dryRun) {
+          const isManualDuration = state.manualDurations?.[result.shotNumber];
+          if (isManualDuration) {
+            console.log(`[pacing] Skipping pacing analysis for shot ${result.shotNumber} (duration manually set by user)`);
+          }
+          if (options.videoBackend === "grok" && result.path && !options.dryRun && !isManualDuration) {
             try {
               const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
               const shotDialogue = shotObj?.dialogue;
@@ -1405,7 +1409,11 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
         });
         // Post-generation pacing analysis (Grok only, single pass — no re-analysis)
         let finalResult = result;
-        if (options.videoBackend === "grok" && result.path && !options.dryRun) {
+        const isManualDuration = state.manualDurations?.[result.shotNumber];
+        if (isManualDuration) {
+          console.log(`[pacing] Skipping pacing analysis for shot ${result.shotNumber} (duration manually set by user)`);
+        }
+        if (options.videoBackend === "grok" && result.path && !options.dryRun && !isManualDuration) {
           try {
             const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
             const shotDialogue = shotObj?.dialogue;
