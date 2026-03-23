@@ -213,7 +213,7 @@ Return JSON:
   return JSON.parse(text);
 }
 
-async function getClipDuration(clipPath: string): Promise<number> {
+export async function getClipDuration(clipPath: string): Promise<number> {
   const { execFile } = await import("child_process");
   const { promisify } = await import("util");
   const execFileAsync = promisify(execFile);
