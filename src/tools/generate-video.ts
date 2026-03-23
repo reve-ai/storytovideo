@@ -556,7 +556,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
   const dataUri = `data:image/${ext};base64,${imageBuffer.toString("base64")}`;
 
   // Clamp duration to Grok's supported range (1-15s)
-  const clampedDuration = Math.max(1, Math.min(15, Math.round(durationSeconds)));
+  const clampedDuration = Math.max(1, Math.min(15, durationSeconds));
 
   try {
     // grok-client already handles retries with exponential backoff

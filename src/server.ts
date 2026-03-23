@@ -2755,7 +2755,7 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
         dialogue: shot.dialogue,
         soundEffects: shot.soundEffects,
         cameraDirection: shot.cameraDirection,
-        durationSeconds: Math.round(analysis.recommendedDuration),
+        durationSeconds: analysis.recommendedDuration,
         startFramePath: state.generatedFrames[shot.shotNumber]?.start ?? "",
         endFramePath: state.generatedFrames[shot.shotNumber]?.end ?? "",
         outputDir: join(run.outputDir, "videos"),
@@ -2770,7 +2770,7 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
         pacingAdjusted: true,
       });
       state.generatedVideos[result.shotNumber] = result.path;
-      shot.durationSeconds = Math.round(analysis.recommendedDuration);
+      shot.durationSeconds = analysis.recommendedDuration;
       await saveState({ state });
       regenerated++;
       emitLogEvent(runId, `[pacing] Shot ${analysis.shotNumber} regenerated successfully (${regenerated}/${shotsToRegen.length})`);
