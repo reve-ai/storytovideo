@@ -119,6 +119,7 @@ interface RunResponse {
   selectedVersions?: PipelineState["selectedVersions"];
   assetVersions?: PipelineState["assetVersions"];
   selectedAssetVersions?: PipelineState["selectedAssetVersions"];
+  pacingAnalysis?: unknown[] | null;
   review: ReviewState;
 }
 
@@ -560,6 +561,7 @@ function toRunResponse(record: RunRecord): RunResponse {
     selectedVersions: state?.selectedVersions,
     assetVersions: state?.assetVersions,
     selectedAssetVersions: state?.selectedAssetVersions,
+    pacingAnalysis: (state as any)?.pacingAnalysis ?? null,
     review: {
       awaitingUserReview: state?.awaitingUserReview ?? false,
       continueRequested: state?.continueRequested ?? false,

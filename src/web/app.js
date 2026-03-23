@@ -595,6 +595,11 @@ function renderRunDetails() {
 
   populateInstructionStageSelect();
   renderStageProgress();
+
+  // Restore pacing results if available from server state
+  if (run.pacingAnalysis && run.pacingAnalysis.length > 0) {
+    showPacingResults(run.pacingAnalysis);
+  }
 }
 
 function createEventEntry({ level = "info", title, message, timestamp }) {
