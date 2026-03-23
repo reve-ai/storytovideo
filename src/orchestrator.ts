@@ -955,7 +955,19 @@ async function runFrameGenerationStage(
   // Determine which frames still need generation (all shots use first_last_frame)
   const neededFrames = allShots.filter((s) => {
     const existing = state.generatedFrames[s.shotNumber];
-    return !existing || !existing.start || !existing.end;
+    if (!existing || !existing.start || !existing.end) return true;
+    // Check files actually exist — clear ghost references
+    if (!existsSync(existing.start)) {
+      console.log(`[frame_generation] Ghost start frame reference for shot ${s.shotNumber}: ${existing.start} (file missing, will regenerate)`);
+      delete state.generatedFrames[s.shotNumber];
+      return true;
+    }
+    if (!existsSync(existing.end)) {
+      console.log(`[frame_generation] Ghost end frame reference for shot ${s.shotNumber}: ${existing.end} (file missing, will regenerate)`);
+      delete state.generatedFrames[s.shotNumber];
+      return true;
+    }
+    return false;
   });
 
   const hasPendingInstructions = (state.pendingStageInstructions["frame_generation"]?.length ?? 0) > 0;
@@ -1053,10 +1065,12 @@ Shots needing frames: ${neededFrames.map((s) => `Shot ${s.shotNumber}`).join(", 
 
   await runStage("frame_generation", state, options, systemPrompt, userPrompt, frameTools, 60, options.verbose);
 
-  // Recompute remaining frames after stage execution
+  // Recompute remaining frames after stage execution (also check files exist)
   const remainingFrames = allShots.filter((s) => {
     const existing = state.generatedFrames[s.shotNumber];
-    return !existing || !existing.start || !existing.end;
+    if (!existing || !existing.start || !existing.end) return true;
+    if (!existsSync(existing.start) || !existsSync(existing.end)) return true;
+    return false;
   });
   if (remainingFrames.length > 0) {
     console.warn(`[frame_generation] WARNING: ${remainingFrames.length}/${allShots.length} frames still missing. NOT marking as complete — will resume on next run.`);
@@ -1083,7 +1097,29 @@ async function runVideoGenerationStage(
   const allShots = analysis.scenes.flatMap((s) => s.shots || []);
 
   // Determine which videos still need generation
-  const neededVideos = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+  const neededVideos = allShots.filter((s) => {
+    const videoPath = state.generatedVideos[s.shotNumber];
+    const frameData = state.generatedFrames[s.shotNumber];
+    const startFrame = frameData?.start;
+
+    // Need regeneration if no video or video file missing
+    if (!videoPath || !existsSync(videoPath)) {
+      if (videoPath) {
+        console.log(`[video_generation] Ghost video reference for shot ${s.shotNumber}: ${videoPath} (file missing, will regenerate)`);
+        delete state.generatedVideos[s.shotNumber];
+      }
+      return true;
+    }
+
+    // Need regeneration if start frame is missing (video lacks frame continuity)
+    if (s.shotNumber > 1 && (!startFrame || !existsSync(startFrame))) {
+      console.log(`[video_generation] Shot ${s.shotNumber} missing start frame, will regenerate`);
+      delete state.generatedVideos[s.shotNumber];
+      return true;
+    }
+
+    return false;
+  });
 
   const hasPendingInstructions = (state.pendingStageInstructions["video_generation"]?.length ?? 0) > 0;
   const hasDirectives = hasItemDirectivesForStage(state, "video_generation");
@@ -1275,11 +1311,17 @@ Shots needing videos: ${neededVideos.map((s) => `Shot ${s.shotNumber}`).join(", 
 
   await runStage("video_generation", state, options, systemPrompt, userPrompt, videoTools, 80, options.verbose);
 
-  // Recompute remaining videos after stage execution
-  const remainingVideos = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+  // Recompute remaining videos after stage execution (also check files exist)
+  const remainingVideos = allShots.filter((s) => {
+    const videoPath = state.generatedVideos[s.shotNumber];
+    return !videoPath || !existsSync(videoPath);
+  });
   if (remainingVideos.length > 0) {
     const missingFrames = remainingVideos.filter(
-      (shot) => !state.generatedFrames[shot.shotNumber]?.start,
+      (shot) => {
+        const startFrame = state.generatedFrames[shot.shotNumber]?.start;
+        return !startFrame || !existsSync(startFrame);
+      },
     );
     if (missingFrames.length > 0) {
       console.log(`[video_generation] ${missingFrames.length} shots need frame regeneration. Rolling back to frame_generation.`);
@@ -1317,7 +1359,29 @@ async function runShotGenerationStage(
   const allShots = analysis.scenes.flatMap((s) => s.shots || []);
 
   // Determine which shots still need video generation (the final output)
-  const neededShots = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+  const neededShots = allShots.filter((s) => {
+    const videoPath = state.generatedVideos[s.shotNumber];
+    const frameData = state.generatedFrames[s.shotNumber];
+    const startFrame = frameData?.start;
+
+    // Need regeneration if no video or video file missing
+    if (!videoPath || !existsSync(videoPath)) {
+      if (videoPath) {
+        console.log(`[shot_generation] Ghost video reference for shot ${s.shotNumber}: ${videoPath} (file missing, will regenerate)`);
+        delete state.generatedVideos[s.shotNumber];
+      }
+      return true;
+    }
+
+    // Need regeneration if start frame is missing (video lacks frame continuity)
+    if (s.shotNumber > 1 && (!startFrame || !existsSync(startFrame))) {
+      console.log(`[shot_generation] Shot ${s.shotNumber} missing start frame, will regenerate`);
+      delete state.generatedVideos[s.shotNumber];
+      return true;
+    }
+
+    return false;
+  });
 
   const hasPendingInstructions = (state.pendingStageInstructions["shot_generation"]?.length ?? 0) > 0;
   const hasDirectives = hasItemDirectivesForStage(state, "shot_generation");
@@ -1521,8 +1585,11 @@ Shots needing generation: ${neededShots.map((s) => `Shot ${s.shotNumber}`).join(
 
   await runStage("shot_generation", state, options, systemPrompt, userPrompt, shotGenTools, 120, options.verbose);
 
-  // Recompute remaining shots after stage execution
-  const remainingShots = allShots.filter((s) => !state.generatedVideos[s.shotNumber]);
+  // Recompute remaining shots after stage execution (also check files exist)
+  const remainingShots = allShots.filter((s) => {
+    const videoPath = state.generatedVideos[s.shotNumber];
+    return !videoPath || !existsSync(videoPath);
+  });
   if (remainingShots.length > 0) {
     console.warn(`[shot_generation] WARNING: ${remainingShots.length}/${allShots.length} shots still missing. NOT marking as complete — will resume on next run.`);
     return state;
