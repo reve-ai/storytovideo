@@ -3275,8 +3275,13 @@ async function resumeStaleRuns(): Promise<void> {
           currentStage: state.currentStage,
         });
         awaitingReview++;
-      } else if (run.status === "failed" || run.status === "stopped") {
-        // Only auto-resume failed/stopped runs that made progress (have completed stages)
+      } else if (run.status === "stopped") {
+        // User explicitly stopped this run — leave it stopped
+        console.log(`[Recovery] Run ${run.id} was stopped by user — leaving stopped`);
+        awaitingReview++;
+        continue;
+      } else if (run.status === "failed") {
+        // Only auto-resume failed runs that made progress (have completed stages)
         if (state.completedStages.length === 0) {
           console.log(`[Recovery] Run ${run.id} failed with no progress — leaving as failed`);
           failed++;
