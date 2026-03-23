@@ -2770,6 +2770,7 @@ async function handleApplyPacing(_req: IncomingMessage, res: ServerResponse, run
         pacingAdjusted: true,
       });
       state.generatedVideos[result.shotNumber] = result.path;
+      shot.durationSeconds = Math.round(analysis.recommendedDuration);
       await saveState({ state });
       regenerated++;
       emitLogEvent(runId, `[pacing] Shot ${analysis.shotNumber} regenerated successfully (${regenerated}/${shotsToRegen.length})`);
