@@ -130,6 +130,7 @@ interface StateSnapshot {
   generatedVideos: Record<string, string>;
   errors: PipelineState["errors"];
   hasStoryAnalysis: boolean;
+  convertedScript: string | undefined;
 }
 
 interface CreateRunRequest {
@@ -598,6 +599,7 @@ function toStateSnapshot(state: PipelineState): StateSnapshot {
     generatedVideos: { ...state.generatedVideos },
     errors: [...state.errors],
     hasStoryAnalysis: Boolean(state.storyAnalysis),
+    convertedScript: state.convertedScript,
   };
 }
 
@@ -648,6 +650,11 @@ function detectStateChanges(runId: string, state: PipelineState, previous: State
   }
 
   const fallbackTimestamp = state.lastSavedAt || new Date().toISOString();
+
+  // Emit log event when convertedScript becomes available so UI refreshes
+  if (current.convertedScript && current.convertedScript !== previous.convertedScript) {
+    emitLogEvent(runId, "[analysis] Converted script available");
+  }
 
   // Emit story_analysis.json as a document asset when it becomes available
   if (current.hasStoryAnalysis && !previous.hasStoryAnalysis) {

@@ -224,20 +224,30 @@ function renderStoryScript(run, stateData) {
 
   elements.storyScriptSection.style.display = "";
 
-  // Populate story text (read-only for imports)
-  elements.editStoryText.value = run.storyText || "";
+  const storyText = run.storyText || "";
+  const convertedScript = stateData?.convertedScript || "";
+
+  // Only update textareas if user hasn't made local edits
+  const userEditedStory = state.originalStoryText !== undefined &&
+    elements.editStoryText.value.trim() !== (state.originalStoryText || "").trim();
+  const userEditedScript = state.originalConvertedScript !== undefined &&
+    elements.editConvertedScript.value.trim() !== (state.originalConvertedScript || "").trim();
+
+  if (!userEditedStory) {
+    elements.editStoryText.value = storyText;
+  }
   elements.editStoryText.readOnly = isImport;
   if (isImport) {
     elements.editStoryText.placeholder = "Story text not available for imported videos";
   }
 
-  // Populate converted script
-  const convertedScript = stateData?.convertedScript || "";
-  elements.editConvertedScript.value = convertedScript;
+  if (!userEditedScript) {
+    elements.editConvertedScript.value = convertedScript;
+  }
   elements.scriptStatus.textContent = convertedScript ? "(auto-generated from story)" : "";
 
   // Store originals for change detection
-  state.originalStoryText = run.storyText || "";
+  state.originalStoryText = storyText;
   state.originalConvertedScript = convertedScript;
 
   // Disable save button when pipeline is running
@@ -1364,6 +1374,11 @@ function handleRunEvent(type, messageEvent, source) {
             timestamp,
           }),
         );
+        // Refresh story/script section when converted script becomes available
+        if (message.includes("Converted script available")) {
+          void fetchAndRenderStageOutput({ silent: true });
+        }
+
         // Track video generation progress per shot
         const progressMatch = message.match(/\[(video_generation|shot_generation)\] Shot (\d+): (\d+)% complete/);
         if (progressMatch) {
