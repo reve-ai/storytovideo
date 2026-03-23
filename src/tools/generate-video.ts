@@ -107,7 +107,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     sanitized = {
       ...params,
       actionPrompt: stripCharacterNames(params.actionPrompt, params.characterNames),
-      dialogue: stripCharacterNames(params.dialogue, params.characterNames),
+      // Do NOT strip names from dialogue — it's spoken text for TTS, names should be preserved
     };
   }
 
