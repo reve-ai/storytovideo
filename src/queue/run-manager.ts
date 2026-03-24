@@ -10,7 +10,7 @@ import type { WorkItem, QueueName } from "./types.js";
 // Run record persisted to queue-runs.json
 // ---------------------------------------------------------------------------
 
-export type QueueRunStatus = "running" | "stopped" | "completed" | "failed";
+export type QueueRunStatus = "running" | "pausing" | "stopped" | "completed" | "failed";
 
 export interface QueueRunRecord {
   id: string;
@@ -215,16 +215,37 @@ export class RunManager extends EventEmitter {
     const procs = this.processors.get(runId);
     if (!procs) return false;
 
-    await Promise.allSettled(procs.map(p => p.stop()));
+    // Check if any processors have in-progress items
+    const qm = this.queueManagers.get(runId);
+    const hasInProgress = qm
+      ? qm.getState().workItems.some(i => i.status === "in_progress")
+      : false;
 
-    this.patchRun(runId, { status: "stopped" });
+    if (hasInProgress) {
+      // Items are still running — set "pausing" and wait in the background
+      this.patchRun(runId, { status: "pausing" });
+
+      // Fire-and-forget: await processors then transition to stopped
+      void Promise.allSettled(procs.map(p => p.stop())).then(() => {
+        // Only transition to stopped if still in pausing state (not resumed in the meantime)
+        const current = this.runs.get(runId);
+        if (current && current.status === "pausing") {
+          this.patchRun(runId, { status: "stopped" });
+        }
+      });
+    } else {
+      // Nothing in progress — go straight to stopped
+      await Promise.allSettled(procs.map(p => p.stop()));
+      this.patchRun(runId, { status: "stopped" });
+    }
+
     return true;
   }
 
   async resumeRun(runId: string): Promise<boolean> {
     const record = this.runs.get(runId);
     if (!record) return false;
-    if (record.status !== "stopped") return false;
+    if (record.status !== "stopped" && record.status !== "pausing") return false;
 
     let qm = this.queueManagers.get(runId);
     if (!qm) {
@@ -295,15 +316,15 @@ export class RunManager extends EventEmitter {
   loadExistingRuns(): void {
     // Re-attach QueueManagers for persisted runs that have state on disk
     for (const [runId, record] of this.runs) {
-      if (record.status === "running" || record.status === "stopped") {
+      if (record.status === "running" || record.status === "stopped" || record.status === "pausing") {
         try {
           const stateFile = join(record.outputDir, "queue_state.json");
           if (!existsSync(stateFile)) continue;
           const qm = QueueManager.load(stateFile);
           this.queueManagers.set(runId, qm);
 
-          // Mark previously-running runs as stopped (server restarted)
-          if (record.status === "running") {
+          // Mark previously-running or pausing runs as stopped (server restarted)
+          if (record.status === "running" || record.status === "pausing") {
             this.patchRun(runId, { status: "stopped" });
           }
         } catch (err) {

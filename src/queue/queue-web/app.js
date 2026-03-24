@@ -8,7 +8,7 @@ const state = {
   graph: null,
   eventSource: null,
   currentView: 'queue',
-  runStatus: null, // 'running' | 'stopped' | 'completed' | 'failed'
+  runStatus: null, // 'running' | 'pausing' | 'stopped' | 'completed' | 'failed'
 };
 
 // Track original inputs for form dirty comparison
@@ -140,7 +140,7 @@ async function togglePlayPause() {
   try {
     if (state.runStatus === 'running') {
       await fetch(`${API}/api/runs/${state.activeRunId}/stop`, { method: 'POST' });
-    } else if (state.runStatus === 'stopped') {
+    } else if (state.runStatus === 'stopped' || state.runStatus === 'pausing') {
       await fetch(`${API}/api/runs/${state.activeRunId}/resume`, { method: 'POST' });
     }
   } catch (e) {
@@ -175,12 +175,12 @@ function updateRunStatus(status) {
   badge.textContent = status;
   badge.className = `run-status-badge ${status}`;
 
-  // Show play/pause button for running/stopped states
-  if (status === 'running' || status === 'stopped') {
+  // Show play/pause button for running/stopped/pausing states
+  if (status === 'running' || status === 'stopped' || status === 'pausing') {
     btn.style.display = '';
     btn.textContent = status === 'running' ? '⏸' : '▶';
     btn.title = status === 'running' ? 'Pause pipeline' : 'Resume pipeline';
-    btn.className = `play-pause-btn ${status}`;
+    btn.className = `play-pause-btn ${status === 'running' ? 'running' : 'stopped'}`;
   } else {
     btn.style.display = 'none';
   }
