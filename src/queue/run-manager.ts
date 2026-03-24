@@ -126,7 +126,7 @@ export class RunManager extends EventEmitter {
     this.persistRuns();
 
     // Create queue manager for this run
-    const qm = new QueueManager(runId, "(api-input)", outputDir);
+    const qm = new QueueManager(runId, "(api-input)", outputDir, options);
 
     // Seed initial work items
     this.seedInitialItems(qm, storyText, options);

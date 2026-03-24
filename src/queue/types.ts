@@ -69,7 +69,7 @@ export interface RunState {
   manualDurations?: Record<number, boolean>;
 
   // Run options (aspect ratio, etc.)
-  options?: { aspectRatio?: string; [key: string]: unknown };
+  options?: { aspectRatio?: string; needsConversion?: boolean; dryRun?: boolean };
 }
 
 // Snapshot of a single queue for the UI list view

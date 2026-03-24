@@ -32,6 +32,12 @@
       <h2>New Run</h2>
       <label for="story-input">Story text</label>
       <textarea id="story-input" rows="10" placeholder="Paste a short story here…" required></textarea>
+      <label for="aspect-ratio-select">Aspect ratio</label>
+      <select id="aspect-ratio-select">
+        <option value="16:9" selected>16:9 (landscape)</option>
+        <option value="9:16">9:16 (portrait)</option>
+        <option value="1:1">1:1 (square)</option>
+      </select>
       <div class="dialog-actions">
         <button type="button" id="cancel-create">Cancel</button>
         <button type="submit">Create Run</button>
@@ -71,7 +77,7 @@
       </div>
       <section id="assembly-section" class="assembly-section" style="display:none">
         <h2>Final Video</h2>
-        <video id="final-video" controls></video>
+        <div id="final-video-container"></div>
       </section>
     </div>
 

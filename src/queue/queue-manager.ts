@@ -26,7 +26,7 @@ export class QueueManager {
   private state: RunState;
   private stateFilePath: string;
 
-  constructor(runId: string, storyFile: string, outputDir: string) {
+  constructor(runId: string, storyFile: string, outputDir: string, options?: RunState['options']) {
     this.stateFilePath = join(outputDir, 'queue_state.json');
     this.state = {
       runId,
@@ -40,6 +40,7 @@ export class QueueManager {
       convertedScript: null,
       runName: null,
       generatedOutputs: {},
+      options,
     };
   }
 
