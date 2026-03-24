@@ -361,6 +361,15 @@ function getMediaPath(item) {
   return null;
 }
 
+function getItemDescription(item) {
+  let desc = null;
+  if (item.type === 'generate_frame') desc = item.inputs?.shot?.startFramePrompt;
+  else if (item.type === 'generate_video') desc = item.inputs?.shot?.actionPrompt;
+  else if (item.type === 'generate_asset') desc = item.inputs?.description;
+  if (!desc) return null;
+  return desc.length > 80 ? desc.slice(0, 80) + '…' : desc;
+}
+
 function renderQueueItem(item) {
   const highClass = item.priority === 'high' ? ' high-priority' : '';
   const vBadge = item.version > 1 ? `<span class="badge badge-version">v${item.version}</span>` : '';
@@ -403,6 +412,7 @@ function renderQueueItem(item) {
       ${priBadge}${vBadge}${retryBadge}
     </div>
     <div class="q-item-key">${item.itemKey}</div>
+    ${(() => { const d = getItemDescription(item); return d ? `<div class="q-item-desc">${d}</div>` : ''; })()}
     ${output}
     ${actions ? `<div class="q-item-actions">${actions}</div>` : ''}
   </div>`;
