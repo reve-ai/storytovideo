@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Queue Pipeline</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <h1>Queue Pipeline</h1>
+      <div class="view-tabs">
+        <button class="tab active" data-view="queue">Queues</button>
+        <button class="tab" data-view="graph">Graph</button>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <select id="run-select" aria-label="Select run">
+        <option value="">— select run —</option>
+      </select>
+      <button id="new-run-btn" type="button">+ New Run</button>
+      <span id="sse-status" class="sse-badge disconnected">disconnected</span>
+    </div>
+  </header>
+
+  <!-- Create Run Modal -->
+  <dialog id="create-dialog">
+    <form id="create-form" method="dialog">
+      <h2>New Run</h2>
+      <label for="story-input">Story text</label>
+      <textarea id="story-input" rows="10" placeholder="Paste a short story here…" required></textarea>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-create">Cancel</button>
+        <button type="submit">Create Run</button>
+      </div>
+    </form>
+  </dialog>
+
+  <main>
+    <!-- Queue View -->
+    <div id="queue-view" class="view active">
+      <div class="queue-progress-bar">
+        <span id="progress-text">No run selected</span>
+        <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+      </div>
+      <div class="queue-columns">
+        <section class="queue-col" data-queue="llm">
+          <div class="queue-header">
+            <h2>LLM Queue</h2>
+            <span class="queue-count" id="llm-count">0</span>
+          </div>
+          <div class="queue-items" id="llm-items"></div>
+        </section>
+        <section class="queue-col" data-queue="image">
+          <div class="queue-header">
+            <h2>Image Queue</h2>
+            <span class="queue-count" id="image-count">0</span>
+          </div>
+          <div class="queue-items" id="image-items"></div>
+        </section>
+        <section class="queue-col" data-queue="video">
+          <div class="queue-header">
+            <h2>Video Queue</h2>
+            <span class="queue-count" id="video-count">0</span>
+          </div>
+          <div class="queue-items" id="video-items"></div>
+        </section>
+      </div>
+      <section id="assembly-section" class="assembly-section" style="display:none">
+        <h2>Final Video</h2>
+        <video id="final-video" controls></video>
+      </section>
+    </div>
+
+    <!-- Graph View -->
+    <div id="graph-view" class="view">
+      <div class="graph-toolbar">
+        <label><input type="checkbox" id="hide-superseded" /> Hide superseded</label>
+        <button id="fit-graph" type="button">Fit</button>
+      </div>
+      <div class="graph-container">
+        <svg id="graph-svg"></svg>
+      </div>
+    </div>
+
+    <!-- Detail Panel (shared, slides in from right) -->
+    <aside id="detail-panel" class="detail-panel">
+      <button id="close-detail" class="close-btn">&times;</button>
+      <div id="detail-content"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
+
