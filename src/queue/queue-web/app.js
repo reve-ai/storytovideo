@@ -211,13 +211,14 @@ function connectSSE(runId) {
     } catch {}
     loadRuns(); fetchQueues(); fetchGraph();
   });
+  es.addEventListener('item_retried', () => { fetchQueues(); fetchGraph(); });
   es.addEventListener('item_redo', () => { fetchQueues(); fetchGraph(); });
   es.addEventListener('item_cancelled', () => { fetchQueues(); fetchGraph(); });
   // Generic message fallback
   es.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'item_started' || data.type === 'item_completed' || data.type === 'item_failed' || data.type === 'item_redo' || data.type === 'item_cancelled') {
+      if (data.type === 'item_started' || data.type === 'item_completed' || data.type === 'item_failed' || data.type === 'item_redo' || data.type === 'item_cancelled' || data.type === 'item_retried') {
         fetchQueues();
         fetchGraph();
       } else if (data.type === 'run_status') {
@@ -347,6 +348,9 @@ function renderQueueItem(item) {
   let actions = '';
   if (item.status === 'completed') {
     actions = `<button data-action="redo" data-id="${item.id}">↻ Redo</button>`;
+  } else if (item.status === 'failed') {
+    actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>
+               <button data-action="redo" data-id="${item.id}">↻ Redo</button>`;
   } else if (item.status === 'pending') {
     actions = `<button data-action="edit" data-id="${item.id}">✎ Edit</button>
                <button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
@@ -556,6 +560,10 @@ function showDetail(itemId) {
   let actionsHtml = '';
   if (item.status === 'completed') {
     actionsHtml = `<button class="primary" onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
+  } else if (item.status === 'failed') {
+    actionsHtml = `
+      <button class="primary" onclick="handleAction('retry','${item.id}')">↻ Retry</button>
+      <button onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
   } else if (item.status === 'pending') {
     actionsHtml = `
       <button onclick="handleAction('edit','${item.id}')">✎ Edit Inputs</button>
@@ -633,7 +641,11 @@ async function handleAction(action, itemId) {
   const base = `${API}/api/runs/${state.activeRunId}/items/${itemId}`;
 
   try {
-    if (action === 'redo') {
+    if (action === 'retry') {
+      await fetch(`${base}/retry`, { method: 'POST' });
+      await Promise.all([fetchQueues(), fetchGraph()]);
+      closeDetail();
+    } else if (action === 'redo') {
       await fetch(`${base}/redo`, { method: 'POST' });
       await Promise.all([fetchQueues(), fetchGraph()]);
       closeDetail();
