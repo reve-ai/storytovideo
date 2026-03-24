@@ -11,6 +11,9 @@ const state = {
   runStatus: null, // 'running' | 'stopped' | 'completed' | 'failed'
 };
 
+// Track original inputs for form dirty comparison
+var _originalInputs = null;
+
 // --- DOM helpers ---
 const $ = (id) => document.getElementById(id);
 
@@ -371,8 +374,7 @@ function renderQueueItem(item) {
     actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>
                <button data-action="redo" data-id="${item.id}">↻ Redo</button>`;
   } else if (item.status === 'pending') {
-    actions = `<button data-action="edit" data-id="${item.id}">✎ Edit</button>
-               <button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
+    actions = `<button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
   }
 
   let output = '';
@@ -593,7 +595,6 @@ function showDetail(itemId) {
       <button onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
   } else if (item.status === 'pending') {
     actionsHtml = `
-      <button onclick="handleAction('edit','${item.id}')">✎ Edit Inputs</button>
       <button class="danger" onclick="handleAction('cancel','${item.id}')">✕ Cancel</button>`;
   }
 
@@ -618,6 +619,9 @@ function showDetail(itemId) {
   }
 
   const retryInfo = item.retryCount > 0 ? `<div class="detail-section"><h3>Retries</h3><span class="badge badge-retry">${item.retryCount}/3</span></div>` : '';
+
+  // Store original inputs for dirty tracking
+  _originalInputs = item.inputs ? JSON.parse(JSON.stringify(item.inputs)) : {};
 
   content.innerHTML = `
     <div class="detail-section">
@@ -644,10 +648,9 @@ function showDetail(itemId) {
     ${item.error ? `<div class="detail-section"><h3>Error</h3><pre style="color:var(--red)">${esc(item.error)}</pre></div>` : ''}
     <div class="detail-section">
       <h3>Inputs</h3>
-      <pre>${JSON.stringify(item.inputs, null, 2)}</pre>
+      ${renderInputForm(item.inputs || {}, item.id, item.status === 'pending')}
     </div>
     ${outputHtml ? `<div class="detail-section"><h3>Outputs</h3>${outputHtml}</div>` : ''}
-    <div class="detail-section" id="edit-section"></div>
     ${actionsHtml ? `<div class="detail-actions">${actionsHtml}</div>` : ''}
   `;
 
@@ -686,35 +689,177 @@ async function handleAction(action, itemId) {
       await fetch(`${base}/cancel`, { method: 'POST' });
       await Promise.all([fetchQueues(), fetchGraph()]);
       closeDetail();
-    } else if (action === 'edit') {
-      showEditForm(itemId);
     }
   } catch (e) {
     console.error(`Action ${action} failed:`, e);
   }
 }
 
-function showEditForm(itemId) {
-  const item = findItem(itemId);
-  if (!item) return;
-  const section = $('edit-section');
-  section.innerHTML = `
-    <h3>Edit Inputs</h3>
-    <form class="edit-inputs-form" onsubmit="submitEdit(event, '${itemId}')">
-      <textarea id="edit-inputs-json">${JSON.stringify(item.inputs, null, 2)}</textarea>
-      <div class="detail-actions">
-        <button type="submit" class="primary">Save</button>
-        <button type="button" onclick="document.getElementById('edit-section').innerHTML=''">Cancel</button>
-      </div>
-    </form>
-  `;
+// --- Form-based input editor ---
+
+function camelToLabel(key) {
+  // Special cases
+  if (key === 'durationSeconds') return 'Duration (seconds)';
+  // General camelCase → Title Case
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, c => c.toUpperCase())
+    .trim();
 }
 
-window.submitEdit = async function(e, itemId) {
-  e.preventDefault();
-  const json = $('edit-inputs-json').value;
-  let inputs;
-  try { inputs = JSON.parse(json); } catch { alert('Invalid JSON'); return; }
+function renderInputForm(inputs, itemId, editable) {
+  if (!inputs || Object.keys(inputs).length === 0) {
+    return '<div style="color:var(--muted);font-size:0.8rem">No inputs</div>';
+  }
+  const fields = renderFormFields(inputs, '', editable);
+  const saveBtn = editable
+    ? `<button class="save-inputs-btn" id="save-inputs-btn" onclick="saveInputForm('${itemId}')">Save Changes</button>`
+    : '';
+  return `<div class="input-form" id="input-form">${fields}${saveBtn}</div>`;
+}
+
+function renderFormFields(obj, prefix, editable) {
+  let html = '';
+  for (const [key, value] of Object.entries(obj)) {
+    const fieldPath = prefix ? `${prefix}.${key}` : key;
+    const label = camelToLabel(key);
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      // Nested object → collapsible group
+      const inner = renderFormFields(value, fieldPath, editable);
+      html += `<div class="input-group" id="group-${fieldPath}">
+        <div class="input-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <span class="chevron">▼</span> ${label}
+        </div>
+        <div class="input-group-body">${inner}</div>
+      </div>`;
+    } else {
+      html += renderSingleField(fieldPath, label, value, editable);
+    }
+  }
+  return html;
+}
+
+function renderSingleField(fieldPath, label, value, editable) {
+  const dataAttr = `data-field="${fieldPath}"`;
+
+  if (typeof value === 'boolean') {
+    if (editable) {
+      return `<div class="input-field">
+        <div class="checkbox-row">
+          <input type="checkbox" ${dataAttr} ${value ? 'checked' : ''} onchange="markInputDirty()"/>
+          <span class="input-label">${label}</span>
+        </div>
+      </div>`;
+    }
+    return `<div class="input-field">
+      <span class="input-label">${label}</span>
+      <span class="readonly-value">${value ? '✓ Yes' : '✗ No'}</span>
+    </div>`;
+  }
+
+  if (typeof value === 'number') {
+    if (editable) {
+      return `<div class="input-field">
+        <span class="input-label">${label}</span>
+        <input type="number" ${dataAttr} value="${value}" step="any" oninput="markInputDirty()"/>
+      </div>`;
+    }
+    return `<div class="input-field">
+      <span class="input-label">${label}</span>
+      <span class="readonly-value">${value}</span>
+    </div>`;
+  }
+
+  if (Array.isArray(value)) {
+    const strVal = value.join(', ');
+    if (editable) {
+      return `<div class="input-field">
+        <span class="input-label">${label}</span>
+        <input type="text" ${dataAttr} data-type="array" value="${esc(strVal)}" oninput="markInputDirty()"/>
+      </div>`;
+    }
+    return `<div class="input-field">
+      <span class="input-label">${label}</span>
+      <span class="readonly-value">${esc(strVal) || '—'}</span>
+    </div>`;
+  }
+
+  // String or null/undefined
+  const strValue = value == null ? '' : String(value);
+  const isLong = strValue.length > 100;
+
+  if (editable) {
+    if (value == null) {
+      return `<div class="input-field">
+        <span class="input-label">${label}</span>
+        <input type="text" ${dataAttr} data-type="nullable" value="" disabled placeholder="null" />
+      </div>`;
+    }
+    if (isLong) {
+      return `<div class="input-field">
+        <span class="input-label">${label}</span>
+        <textarea ${dataAttr} oninput="markInputDirty()">${esc(strValue)}</textarea>
+      </div>`;
+    }
+    return `<div class="input-field">
+      <span class="input-label">${label}</span>
+      <input type="text" ${dataAttr} value="${esc(strValue)}" oninput="markInputDirty()"/>
+    </div>`;
+  }
+
+  // Read-only
+  if (isLong) {
+    return `<div class="input-field">
+      <span class="input-label">${label}</span>
+      <div class="readonly-value" style="white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto">${esc(strValue)}</div>
+    </div>`;
+  }
+  return `<div class="input-field">
+    <span class="input-label">${label}</span>
+    <span class="readonly-value">${esc(strValue) || '—'}</span>
+  </div>`;
+}
+
+function markInputDirty() {
+  const btn = document.getElementById('save-inputs-btn');
+  if (btn) btn.classList.add('visible');
+}
+
+function collectFormValues(original, prefix) {
+  const result = {};
+  for (const [key, value] of Object.entries(original)) {
+    const fieldPath = prefix ? `${prefix}.${key}` : key;
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = collectFormValues(value, fieldPath);
+    } else {
+      const el = document.querySelector(`[data-field="${fieldPath}"]`);
+      if (!el) { result[key] = value; continue; }
+
+      if (typeof value === 'boolean') {
+        result[key] = el.checked;
+      } else if (typeof value === 'number') {
+        result[key] = parseFloat(el.value) || 0;
+      } else if (Array.isArray(value)) {
+        result[key] = el.value.split(',').map(s => s.trim()).filter(Boolean);
+      } else if (value == null) {
+        result[key] = value; // keep null
+      } else {
+        result[key] = el.value;
+      }
+    }
+  }
+  return result;
+}
+
+window.markInputDirty = markInputDirty;
+
+window.saveInputForm = async function(itemId) {
+  if (!_originalInputs || !state.activeRunId) return;
+  const inputs = collectFormValues(_originalInputs, '');
+  const btn = document.getElementById('save-inputs-btn');
+  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
 
   try {
     await fetch(`${API}/api/runs/${state.activeRunId}/items/${itemId}/edit`, {
@@ -722,9 +867,10 @@ window.submitEdit = async function(e, itemId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ inputs }),
     });
-    await fetchQueues();
-    closeDetail();
+    await Promise.all([fetchQueues(), fetchGraph()]);
+    showDetail(itemId);
   } catch (e) {
-    console.error('Edit failed:', e);
+    console.error('Save failed:', e);
+    if (btn) { btn.textContent = 'Save Changes'; btn.disabled = false; }
   }
 };
