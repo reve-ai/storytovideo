@@ -50,20 +50,21 @@ function setupRunSelector() {
 async function loadRuns() {
   try {
     const res = await fetch(`${API}/api/runs`);
-    state.runs = await res.json();
+    const data = await res.json();
+    state.runs = data.runs;
     const sel = $('run-select');
     sel.innerHTML = '<option value="">— select run —</option>';
     for (const run of state.runs) {
       const opt = document.createElement('option');
-      opt.value = run.runId;
-      opt.textContent = run.runName || run.runId.slice(0, 8);
+      opt.value = run.id;
+      opt.textContent = run.name || run.id.slice(0, 8);
       sel.appendChild(opt);
     }
     // Auto-select most recent
     if (state.runs.length > 0 && !state.activeRunId) {
       const latest = state.runs[state.runs.length - 1];
-      sel.value = latest.runId;
-      selectRun(latest.runId);
+      sel.value = latest.id;
+      selectRun(latest.id);
     }
   } catch (e) {
     console.error('Failed to load runs:', e);
@@ -96,7 +97,7 @@ function setupCreateDialog() {
       $('story-input').value = '';
       $('create-dialog').close();
       await loadRuns();
-      selectRun(run.runId);
+      selectRun(run.id);
     } catch (e) {
       console.error('Failed to create run:', e);
     }
@@ -119,14 +120,21 @@ function connectSSE(runId) {
     $('sse-status').textContent = 'disconnected';
     $('sse-status').className = 'sse-badge disconnected';
   };
-  es.addEventListener('queue_update', () => fetchQueues());
-  es.addEventListener('item_update', () => { fetchQueues(); fetchGraph(); });
-  es.addEventListener('run_update', () => { fetchQueues(); fetchGraph(); loadRuns(); });
+  es.addEventListener('item_started', () => { fetchQueues(); fetchGraph(); });
+  es.addEventListener('item_completed', () => { fetchQueues(); fetchGraph(); });
+  es.addEventListener('item_failed', () => { fetchQueues(); fetchGraph(); });
+  es.addEventListener('run_status', () => { loadRuns(); fetchQueues(); fetchGraph(); });
+  es.addEventListener('item_redo', () => { fetchQueues(); fetchGraph(); });
+  es.addEventListener('item_cancelled', () => { fetchQueues(); fetchGraph(); });
   // Generic message fallback
   es.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      if (data.type === 'item_update' || data.type === 'queue_update') {
+      if (data.type === 'item_started' || data.type === 'item_completed' || data.type === 'item_failed' || data.type === 'item_redo' || data.type === 'item_cancelled') {
+        fetchQueues();
+        fetchGraph();
+      } else if (data.type === 'run_status') {
+        loadRuns();
         fetchQueues();
         fetchGraph();
       }
@@ -149,11 +157,10 @@ async function fetchQueues() {
   try {
     const res = await fetch(`${API}/api/runs/${state.activeRunId}/queues`);
     const data = await res.json();
-    // data could be an array of QueueSnapshot or an object with llm/image/video
-    if (Array.isArray(data)) {
-      for (const q of data) state.queues[q.queue] = q;
-    } else {
-      state.queues = data;
+    // Server returns { runId, queues: [QueueSnapshot, ...] }
+    const queuesArray = data.queues;
+    if (Array.isArray(queuesArray)) {
+      for (const q of queuesArray) state.queues[q.queue] = q;
     }
     renderQueues();
   } catch (e) { console.error('fetchQueues:', e); }
@@ -163,7 +170,8 @@ async function fetchGraph() {
   if (!state.activeRunId) return;
   try {
     const res = await fetch(`${API}/api/runs/${state.activeRunId}/graph`);
-    state.graph = await res.json();
+    const graphData = await res.json();
+    state.graph = graphData.graph;
     if (state.currentView === 'graph') renderGraph();
   } catch (e) { console.error('fetchGraph:', e); }
 }
