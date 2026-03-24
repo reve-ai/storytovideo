@@ -361,8 +361,12 @@ function renderQueueItem(item) {
     const mediaPath = getMediaPath(item);
     if (mediaPath) {
       const src = `${API}/api/runs/${state.activeRunId}/media/${mediaPath}`;
-      if (item.type === 'generate_video' || item.type === 'assemble') {
-        output = `<div class="q-item-output"><video src="${src}" muted preload="metadata"></video></div>`;
+      if (item.type === 'generate_video') {
+        const posterPath = item.inputs && item.inputs.startFramePath ? `${API}/api/runs/${state.activeRunId}/media/${item.inputs.startFramePath}` : '';
+        const posterAttr = posterPath ? ` poster="${posterPath}"` : '';
+        output = `<div class="q-item-output"><video src="${src}" muted preload="metadata"${posterAttr}></video></div>`;
+      } else if (item.type === 'assemble') {
+        output = `<div class="q-item-output"><video src="${src}" muted preload="auto"></video></div>`;
       } else {
         output = `<div class="q-item-output"><img src="${src}" loading="lazy" /></div>`;
       }
