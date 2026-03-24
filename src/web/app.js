@@ -89,6 +89,23 @@ function getElement(id) {
   return element;
 }
 
+function playVideo(container, videoSrc) {
+  const video = document.createElement('video');
+  video.src = videoSrc;
+  video.controls = true;
+  video.autoplay = true;
+  video.className = container.dataset.videoClass || 'inline-video';
+  video.addEventListener('ended', () => {
+    // Swap back to thumbnail and restore click handler
+    container.innerHTML = container.dataset.thumbnailHtml;
+    container.onclick = () => playVideo(container, videoSrc);
+  });
+  container.dataset.thumbnailHtml = container.innerHTML;
+  container.innerHTML = '';
+  container.appendChild(video);
+  container.onclick = null; // Remove click handler while playing
+}
+
 function showRunView() {
   elements.runView.style.display = "";
   elements.createView.style.display = "none";
@@ -850,9 +867,19 @@ function buildPartialImportHtml(importAnalysisProgress) {
       html += `</div>`;
     }
     if (assets.video && assets.video.previewUrl) {
+      const thumbUrl = (assets.start && assets.start.previewUrl) ? escapeHtml(assets.start.previewUrl) : '';
       html += `<div class="shot-asset-item">`;
       html += `<p class="shot-asset-label">Video</p>`;
-      html += `<video src="${escapeHtml(assets.video.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
+      if (thumbUrl) {
+        html += `<div class="video-thumbnail" data-video-class="inline-video" onclick="playVideo(this, '${escapeHtml(assets.video.previewUrl)}')">`;
+        html += `<img src="${thumbUrl}" alt="Video thumbnail" />`;
+        html += `<div class="play-overlay">▶</div>`;
+        html += `</div>`;
+      } else {
+        html += `<div class="video-thumbnail video-thumbnail-no-img" data-video-class="inline-video" onclick="playVideo(this, '${escapeHtml(assets.video.previewUrl)}')">`;
+        html += `<div class="play-overlay">▶</div>`;
+        html += `</div>`;
+      }
       html += `</div>`;
     }
     html += `</div>`;
@@ -1218,9 +1245,19 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
                 }
               }
               if (videoAsset && videoAsset.previewUrl) {
+                const videoThumbUrl = (startFrameAsset && startFrameAsset.previewUrl) ? escapeHtml(startFrameAsset.previewUrl) : '';
                 html += `<div class="shot-asset-item">`;
                 html += `<p class="shot-asset-label">Video</p>`;
-                html += `<video src="${escapeHtml(videoAsset.previewUrl)}" class="inline-video" controls preload="metadata"></video>`;
+                if (videoThumbUrl) {
+                  html += `<div class="video-thumbnail" data-video-class="inline-video" onclick="playVideo(this, '${escapeHtml(videoAsset.previewUrl)}')">`;
+                  html += `<img src="${videoThumbUrl}" alt="Video thumbnail" />`;
+                  html += `<div class="play-overlay">▶</div>`;
+                  html += `</div>`;
+                } else {
+                  html += `<div class="video-thumbnail video-thumbnail-no-img" data-video-class="inline-video" onclick="playVideo(this, '${escapeHtml(videoAsset.previewUrl)}')">`;
+                  html += `<div class="play-overlay">▶</div>`;
+                  html += `</div>`;
+                }
                 html += buildVersionSelector(shot.shotNumber, "video", null, videoVersions, selectedVideoVersion, isRunning);
                 html += `<div class="shot-asset-controls">`;
                 html += `<button class="redo-item-button" data-redo-type="video" data-redo-shot="${shot.shotNumber}"${redoItemDisabled} title="Retry video">↻</button>`;
@@ -1253,7 +1290,9 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
     if (finalVideoAsset && finalVideoAsset.previewUrl) {
       html += `<div class="stage-output-section final-video-section">`;
       html += `<h4>Final Video</h4>`;
-      html += `<video src="${escapeHtml(finalVideoAsset.previewUrl)}" class="final-video" controls preload="metadata"></video>`;
+      html += `<div class="video-thumbnail video-thumbnail-final" data-video-class="final-video" onclick="playVideo(this, '${escapeHtml(finalVideoAsset.previewUrl)}')">`;
+      html += `<div class="play-overlay play-overlay-large">▶</div>`;
+      html += `</div>`;
       html += `<div class="final-video-actions">`;
       html += `<button class="btn btn-secondary reassemble-btn" data-run-id="${escapeHtml(runId)}">↻ Reassemble</button>`;
       html += `</div>`;
