@@ -13,6 +13,23 @@ const state = {
 
 // --- DOM helpers ---
 const $ = (id) => document.getElementById(id);
+
+function playVideo(container, videoSrc) {
+  const video = document.createElement('video');
+  video.src = videoSrc;
+  video.controls = true;
+  video.autoplay = true;
+  video.className = container.dataset.videoClass || 'inline-video';
+  video.addEventListener('ended', () => {
+    container.innerHTML = container.dataset.thumbnailHtml;
+    container.onclick = () => playVideo(container, videoSrc);
+  });
+  container.dataset.thumbnailHtml = container.innerHTML;
+  container.innerHTML = '';
+  container.appendChild(video);
+  container.onclick = null;
+}
+window.playVideo = playVideo;
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // --- Init ---
@@ -89,14 +106,16 @@ function setupCreateDialog() {
     e.preventDefault();
     const text = $('story-input').value.trim();
     if (!text) return;
+    const aspectRatio = $('aspect-ratio-select').value;
     try {
       const res = await fetch(`${API}/api/runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storyText: text }),
+        body: JSON.stringify({ storyText: text, options: { aspectRatio } }),
       });
       const run = await res.json();
       $('story-input').value = '';
+      $('aspect-ratio-select').value = '16:9';
       $('create-dialog').close();
       await loadRuns();
       selectRun(run.id);
@@ -362,11 +381,14 @@ function renderQueueItem(item) {
     if (mediaPath) {
       const src = `${API}/api/runs/${state.activeRunId}/media/${mediaPath}`;
       if (item.type === 'generate_video') {
-        const posterPath = item.inputs && item.inputs.startFramePath ? `${API}/api/runs/${state.activeRunId}/media/${item.inputs.startFramePath}` : '';
-        const posterAttr = posterPath ? ` poster="${posterPath}"` : '';
-        output = `<div class="q-item-output"><video src="${src}" muted preload="metadata"${posterAttr}></video></div>`;
+        const thumbUrl = item.inputs && item.inputs.startFramePath ? `${API}/api/runs/${state.activeRunId}/media/${item.inputs.startFramePath}` : '';
+        if (thumbUrl) {
+          output = `<div class="q-item-output"><div class="video-thumbnail" data-video-class="inline-video" onclick="playVideo(this, '${src}')"><img src="${thumbUrl}" alt="Video thumbnail" /><div class="play-overlay">▶</div></div></div>`;
+        } else {
+          output = `<div class="q-item-output"><div class="video-thumbnail video-thumbnail-no-img" data-video-class="inline-video" onclick="playVideo(this, '${src}')"><div class="play-overlay">▶</div></div></div>`;
+        }
       } else if (item.type === 'assemble') {
-        output = `<div class="q-item-output"><video src="${src}" muted preload="auto"></video></div>`;
+        output = `<div class="q-item-output"><div class="video-thumbnail" data-video-class="inline-video" onclick="playVideo(this, '${src}')"><div class="play-overlay">▶</div></div></div>`;
       } else {
         output = `<div class="q-item-output"><img src="${src}" loading="lazy" /></div>`;
       }
@@ -396,7 +418,8 @@ function checkAssembly() {
     for (const item of (q.completed || [])) {
       if (item.type === 'assemble' && item.outputs && item.outputs.path) {
         const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.path}`;
-        $('final-video').src = src;
+        const container = $('final-video-container');
+        container.innerHTML = `<div class="video-thumbnail video-thumbnail-final" data-video-class="assembly-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
         section.style.display = 'block';
         return;
       }
@@ -580,7 +603,13 @@ function showDetail(itemId) {
     if (mediaPath) {
       const src = `${API}/api/runs/${state.activeRunId}/media/${mediaPath}`;
       if (item.type === 'generate_video' || item.type === 'assemble') {
-        outputHtml = `<video src="${src}" controls style="max-width:100%;border-radius:6px;"></video>`;
+        const thumbUrl = item.type === 'generate_video' && item.inputs && item.inputs.startFramePath
+          ? `${API}/api/runs/${state.activeRunId}/media/${item.inputs.startFramePath}` : '';
+        if (thumbUrl) {
+          outputHtml = `<div class="video-thumbnail" data-video-class="detail-video" onclick="playVideo(this, '${src}')"><img src="${thumbUrl}" alt="Video thumbnail" /><div class="play-overlay play-overlay-large">▶</div></div>`;
+        } else {
+          outputHtml = `<div class="video-thumbnail video-thumbnail-final" data-video-class="detail-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
+        }
       } else {
         outputHtml = `<img src="${src}" style="max-width:100%;border-radius:6px;" />`;
       }
