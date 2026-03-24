@@ -1291,9 +1291,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
     if (finalVideoAsset && finalVideoAsset.previewUrl) {
       html += `<div class="stage-output-section final-video-section">`;
       html += `<h4>Final Video</h4>`;
-      html += `<div class="video-thumbnail video-thumbnail-final" data-video-class="final-video" onclick="playVideo(this, '${escapeHtml(finalVideoAsset.previewUrl)}')">`;
-      html += `<div class="play-overlay play-overlay-large">▶</div>`;
-      html += `</div>`;
+      html += `<video src="${escapeHtml(finalVideoAsset.previewUrl)}" class="final-video" controls preload="metadata"></video>`;
       html += `<div class="final-video-actions">`;
       html += `<button class="btn btn-secondary reassemble-btn" data-run-id="${escapeHtml(runId)}">↻ Reassemble</button>`;
       html += `</div>`;
