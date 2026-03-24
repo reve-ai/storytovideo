@@ -51,7 +51,38 @@ export class QueueManager {
     const mgr = new QueueManager(state.runId, state.storyFile, state.outputDir);
     mgr.state = state;
     mgr.stateFilePath = stateFilePath;
+    mgr.migrateAbsolutePaths();
     return mgr;
+  }
+
+  /** Migrate any absolute paths in generatedOutputs and work item inputs/outputs to relative. */
+  private migrateAbsolutePaths(): void {
+    const outputDir = this.state.outputDir;
+    let changed = false;
+
+    for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
+      if (val.startsWith(outputDir)) {
+        this.state.generatedOutputs[key] = val.slice(outputDir.length).replace(/^\//, '');
+        changed = true;
+      }
+    }
+
+    for (const item of this.state.workItems) {
+      for (const [key, val] of Object.entries(item.outputs)) {
+        if (typeof val === 'string' && val.startsWith(outputDir)) {
+          (item.outputs as Record<string, unknown>)[key] = val.slice(outputDir.length).replace(/^\//, '');
+          changed = true;
+        }
+      }
+      for (const [key, val] of Object.entries(item.inputs)) {
+        if (typeof val === 'string' && val.startsWith(outputDir)) {
+          (item.inputs as Record<string, unknown>)[key] = val.slice(outputDir.length).replace(/^\//, '');
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) this.save();
   }
 
   // --- Accessors ---

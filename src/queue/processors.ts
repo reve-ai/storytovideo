@@ -72,6 +72,23 @@ export class QueueProcessor extends EventEmitter {
     super();
   }
 
+  /** Convert an absolute path to a path relative to the run's outputDir. */
+  private relativePath(absolutePath: string): string {
+    const outputDir = this.queueManager.getState().outputDir;
+    if (absolutePath.startsWith(outputDir)) {
+      let rel = absolutePath.slice(outputDir.length);
+      if (rel.startsWith('/')) rel = rel.slice(1);
+      return rel;
+    }
+    return absolutePath;
+  }
+
+  /** Resolve a potentially-relative path to absolute using the run's outputDir. */
+  private absolutePath(relativePath: string): string {
+    if (relativePath.startsWith('/')) return relativePath; // already absolute
+    return join(this.queueManager.getState().outputDir, relativePath);
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -259,12 +276,12 @@ ${JSON.stringify(analysis, null, 2)}`,
       videoBackend: 'grok',
     });
 
-    state.generatedOutputs[result.key] = result.path;
+    state.generatedOutputs[result.key] = this.relativePath(result.path);
 
     // Build asset library from generated outputs
     this.rebuildAssetLibrary(state);
 
-    return { key: result.key, path: result.path };
+    return { key: result.key, path: this.relativePath(result.path) };
   }
 
   private async handleGenerateFrame(item: WorkItem): Promise<Record<string, unknown>> {
@@ -274,7 +291,9 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     const shot = item.inputs.shot as Shot;
-    const previousEndFramePath = item.inputs.previousEndFramePath as string | undefined;
+    const previousEndFramePath = item.inputs.previousEndFramePath
+      ? this.absolutePath(item.inputs.previousEndFramePath as string)
+      : undefined;
 
     const result = await generateFrame({
       shot,
@@ -286,24 +305,26 @@ ${JSON.stringify(analysis, null, 2)}`,
     });
 
     if (result.startPath) {
-      state.generatedOutputs[`frame:shot:${shot.shotNumber}:start`] = result.startPath;
+      state.generatedOutputs[`frame:shot:${shot.shotNumber}:start`] = this.relativePath(result.startPath);
     }
     if (result.endPath) {
-      state.generatedOutputs[`frame:shot:${shot.shotNumber}:end`] = result.endPath;
+      state.generatedOutputs[`frame:shot:${shot.shotNumber}:end`] = this.relativePath(result.endPath);
     }
 
     return {
       shotNumber: result.shotNumber,
-      startPath: result.startPath,
-      endPath: result.endPath,
+      startPath: result.startPath ? this.relativePath(result.startPath) : result.startPath,
+      endPath: result.endPath ? this.relativePath(result.endPath) : result.endPath,
     };
   }
 
   private async handleGenerateVideo(item: WorkItem): Promise<Record<string, unknown>> {
     const state = this.queueManager.getState();
     const shot = item.inputs.shot as Shot;
-    const startFramePath = item.inputs.startFramePath as string;
-    const endFramePath = item.inputs.endFramePath as string | undefined;
+    const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
+    const endFramePath = item.inputs.endFramePath
+      ? this.absolutePath(item.inputs.endFramePath as string)
+      : undefined;
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
@@ -320,11 +341,11 @@ ${JSON.stringify(analysis, null, 2)}`,
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
     });
 
-    state.generatedOutputs[`video:shot:${shot.shotNumber}`] = result.path;
+    state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(result.path);
 
     return {
       shotNumber: result.shotNumber,
-      path: result.path,
+      path: this.relativePath(result.path),
       duration: result.duration,
       promptSent: result.promptSent,
     };
@@ -341,7 +362,8 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     const videoPaths = sortedShots
       .map(s => state.generatedOutputs[`video:shot:${s.shotNumber}`])
-      .filter((p): p is string => !!p);
+      .filter((p): p is string => !!p)
+      .map(p => this.absolutePath(p));
 
     if (videoPaths.length === 0) {
       return { path: null, message: 'No videos to assemble' };
@@ -383,7 +405,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       outputDir: state.outputDir,
     });
 
-    return { path: result.path };
+    return { path: this.relativePath(result.path) };
   }
 
   // ---------------------------------------------------------------------------
@@ -605,20 +627,20 @@ ${JSON.stringify(analysis, null, 2)}`,
       const anglePath = state.generatedOutputs[`asset:character:${char.name}:angle`];
       if (frontPath) {
         lib.characterImages[char.name] = {
-          front: frontPath,
-          angle: anglePath ?? frontPath,
+          front: this.absolutePath(frontPath),
+          angle: this.absolutePath(anglePath ?? frontPath),
         };
       }
     }
 
     for (const loc of analysis.locations) {
       const path = state.generatedOutputs[`asset:location:${loc.name}`];
-      if (path) lib.locationImages[loc.name] = path;
+      if (path) lib.locationImages[loc.name] = this.absolutePath(path);
     }
 
     for (const obj of (analysis.objects ?? [])) {
       const path = state.generatedOutputs[`asset:object:${obj.name}`];
-      if (path) lib.objectImages[obj.name] = path;
+      if (path) lib.objectImages[obj.name] = this.absolutePath(path);
     }
 
     state.assetLibrary = lib;
