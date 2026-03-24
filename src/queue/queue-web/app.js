@@ -368,11 +368,8 @@ function renderQueueItem(item) {
   const typeName = item.type.replace(/_/g, ' ');
 
   let actions = '';
-  if (item.status === 'completed') {
-    actions = `<button data-action="redo" data-id="${item.id}">↻ Redo</button>`;
-  } else if (item.status === 'failed') {
-    actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>
-               <button data-action="redo" data-id="${item.id}">↻ Redo</button>`;
+  if (item.status === 'failed') {
+    actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>`;
   } else if (item.status === 'pending') {
     actions = `<button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
   }
@@ -587,12 +584,8 @@ function showDetail(itemId) {
   const priBadge = item.priority === 'high' ? `<span class="badge badge-high">⚡ high</span>` : '';
 
   let actionsHtml = '';
-  if (item.status === 'completed') {
-    actionsHtml = `<button class="primary" onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
-  } else if (item.status === 'failed') {
-    actionsHtml = `
-      <button class="primary" onclick="handleAction('retry','${item.id}')">↻ Retry</button>
-      <button onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
+  if (item.status === 'failed') {
+    actionsHtml = `<button class="primary" onclick="handleAction('retry','${item.id}')">↻ Retry</button>`;
   } else if (item.status === 'pending') {
     actionsHtml = `
       <button class="danger" onclick="handleAction('cancel','${item.id}')">✕ Cancel</button>`;
@@ -648,7 +641,7 @@ function showDetail(itemId) {
     ${item.error ? `<div class="detail-section"><h3>Error</h3><pre style="color:var(--red)">${esc(item.error)}</pre></div>` : ''}
     <div class="detail-section">
       <h3>Inputs</h3>
-      ${renderInputForm(item.inputs || {}, item.id, item.status === 'pending')}
+      ${renderInputForm(item.inputs || {}, item.id, item.status === 'pending' || item.status === 'completed' || item.status === 'failed', item.status)}
     </div>
     ${outputHtml ? `<div class="detail-section"><h3>Outputs</h3>${outputHtml}</div>` : ''}
     ${actionsHtml ? `<div class="detail-actions">${actionsHtml}</div>` : ''}
@@ -707,13 +700,15 @@ function camelToLabel(key) {
     .trim();
 }
 
-function renderInputForm(inputs, itemId, editable) {
+function renderInputForm(inputs, itemId, editable, itemStatus) {
   if (!inputs || Object.keys(inputs).length === 0) {
     return '<div style="color:var(--muted);font-size:0.8rem">No inputs</div>';
   }
   const fields = renderFormFields(inputs, '', editable);
+  const isRedo = itemStatus === 'completed' || itemStatus === 'failed';
+  const btnLabel = isRedo ? 'Save & Redo' : 'Save Changes';
   const saveBtn = editable
-    ? `<button class="save-inputs-btn" id="save-inputs-btn" onclick="saveInputForm('${itemId}')">Save Changes</button>`
+    ? `<button class="save-inputs-btn" id="save-inputs-btn" data-item-status="${itemStatus || ''}" onclick="saveInputForm('${itemId}')">${btnLabel}</button>`
     : '';
   return `<div class="input-form" id="input-form">${fields}${saveBtn}</div>`;
 }
@@ -859,18 +854,38 @@ window.saveInputForm = async function(itemId) {
   if (!_originalInputs || !state.activeRunId) return;
   const inputs = collectFormValues(_originalInputs, '');
   const btn = document.getElementById('save-inputs-btn');
-  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+  const itemStatus = btn ? btn.dataset.itemStatus : '';
+  const isRedo = itemStatus === 'completed' || itemStatus === 'failed';
+  if (btn) { btn.textContent = isRedo ? 'Redoing...' : 'Saving...'; btn.disabled = true; }
 
   try {
-    await fetch(`${API}/api/runs/${state.activeRunId}/items/${itemId}/edit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs }),
-    });
-    await Promise.all([fetchQueues(), fetchGraph()]);
-    showDetail(itemId);
+    if (isRedo) {
+      // Call redo endpoint with the edited inputs
+      const res = await fetch(`${API}/api/runs/${state.activeRunId}/items/${itemId}/redo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs }),
+      });
+      const data = await res.json();
+      await Promise.all([fetchQueues(), fetchGraph()]);
+      // Show the newly created item
+      if (data.newItem && data.newItem.id) {
+        showDetail(data.newItem.id);
+      } else {
+        closeDetail();
+      }
+    } else {
+      // Edit pending item in place
+      await fetch(`${API}/api/runs/${state.activeRunId}/items/${itemId}/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs }),
+      });
+      await Promise.all([fetchQueues(), fetchGraph()]);
+      showDetail(itemId);
+    }
   } catch (e) {
     console.error('Save failed:', e);
-    if (btn) { btn.textContent = 'Save Changes'; btn.disabled = false; }
+    if (btn) { btn.textContent = isRedo ? 'Save & Redo' : 'Save Changes'; btn.disabled = false; }
   }
 };
