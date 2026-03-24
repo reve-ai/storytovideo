@@ -9,7 +9,10 @@ const state = {
   eventSource: null,
   currentView: 'queue',
   runStatus: null, // 'running' | 'pausing' | 'stopped' | 'completed' | 'failed'
+  runStartTime: null, // earliest startedAt across all items (ms)
 };
+
+let elapsedInterval = null;
 
 // Track original inputs for form dirty comparison
 var _originalInputs = null;
@@ -95,6 +98,8 @@ async function loadRuns() {
 
 async function selectRun(runId) {
   state.activeRunId = runId;
+  state.runStartTime = null;
+  clearElapsedInterval();
   $('run-select').value = runId;
   disconnectSSE();
   await Promise.all([fetchQueues(), fetchGraph(), fetchRunStatus()]);
@@ -290,9 +295,145 @@ async function fetchGraph() {
   } catch (e) { console.error('fetchGraph:', e); }
 }
 
+// --- Duration formatting ---
+function fmtDuration(seconds) {
+  const s = Math.floor(seconds);
+  if (s < 0) return '0s';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+// --- ETA computation ---
+function getAllItems() {
+  const items = [];
+  for (const qName of ['llm', 'image', 'video']) {
+    const q = state.queues[qName];
+    if (!q) continue;
+    for (const group of [q.inProgress, q.pending, q.completed, q.failed, q.superseded, q.cancelled]) {
+      if (group) items.push(...group);
+    }
+  }
+  return items;
+}
+
+function computeETA() {
+  const allItems = getAllItems();
+  if (allItems.length === 0) return null;
+
+  // Compute average processing time per type from completed items
+  const completedByType = {};
+  const videoTimings = []; // { elapsed, durationSeconds }
+  for (const item of allItems) {
+    if (item.status !== 'completed' || !item.startedAt || !item.completedAt) continue;
+    const elapsed = (new Date(item.completedAt).getTime() - new Date(item.startedAt).getTime()) / 1000;
+    if (elapsed <= 0) continue;
+
+    if (item.type === 'generate_video') {
+      const dur = item.inputs?.shot?.durationSeconds;
+      if (dur && dur > 0) {
+        videoTimings.push({ elapsed, durationSeconds: dur });
+      }
+    }
+
+    if (!completedByType[item.type]) completedByType[item.type] = [];
+    completedByType[item.type].push(elapsed);
+  }
+
+  // Average time per type
+  const avgByType = {};
+  for (const [type, times] of Object.entries(completedByType)) {
+    avgByType[type] = times.reduce((a, b) => a + b, 0) / times.length;
+  }
+
+  // Average time per duration-second for video items
+  let avgTimePerDurSec = null;
+  if (videoTimings.length > 0) {
+    const rates = videoTimings.map(v => v.elapsed / v.durationSeconds);
+    avgTimePerDurSec = rates.reduce((a, b) => a + b, 0) / rates.length;
+  }
+
+  // Estimate remaining time per queue (queues run in parallel)
+  const perQueueRemaining = {};
+  for (const qName of ['llm', 'image', 'video']) {
+    const q = state.queues[qName];
+    if (!q) continue;
+    const remaining = [...(q.inProgress || []), ...(q.pending || [])];
+    let queueEst = 0;
+    let hasEstimate = false;
+    for (const item of remaining) {
+      if (item.type === 'generate_video' && avgTimePerDurSec !== null) {
+        const dur = item.inputs?.shot?.durationSeconds || 0;
+        queueEst += avgTimePerDurSec * dur;
+        hasEstimate = true;
+      } else if (avgByType[item.type]) {
+        queueEst += avgByType[item.type];
+        hasEstimate = true;
+      }
+      // If no data for this type yet, skip (don't estimate)
+    }
+    if (hasEstimate) perQueueRemaining[qName] = queueEst;
+  }
+
+  const estimates = Object.values(perQueueRemaining);
+  if (estimates.length === 0) return null;
+  // Queues run in parallel, so ETA is the max
+  return Math.max(...estimates);
+}
+
+// --- Elapsed interval management ---
+function clearElapsedInterval() {
+  if (elapsedInterval !== null) {
+    clearInterval(elapsedInterval);
+    elapsedInterval = null;
+  }
+}
+
+function updateElapsedDisplay() {
+  if (!state.runStartTime) return;
+  const now = Date.now();
+  const elapsedSec = (now - state.runStartTime) / 1000;
+
+  // Gather current totals
+  let totalItems = 0, completedItems = 0;
+  for (const qName of ['llm', 'image', 'video']) {
+    const q = state.queues[qName];
+    if (!q) continue;
+    const groups = [q.inProgress, q.pending, q.completed, q.failed, q.superseded, q.cancelled];
+    for (const g of groups) { if (g) totalItems += g.length; }
+    completedItems += (q.completed || []).length;
+  }
+  if (totalItems === 0) return;
+
+  const pct = Math.round((completedItems / totalItems) * 100);
+  const allDone = completedItems === totalItems;
+  const eta = allDone ? null : computeETA();
+
+  let text = `${completedItems} / ${totalItems} items completed (${pct}%) · Elapsed: ${fmtDuration(elapsedSec)}`;
+  if (allDone) {
+    // No ETA needed
+  } else if (eta !== null) {
+    text += ` · ETA: ~${fmtDuration(eta)}`;
+  } else {
+    text += ` · ETA: calculating…`;
+  }
+
+  $('progress-text').textContent = text;
+}
+
+function startElapsedInterval() {
+  clearElapsedInterval();
+  elapsedInterval = setInterval(updateElapsedDisplay, 1000);
+}
+
 // --- Render queues ---
 function renderQueues() {
   let totalItems = 0, completedItems = 0;
+  let earliestStart = null;
+
   for (const qName of ['llm', 'image', 'video']) {
     const q = state.queues[qName];
     const container = $(`${qName}-items`);
@@ -313,6 +454,14 @@ function renderQueues() {
     totalItems += allItems.length;
     completedItems += done;
     countEl.textContent = `${done}/${allItems.length}`;
+
+    // Find earliest startedAt
+    for (const item of allItems) {
+      if (item.startedAt) {
+        const t = new Date(item.startedAt).getTime();
+        if (earliestStart === null || t < earliestStart) earliestStart = t;
+      }
+    }
 
     let html = '';
     for (const group of groups) {
@@ -336,11 +485,37 @@ function renderQueues() {
     }
   }
 
+  // Track run start time
+  if (earliestStart !== null) {
+    state.runStartTime = earliestStart;
+  }
+
   // Progress bar
   const pct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-  $('progress-text').textContent = totalItems > 0
-    ? `${completedItems} / ${totalItems} items completed (${pct}%)`
-    : 'No run selected';
+  if (totalItems > 0) {
+    const allDone = completedItems === totalItems;
+    const elapsedSec = state.runStartTime ? (Date.now() - state.runStartTime) / 1000 : 0;
+    let text = `${completedItems} / ${totalItems} items completed (${pct}%)`;
+    if (state.runStartTime) {
+      text += ` · Elapsed: ${fmtDuration(elapsedSec)}`;
+      if (allDone) {
+        clearElapsedInterval();
+      } else {
+        const eta = computeETA();
+        if (eta !== null) {
+          text += ` · ETA: ~${fmtDuration(eta)}`;
+        } else {
+          text += ` · ETA: calculating…`;
+        }
+        // Start ticking if not already
+        if (elapsedInterval === null) startElapsedInterval();
+      }
+    }
+    $('progress-text').textContent = text;
+  } else {
+    clearElapsedInterval();
+    $('progress-text').textContent = 'No run selected';
+  }
   $('progress-fill').style.width = `${pct}%`;
 
   // Assembly check
