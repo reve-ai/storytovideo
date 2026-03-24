@@ -137,6 +137,23 @@ export class QueueManager {
     this.touch();
   }
 
+  /** Manual retry — resets a failed item to pending so it gets picked up again.
+   *  Unlike redo, this does NOT create a new version or cascade to dependents.
+   *  No retry limit — the user can call this as many times as they want. */
+  retryItem(id: string): WorkItem {
+    const item = this.requireItem(id);
+    if (item.status !== 'failed') {
+      throw new Error(`Cannot retry item ${id}: status is '${item.status}', expected 'failed'`);
+    }
+    item.status = 'pending';
+    item.retryCount = (item.retryCount ?? 0) + 1;
+    item.error = null;
+    item.startedAt = null;
+    item.completedAt = null;
+    this.touch();
+    return item;
+  }
+
   cancelItem(id: string): void {
     const item = this.requireItem(id);
     if (item.status === 'in_progress' || item.status === 'completed') {
