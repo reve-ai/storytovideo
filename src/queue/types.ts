@@ -37,6 +37,7 @@ export interface WorkItem {
   dependencies: string[];               // IDs of work items that must complete first
   inputs: Record<string, unknown>;      // data needed to execute
   outputs: Record<string, unknown>;     // results after completion
+  retryCount: number;                   // number of times this item has been retried (0 = first attempt)
   error: string | null;                 // error message if failed
   supersededBy: string | null;          // ID of the newer version that replaced this item
   createdAt: string;                    // ISO timestamp

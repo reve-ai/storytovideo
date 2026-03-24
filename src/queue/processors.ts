@@ -46,10 +46,13 @@ const sceneShotsSchema = z.object({
 // Event types emitted by processors
 // ---------------------------------------------------------------------------
 
+const MAX_RETRIES = 3;
+
 export interface ProcessorEvents {
   'item:started': { runId: string; item: WorkItem };
   'item:completed': { runId: string; item: WorkItem };
   'item:failed': { runId: string; item: WorkItem; error: string };
+  'pipeline:pause': { runId: string; item: WorkItem; error: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,9 +114,24 @@ export class QueueProcessor extends EventEmitter {
         this.queueManager.save();
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        this.queueManager.markFailed(item.id, errorMsg);
-        this.emit('item:failed', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
-        this.queueManager.save();
+        const currentRetryCount = item.retryCount ?? 0;
+
+        if (currentRetryCount < MAX_RETRIES) {
+          // Re-queue for retry
+          this.queueManager.requeueForRetry(item.id);
+          this.emit('item:failed', {
+            runId: this.runId,
+            item: { ...item, status: 'pending', retryCount: currentRetryCount + 1 },
+            error: `Retry ${currentRetryCount + 1}/${MAX_RETRIES}: ${errorMsg}`,
+          });
+          this.queueManager.save();
+        } else {
+          // Max retries exceeded — mark as permanently failed and pause pipeline
+          this.queueManager.markFailed(item.id, errorMsg);
+          this.emit('item:failed', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
+          this.emit('pipeline:pause', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
+          this.queueManager.save();
+        }
       }
     }
   }
@@ -623,6 +641,7 @@ export class ProcessorGroup extends EventEmitter {
       proc.on('item:started', (data) => this.emit('item:started', data));
       proc.on('item:completed', (data) => this.emit('item:completed', data));
       proc.on('item:failed', (data) => this.emit('item:failed', data));
+      proc.on('pipeline:pause', (data) => this.emit('pipeline:pause', data));
       return proc;
     });
   }

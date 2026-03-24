@@ -87,6 +87,7 @@ export class QueueManager {
       dependencies: opts.dependencies ?? [],
       inputs: opts.inputs ?? {},
       outputs: {},
+      retryCount: 0,
       error: null,
       supersededBy: null,
       createdAt: new Date().toISOString(),
@@ -123,6 +124,16 @@ export class QueueManager {
     item.status = 'failed';
     item.error = error;
     item.completedAt = new Date().toISOString();
+    this.touch();
+  }
+
+  requeueForRetry(id: string): void {
+    const item = this.requireItem(id);
+    item.status = 'pending';
+    item.retryCount = (item.retryCount ?? 0) + 1;
+    item.error = null;
+    item.startedAt = null;
+    item.completedAt = null;
     this.touch();
   }
 
