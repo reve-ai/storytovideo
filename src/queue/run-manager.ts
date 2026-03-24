@@ -193,6 +193,10 @@ export class RunManager extends EventEmitter {
 
     for (const queue of queues) {
       const proc = new QueueProcessor(queue, qm, runId);
+      // Forward processor events so the server can relay them via SSE
+      proc.on("item:started", (data) => this.emit("item:started", data));
+      proc.on("item:completed", (data) => this.emit("item:completed", data));
+      proc.on("item:failed", (data) => this.emit("item:failed", data));
       proc.start();
       procs.push(proc);
     }

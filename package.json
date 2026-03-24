@@ -11,6 +11,7 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "dev:server": "tsx src/server.ts",
+    "dev:queue-server": "tsx src/queue/queue-server.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
