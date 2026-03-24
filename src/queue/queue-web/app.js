@@ -8,6 +8,7 @@ const state = {
   graph: null,
   eventSource: null,
   currentView: 'queue',
+  runStatus: null, // 'running' | 'stopped' | 'completed' | 'failed'
 };
 
 // --- DOM helpers ---
@@ -18,6 +19,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
   setupRunSelector();
+  setupPlayPause();
   setupCreateDialog();
   setupDetailPanel();
   setupGraphControls();
@@ -75,7 +77,7 @@ async function selectRun(runId) {
   state.activeRunId = runId;
   $('run-select').value = runId;
   disconnectSSE();
-  await Promise.all([fetchQueues(), fetchGraph()]);
+  await Promise.all([fetchQueues(), fetchGraph(), fetchRunStatus()]);
   connectSSE(runId);
 }
 
@@ -104,6 +106,74 @@ function setupCreateDialog() {
   });
 }
 
+// --- Play/Pause ---
+function setupPlayPause() {
+  $('play-pause-btn').addEventListener('click', togglePlayPause);
+}
+
+async function togglePlayPause() {
+  if (!state.activeRunId) return;
+  const btn = $('play-pause-btn');
+  btn.disabled = true;
+  try {
+    if (state.runStatus === 'running') {
+      await fetch(`${API}/api/runs/${state.activeRunId}/stop`, { method: 'POST' });
+    } else if (state.runStatus === 'stopped') {
+      await fetch(`${API}/api/runs/${state.activeRunId}/resume`, { method: 'POST' });
+    }
+  } catch (e) {
+    console.error('Play/pause failed:', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function fetchRunStatus() {
+  if (!state.activeRunId) return;
+  try {
+    const res = await fetch(`${API}/api/runs/${state.activeRunId}`);
+    const data = await res.json();
+    updateRunStatus(data.status);
+  } catch (e) { console.error('fetchRunStatus:', e); }
+}
+
+function updateRunStatus(status) {
+  state.runStatus = status;
+  const btn = $('play-pause-btn');
+  const badge = $('run-status-badge');
+
+  if (!state.activeRunId) {
+    btn.style.display = 'none';
+    badge.style.display = 'none';
+    return;
+  }
+
+  // Show badge
+  badge.style.display = '';
+  badge.textContent = status;
+  badge.className = `run-status-badge ${status}`;
+
+  // Show play/pause button for running/stopped states
+  if (status === 'running' || status === 'stopped') {
+    btn.style.display = '';
+    btn.textContent = status === 'running' ? '⏸' : '▶';
+    btn.title = status === 'running' ? 'Pause pipeline' : 'Resume pipeline';
+    btn.className = `play-pause-btn ${status}`;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function showToast(message, type = 'info') {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
 // --- SSE ---
 function connectSSE(runId) {
   disconnectSSE();
@@ -123,7 +193,24 @@ function connectSSE(runId) {
   es.addEventListener('item_started', () => { fetchQueues(); fetchGraph(); });
   es.addEventListener('item_completed', () => { fetchQueues(); fetchGraph(); });
   es.addEventListener('item_failed', () => { fetchQueues(); fetchGraph(); });
-  es.addEventListener('run_status', () => { loadRuns(); fetchQueues(); fetchGraph(); });
+  es.addEventListener('run_status', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.payload && data.payload.status) {
+        updateRunStatus(data.payload.status);
+      }
+    } catch {}
+    loadRuns(); fetchQueues(); fetchGraph();
+  });
+  es.addEventListener('pipeline_paused', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      updateRunStatus('stopped');
+      const reason = data.payload && data.payload.reason ? data.payload.reason : 'Pipeline paused';
+      showToast(reason, 'warning');
+    } catch {}
+    loadRuns(); fetchQueues(); fetchGraph();
+  });
   es.addEventListener('item_redo', () => { fetchQueues(); fetchGraph(); });
   es.addEventListener('item_cancelled', () => { fetchQueues(); fetchGraph(); });
   // Generic message fallback
@@ -134,9 +221,13 @@ function connectSSE(runId) {
         fetchQueues();
         fetchGraph();
       } else if (data.type === 'run_status') {
-        loadRuns();
-        fetchQueues();
-        fetchGraph();
+        if (data.payload && data.payload.status) updateRunStatus(data.payload.status);
+        loadRuns(); fetchQueues(); fetchGraph();
+      } else if (data.type === 'pipeline_paused') {
+        updateRunStatus('stopped');
+        const reason = data.payload && data.payload.reason ? data.payload.reason : 'Pipeline paused';
+        showToast(reason, 'warning');
+        loadRuns(); fetchQueues(); fetchGraph();
       }
     } catch {}
   };
@@ -233,6 +324,20 @@ function renderQueues() {
   checkAssembly();
 }
 
+// Get the media file path from item outputs based on item type
+function getMediaPath(item) {
+  if (!item.outputs) return null;
+  // generate_frame outputs: { startPath, endPath }
+  if (item.type === 'generate_frame') return item.outputs.startPath || null;
+  // generate_asset outputs: { key, path }
+  if (item.type === 'generate_asset') return item.outputs.path || null;
+  // generate_video outputs: { path, duration, ... }
+  if (item.type === 'generate_video') return item.outputs.path || null;
+  // assemble outputs: { path }
+  if (item.type === 'assemble') return item.outputs.path || null;
+  return null;
+}
+
 function renderQueueItem(item) {
   const highClass = item.priority === 'high' ? ' high-priority' : '';
   const vBadge = item.version > 1 ? `<span class="badge badge-version">v${item.version}</span>` : '';
@@ -248,21 +353,25 @@ function renderQueueItem(item) {
   }
 
   let output = '';
-  if (item.outputs) {
-    if (item.outputs.framePath) {
-      const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.framePath}`;
-      output = `<div class="q-item-output"><img src="${src}" loading="lazy" /></div>`;
-    } else if (item.outputs.videoPath) {
-      const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.videoPath}`;
-      output = `<div class="q-item-output"><video src="${src}" muted preload="metadata"></video></div>`;
+  if (item.outputs && item.status === 'completed') {
+    const mediaPath = getMediaPath(item);
+    if (mediaPath) {
+      const src = `${API}/api/runs/${state.activeRunId}/media/${mediaPath}`;
+      if (item.type === 'generate_video' || item.type === 'assemble') {
+        output = `<div class="q-item-output"><video src="${src}" muted preload="metadata"></video></div>`;
+      } else {
+        output = `<div class="q-item-output"><img src="${src}" loading="lazy" /></div>`;
+      }
     }
   }
+
+  const retryBadge = item.retryCount > 0 ? `<span class="badge badge-retry">↻${item.retryCount}</span>` : '';
 
   return `<div class="q-item${highClass}" data-id="${item.id}">
     <div class="q-item-header">
       <span class="q-item-type">${typeName}</span>
       <span class="badge badge-${item.status}">${item.status}</span>
-      ${priBadge}${vBadge}
+      ${priBadge}${vBadge}${retryBadge}
     </div>
     <div class="q-item-key">${item.itemKey}</div>
     ${output}
@@ -277,8 +386,8 @@ function checkAssembly() {
     const q = state.queues[qName];
     if (!q) continue;
     for (const item of (q.completed || [])) {
-      if (item.type === 'assemble' && item.outputs && item.outputs.videoPath) {
-        const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.videoPath}`;
+      if (item.type === 'assemble' && item.outputs && item.outputs.path) {
+        const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.path}`;
         $('final-video').src = src;
         section.style.display = 'block';
         return;
@@ -455,15 +564,19 @@ function showDetail(itemId) {
 
   let outputHtml = '';
   if (item.outputs && Object.keys(item.outputs).length > 0) {
-    if (item.outputs.framePath) {
-      const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.framePath}`;
-      outputHtml = `<img src="${src}" style="max-width:100%;border-radius:6px;" />`;
-    } else if (item.outputs.videoPath) {
-      const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.videoPath}`;
-      outputHtml = `<video src="${src}" controls style="max-width:100%;border-radius:6px;"></video>`;
+    const mediaPath = getMediaPath(item);
+    if (mediaPath) {
+      const src = `${API}/api/runs/${state.activeRunId}/media/${mediaPath}`;
+      if (item.type === 'generate_video' || item.type === 'assemble') {
+        outputHtml = `<video src="${src}" controls style="max-width:100%;border-radius:6px;"></video>`;
+      } else {
+        outputHtml = `<img src="${src}" style="max-width:100%;border-radius:6px;" />`;
+      }
     }
     outputHtml += `<pre>${JSON.stringify(item.outputs, null, 2)}</pre>`;
   }
+
+  const retryInfo = item.retryCount > 0 ? `<div class="detail-section"><h3>Retries</h3><span class="badge badge-retry">${item.retryCount}/3</span></div>` : '';
 
   content.innerHTML = `
     <div class="detail-section">
@@ -486,6 +599,7 @@ function showDetail(itemId) {
         Completed: ${fmtTime(item.completedAt)}
       </div>
     </div>
+    ${retryInfo}
     ${item.error ? `<div class="detail-section"><h3>Error</h3><pre style="color:var(--red)">${esc(item.error)}</pre></div>` : ''}
     <div class="detail-section">
       <h3>Inputs</h3>
