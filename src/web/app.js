@@ -105,6 +105,7 @@ function playVideo(container, videoSrc) {
   container.appendChild(video);
   container.onclick = null; // Remove click handler while playing
 }
+window.playVideo = playVideo;
 
 function showRunView() {
   elements.runView.style.display = "";
@@ -1138,7 +1139,7 @@ async function fetchAndRenderStageOutput({ silent = false } = {}) {
             }
             html += `</td>`;
             html += `<td>${dialogue}</td>`;
-            html += `<td><button class="skip-shot-btn" data-shot="${shot.shotNumber}" title="${isSkipped ? "Include this shot in the final video" : "Skip this shot from the final video"}">${isSkipped ? "Unskip" : "Skip"}</button></td>`;
+            html += `<td><label class="skip-checkbox-label"><input type="checkbox" class="skip-shot-checkbox" data-shot="${shot.shotNumber}" ${isSkipped ? "checked" : ""} title="Skip this shot from the final video" /> Skip</label></td>`;
             html += `</tr>`;
 
             // Add collapsible prompts row
@@ -2246,15 +2247,15 @@ function bindEvents() {
     }
   });
 
-  // Skip/unskip shot: delegated click on skip buttons
-  document.body.addEventListener("click", async (event) => {
-    const btn = event.target.closest(".skip-shot-btn");
-    if (!btn) return;
-    const shotNumber = Number(btn.dataset.shot);
+  // Skip/unskip shot: delegated change on skip checkboxes
+  document.body.addEventListener("change", async (event) => {
+    const checkbox = event.target.closest(".skip-shot-checkbox");
+    if (!checkbox) return;
+    const shotNumber = Number(checkbox.dataset.shot);
     if (Number.isNaN(shotNumber)) return;
     const runId = state.activeRun?.id;
     if (!runId) return;
-    btn.disabled = true;
+    checkbox.disabled = true;
     try {
       const resp = await fetch(`/runs/${encodeURIComponent(runId)}/shots/${shotNumber}/skip`, { method: "POST" });
       if (!resp.ok) {
@@ -2268,11 +2269,12 @@ function bindEvents() {
         ?.flatMap(s => s.shots || [])
         ?.find(s => s.shotNumber === shotNumber);
       if (shot) shot.skipped = result.skipped;
-      renderStageOutput();
+      lastStageOutputHtml = null;
+      void fetchAndRenderStageOutput({ silent: true });
     } catch (e) {
       setGlobalError("Failed to toggle skip: " + e.message);
     } finally {
-      btn.disabled = false;
+      checkbox.disabled = false;
     }
   });
 
