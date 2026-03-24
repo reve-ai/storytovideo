@@ -64,6 +64,12 @@ export interface RunState {
 
   // Generated output paths, keyed by item key
   generatedOutputs: Record<string, string>;
+
+  // Shots whose duration was manually set by the user (skip pacing analysis)
+  manualDurations?: Record<number, boolean>;
+
+  // Run options (aspect ratio, etc.)
+  options?: { aspectRatio?: string; [key: string]: unknown };
 }
 
 // Snapshot of a single queue for the UI list view

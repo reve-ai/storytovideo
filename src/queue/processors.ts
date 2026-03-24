@@ -13,6 +13,7 @@ import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo } from '../tools/assemble-video.js';
+import { analyzeClipPacing } from '../tools/analyze-video-pacing.js';
 import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -265,6 +266,7 @@ ${JSON.stringify(analysis, null, 2)}`,
 
   private async handleGenerateAsset(item: WorkItem): Promise<Record<string, unknown>> {
     const state = this.queueManager.getState();
+    const aspectRatio = state.options?.aspectRatio;
     const result = await generateAsset({
       characterName: item.inputs.characterName as string | undefined,
       locationName: item.inputs.locationName as string | undefined,
@@ -274,6 +276,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       outputDir: join(state.outputDir, 'assets'),
       referenceImagePath: item.inputs.referenceImagePath as string | undefined,
       videoBackend: 'grok',
+      aspectRatio,
     });
 
     state.generatedOutputs[result.key] = this.relativePath(result.path);
@@ -295,6 +298,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       ? this.absolutePath(item.inputs.previousEndFramePath as string)
       : undefined;
 
+    const aspectRatio = state.options?.aspectRatio;
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
@@ -302,6 +306,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       outputDir: state.outputDir,
       previousEndFramePath,
       videoBackend: 'grok',
+      aspectRatio,
     });
 
     if (result.startPath) {
@@ -325,6 +330,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     const endFramePath = item.inputs.endFramePath
       ? this.absolutePath(item.inputs.endFramePath as string)
       : undefined;
+    const aspectRatio = state.options?.aspectRatio;
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
@@ -339,9 +345,61 @@ ${JSON.stringify(analysis, null, 2)}`,
       outputDir: join(state.outputDir, 'videos'),
       videoBackend: 'grok',
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+      aspectRatio,
     });
 
     state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(result.path);
+
+    // Post-generation pacing analysis
+    const isManualDuration = state.manualDurations?.[shot.shotNumber];
+    if (isManualDuration) {
+      console.log(`[pacing] Skipping pacing analysis for shot ${result.shotNumber} (duration manually set by user)`);
+    }
+
+    if (result.path && !isManualDuration) {
+      try {
+        const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
+        const shotDialogue = shotObj?.dialogue;
+        const absolutePath = this.absolutePath(this.relativePath(result.path));
+        const analysis = await analyzeClipPacing(absolutePath, result.shotNumber, result.duration, shotDialogue);
+        console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
+
+        const savings = result.duration - analysis.recommendedDuration;
+        if (savings >= 1 && analysis.confidence !== 'low') {
+          console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
+
+          const regenResult = await generateVideo({
+            shotNumber: shot.shotNumber,
+            shotType: 'first_last_frame',
+            actionPrompt: shot.actionPrompt,
+            dialogue: shot.dialogue,
+            soundEffects: shot.soundEffects,
+            cameraDirection: shot.cameraDirection,
+            durationSeconds: analysis.recommendedDuration,
+            startFramePath,
+            endFramePath: endFramePath ?? startFramePath,
+            outputDir: join(state.outputDir, 'videos'),
+            videoBackend: 'grok',
+            characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+          });
+
+          state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(regenResult.path);
+          if (shotObj) shotObj.durationSeconds = analysis.recommendedDuration;
+
+          return {
+            shotNumber: regenResult.shotNumber,
+            path: this.relativePath(regenResult.path),
+            duration: regenResult.duration,
+            promptSent: regenResult.promptSent,
+            pacingAdjusted: true,
+            originalDuration: result.duration,
+            newDuration: analysis.recommendedDuration,
+          };
+        }
+      } catch (err) {
+        console.warn(`[pacing] Failed to analyze shot ${result.shotNumber}, keeping original:`, err);
+      }
+    }
 
     return {
       shotNumber: result.shotNumber,
