@@ -444,6 +444,78 @@ body {
   border-color: var(--accent);
 }
 
+/* Edit form inside analyze cards */
+.analyze-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analyze-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-left: 3px solid transparent;
+  padding-left: 0.5rem;
+}
+
+.analyze-edit-field.changed {
+  border-left-color: var(--orange);
+  background: var(--orange-dim);
+  border-radius: 0 4px 4px 0;
+  padding: 0.35rem 0.5rem;
+}
+
+.analyze-edit-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analyze-edit-reset {
+  font-size: 0.7rem !important;
+  padding: 0.1rem 0.35rem !important;
+  color: var(--orange) !important;
+  background: none !important;
+  border: none !important;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.analyze-edit-field input[type="text"],
+.analyze-edit-field input[type="number"],
+.analyze-edit-field textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.analyze-edit-field textarea {
+  min-height: 50px;
+  resize: vertical;
+}
+
+.analyze-edit-field input:focus,
+.analyze-edit-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.analyze-edit-original {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .analyze-card { flex-direction: column; }
   .analyze-card-media { flex: none; }
