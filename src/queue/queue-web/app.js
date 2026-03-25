@@ -1196,7 +1196,7 @@ function renderStoryView() {
         const frameSrc = `${API}/api/runs/${state.activeRunId}/media/${frameItem.outputs.startPath}`;
         if (videoCompleted && videoItem.outputs?.path) {
           const videoSrc = `${API}/api/runs/${state.activeRunId}/media/${videoItem.outputs.path}`;
-          html += `<div class="story-shot-media video-thumbnail" style="aspect-ratio:${aspectRatio}" data-video-class="inline-video" onclick="event.stopPropagation(); playVideo(this, '${videoSrc}')">`;
+          html += `<div class="story-shot-media video-thumbnail" style="aspect-ratio:${aspectRatio}" data-video-class="story-video" onclick="event.stopPropagation(); playVideo(this, '${videoSrc}')">`;
           html += `<img src="${frameSrc}" alt="Shot ${shotNum}" />`;
           html += `<div class="play-overlay">▶</div>`;
           html += `</div>`;
