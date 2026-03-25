@@ -555,6 +555,11 @@ function renderQueues() {
 }
 
 // Get the media file path from item outputs based on item type
+function getAspectRatio() {
+  const run = state.runs.find(r => r.id === state.activeRunId);
+  return (run?.options?.aspectRatio || '16:9').replace(':', '/');
+}
+
 function getMediaPath(item) {
   if (!item.outputs) return null;
   // generate_frame outputs: { startPath, endPath }
@@ -649,7 +654,7 @@ function checkAssembly() {
       if (item.type === 'assemble' && item.outputs && item.outputs.path) {
         const src = `${API}/api/runs/${state.activeRunId}/media/${item.outputs.path}`;
         const container = $('final-video-container');
-        container.innerHTML = `<div class="video-thumbnail video-thumbnail-final" data-video-class="assembly-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
+        container.innerHTML = `<div class="video-thumbnail video-thumbnail-final" style="aspect-ratio: ${getAspectRatio()}" data-video-class="assembly-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
         section.style.display = 'block';
         return;
       }
@@ -835,7 +840,7 @@ function showDetail(itemId) {
         if (thumbUrl) {
           outputHtml = `<div class="video-thumbnail" data-video-class="detail-video" onclick="playVideo(this, '${src}')"><img src="${thumbUrl}" alt="Video thumbnail" /><div class="play-overlay play-overlay-large">▶</div></div>`;
         } else {
-          outputHtml = `<div class="video-thumbnail video-thumbnail-final" data-video-class="detail-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
+          outputHtml = `<div class="video-thumbnail video-thumbnail-final" style="aspect-ratio: ${getAspectRatio()}" data-video-class="detail-video" onclick="playVideo(this, '${src}')"><div class="play-overlay play-overlay-large">▶</div></div>`;
         }
       } else {
         outputHtml = `<img src="${src}" style="max-width:100%;border-radius:6px;" />`;
