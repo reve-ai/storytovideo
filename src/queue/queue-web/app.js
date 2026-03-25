@@ -1216,12 +1216,12 @@ function renderStoryView() {
         const frameSrc = `${API}/api/runs/${state.activeRunId}/media/${frameItem.outputs.startPath}`;
         if (videoCompleted && videoItem.outputs?.path) {
           const videoSrc = `${API}/api/runs/${state.activeRunId}/media/${videoItem.outputs.path}`;
-          html += `<div class="story-shot-media video-thumbnail" data-video-class="story-video" onclick="event.stopPropagation(); playVideo(this, '${videoSrc}')">`;
+          html += `<div class="story-shot-media video-thumbnail" data-video-class="story-video" style="aspect-ratio:${aspectRatio}" onclick="event.stopPropagation(); playVideo(this, '${videoSrc}')">`;
           html += `<img src="${frameSrc}" alt="Shot ${shotNum}" />`;
           html += `<div class="play-overlay">▶</div>`;
           html += `</div>`;
         } else {
-          html += `<div class="story-shot-media">`;
+          html += `<div class="story-shot-media" style="aspect-ratio:${aspectRatio}">`;
           html += `<img src="${frameSrc}" alt="Shot ${shotNum}" />`;
           html += `</div>`;
         }
