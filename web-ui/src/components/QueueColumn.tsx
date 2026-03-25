@@ -16,18 +16,25 @@ interface QueueColumnProps {
   snapshot: QueueSnapshot | null;
 }
 
-const COLUMN_LABELS: Record<QueueName, string> = {
-  llm: "LLM",
-  image: "Image",
-  video: "Video",
+const COLUMN_CONFIG: Record<QueueName, { label: string; emoji: string; tintVar: string; badgeVar: string; textVar: string }> = {
+  llm: { label: "LLM", emoji: "🧠", tintVar: "var(--col-llm-tint)", badgeVar: "var(--col-llm-badge)", textVar: "var(--col-llm-text)" },
+  image: { label: "Image", emoji: "🎨", tintVar: "var(--col-image-tint)", badgeVar: "var(--col-image-badge)", textVar: "var(--col-image-text)" },
+  video: { label: "Video", emoji: "🎬", tintVar: "var(--col-video-tint)", badgeVar: "var(--col-video-badge)", textVar: "var(--col-video-text)" },
 };
 
 export default function QueueColumn({ name, snapshot }: QueueColumnProps) {
+  const config = COLUMN_CONFIG[name];
+
   if (!snapshot) {
     return (
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col" style={{ background: config.tintVar }}>
         <div className="flex items-center justify-between border-b border-[--border] px-3 py-2">
-          <span className="text-sm font-semibold">{COLUMN_LABELS[name]}</span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-semibold"
+            style={{ background: config.badgeVar, color: config.textVar }}
+          >
+            <span>{config.emoji}</span> {config.label}
+          </span>
           <span className="text-xs text-[--muted]">0</span>
         </div>
       </div>
@@ -50,9 +57,14 @@ export default function QueueColumn({ name, snapshot }: QueueColumnProps) {
   const doneCount = (snapshot.completed || []).length;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-w-0 flex-1 flex-col" style={{ background: config.tintVar }}>
       <div className="flex items-center justify-between border-b border-[--border] px-3 py-2">
-        <span className="text-sm font-semibold">{COLUMN_LABELS[name]}</span>
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-semibold"
+          style={{ background: config.badgeVar, color: config.textVar }}
+        >
+          <span>{config.emoji}</span> {config.label}
+        </span>
         <span className="text-xs text-[--muted]">
           {doneCount}/{activeItems.length}
         </span>

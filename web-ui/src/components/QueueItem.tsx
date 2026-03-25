@@ -43,11 +43,23 @@ interface QueueItemProps {
   item: WorkItem;
 }
 
+const STATUS_BORDER_COLORS: Record<string, string> = {
+  in_progress: "var(--accent)",
+  completed: "var(--green)",
+  failed: "var(--red)",
+  pending: "var(--border)",
+  superseded: "var(--orange)",
+  cancelled: "var(--gray)",
+};
+
 export default function QueueItem({ item }: QueueItemProps) {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const runs = useRunStore((s) => s.runs);
   const openDetail = useUIStore((s) => s.openDetail);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
+
+  const statusBorderColor = STATUS_BORDER_COLORS[item.status] || "var(--border)";
+  const isDimmed = item.status === "superseded" || item.status === "cancelled";
 
   const typeName =
     item.type === "artifact" &&
@@ -101,7 +113,13 @@ export default function QueueItem({ item }: QueueItemProps) {
 
   return (
     <div
-      className={`cursor-pointer rounded-lg border border-[--border] bg-[--surface] p-3 transition-colors hover:border-[--accent] ${item.priority === "high" ? "border-l-2 border-l-[--orange]" : ""}`}
+      className="queue-item cursor-pointer rounded-lg border border-[--border] p-3"
+      style={{
+        borderLeftWidth: "3px",
+        borderLeftColor: item.priority === "high" ? "var(--orange)" : statusBorderColor,
+        background: "var(--surface)",
+        opacity: isDimmed ? 0.6 : 1,
+      }}
       data-opens-detail
       onClick={() => openDetail(item.id)}
     >
