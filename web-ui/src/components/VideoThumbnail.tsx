@@ -44,7 +44,7 @@ export default function VideoThumbnail({
 
   return (
     <div
-      className={`relative cursor-pointer overflow-hidden rounded ${className}`}
+      className={`relative w-full cursor-pointer overflow-hidden rounded ${className}`}
       style={aspectRatio ? { aspectRatio } : undefined}
       onClick={handlePlay}
     >
