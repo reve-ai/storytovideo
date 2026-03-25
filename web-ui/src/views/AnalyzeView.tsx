@@ -27,6 +27,9 @@ function ReviewAllButton({ runId }: { runId: string }) {
   );
 }
 
+const byShotNumber = (a: WorkItem, b: WorkItem) =>
+  (a.inputs.shotNumber as number) - (b.inputs.shotNumber as number);
+
 export default function AnalyzeView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const runs = useRunStore((s) => s.runs);
@@ -37,9 +40,11 @@ export default function AnalyzeView() {
   const run = runs.find((r) => r.id === activeRunId);
   const aspectRatio = (run?.options?.aspectRatio || "16:9").replace(":", "/");
 
-  const sorted = [...analyzeItems].sort(
-    (a, b) => (a.inputs.shotNumber as number) - (b.inputs.shotNumber as number),
-  );
+  const inProgress = analyzeItems.filter((i) => i.status === "in_progress").sort(byShotNumber);
+  const pending = analyzeItems.filter((i) => i.status === "pending").sort(byShotNumber);
+  const completed = analyzeItems
+    .filter((i) => i.status === "completed")
+    .sort(byShotNumber);
 
   if (!activeRunId) {
     return (
@@ -49,7 +54,7 @@ export default function AnalyzeView() {
     );
   }
 
-  if (sorted.length === 0) {
+  if (analyzeItems.length === 0) {
     return (
       <div className="flex h-full items-center justify-center flex-col gap-2">
         <p className="text-[--muted] text-sm">No videos pending review</p>
@@ -60,7 +65,25 @@ export default function AnalyzeView() {
 
   return (
     <div className="analyze-view">
-      {sorted.map((item) => (
+      {inProgress.map((item) => (
+        <AnalyzeStatusCard
+          key={item.id}
+          item={item}
+          runId={activeRunId}
+          aspectRatio={aspectRatio}
+          status="analyzing"
+        />
+      ))}
+      {pending.map((item) => (
+        <AnalyzeStatusCard
+          key={item.id}
+          item={item}
+          runId={activeRunId}
+          aspectRatio={aspectRatio}
+          status="queued"
+        />
+      ))}
+      {completed.map((item) => (
         <AnalyzeCard
           key={item.id}
           item={item}
@@ -70,6 +93,62 @@ export default function AnalyzeView() {
           onReject={rejectItem}
         />
       ))}
+    </div>
+  );
+}
+
+/** Card for pending/in-progress analyze items — shows a status indicator instead of review actions. */
+function AnalyzeStatusCard({
+  item,
+  runId,
+  aspectRatio,
+  status,
+}: {
+  item: WorkItem;
+  runId: string;
+  aspectRatio: string;
+  status: "analyzing" | "queued";
+}) {
+  const shotNumber = item.inputs.shotNumber as number;
+  const shot = item.inputs.shot as Record<string, unknown> | undefined;
+  const videoPath = item.inputs.videoPath as string | undefined;
+  const startFramePath = item.inputs.startFramePath as string | undefined;
+
+  const composition = shot?.composition as string | undefined;
+  const durationSeconds = shot?.durationSeconds as number | undefined;
+
+  const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
+  const frameSrc = startFramePath ? `/api/runs/${runId}/media/${startFramePath}` : null;
+
+  return (
+    <div className="analyze-card" style={{ opacity: status === "queued" ? 0.7 : 1 }}>
+      <div className="analyze-card-media">
+        {videoSrc ? (
+          <video src={videoSrc} controls className="analyze-video" style={{ aspectRatio }} />
+        ) : frameSrc ? (
+          <img src={frameSrc} alt={`Shot ${shotNumber}`} style={{ aspectRatio }} />
+        ) : (
+          <div className="analyze-placeholder" style={{ aspectRatio }}>No media</div>
+        )}
+      </div>
+      <div className="analyze-card-body">
+        <div className="analyze-card-header">
+          <span className="story-shot-number">Shot {shotNumber}</span>
+          {composition && <span className="story-shot-comp">{composition}</span>}
+          {durationSeconds != null && <span className="story-shot-duration">{durationSeconds}s</span>}
+        </div>
+        <div className="analyze-actions">
+          {status === "analyzing" ? (
+            <span className="analyze-status-badge" style={{ color: "var(--orange)" }}>
+              ⟳ Analyzing…
+            </span>
+          ) : (
+            <span className="analyze-status-badge" style={{ color: "var(--muted)" }}>
+              ◷ Queued
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

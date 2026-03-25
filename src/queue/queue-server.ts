@@ -618,18 +618,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // GET /api/runs/:id/analyze — list analyze_video items pending review
+      // GET /api/runs/:id/analyze — list analyze_video items (pending, in_progress, and completed awaiting review)
       if (method === "GET" && action === "analyze" && pathParts.length === 4) {
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
         const state = qm.getState();
-        const pendingReview = state.workItems.filter(item =>
+        const analyzeItems = state.workItems.filter(item =>
           item.type === 'analyze_video' &&
-          item.status === 'completed' &&
+          item.status !== 'superseded' &&
+          item.status !== 'cancelled' &&
+          item.status !== 'failed' &&
           item.reviewStatus !== 'accepted' &&
           item.reviewStatus !== 'rejected'
         );
-        sendJson(res, 200, { runId, items: pendingReview });
+        sendJson(res, 200, { runId, items: analyzeItems });
         return;
       }
 
