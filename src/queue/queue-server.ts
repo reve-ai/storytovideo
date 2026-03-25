@@ -728,11 +728,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
 
-        // Determine what to redo based on recommendations
-        const recommendations = (item.outputs.recommendations ?? []) as Array<{ type: string; suggestedInputs?: Record<string, unknown> }>;
-        const redoFrame = recommendations.some(r => r.type === 'redo_frame');
-
         // Merge suggested inputs from recommendations
+        const recommendations = (item.outputs.recommendations ?? []) as Array<{ type: string; suggestedInputs?: Record<string, unknown> }>;
         let suggestedInputs: Record<string, unknown> = {};
         for (const rec of recommendations) {
           if (rec.suggestedInputs) {
@@ -744,6 +741,10 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (editedInputs) {
           suggestedInputs = { ...suggestedInputs, ...editedInputs };
         }
+
+        // Determine what to redo based on what inputs actually changed
+        const frameKeys = ['startFramePrompt', 'endFramePrompt'];
+        const redoFrame = frameKeys.some(key => key in suggestedInputs);
 
         // Mark as accepted
         qm.setReviewStatus(itemId, 'accepted');
