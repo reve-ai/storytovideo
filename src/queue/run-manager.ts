@@ -246,7 +246,7 @@ export class RunManager extends EventEmitter {
   async resumeRun(runId: string): Promise<boolean> {
     const record = this.runs.get(runId);
     if (!record) return false;
-    if (record.status !== "stopped" && record.status !== "pausing") return false;
+    if (record.status !== "stopped" && record.status !== "pausing" && record.status !== "completed") return false;
 
     let qm = this.queueManagers.get(runId);
     if (!qm) {
