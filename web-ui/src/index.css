@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "./styles/top-bar.css";
+@import "./styles/dialog.css";
 
 :root {
   --bg: #0f1117;
@@ -33,5 +35,171 @@ body {
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
+}
+
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-pending { background: var(--surface2); color: var(--gray); }
+.badge-in_progress { background: var(--accent-dim); color: var(--accent); }
+.badge-completed { background: var(--green-dim); color: var(--green); }
+.badge-failed { background: var(--red-dim); color: var(--red); }
+.badge-cancelled { background: var(--surface2); color: var(--gray); text-decoration: line-through; }
+.badge-superseded { background: var(--orange-dim); color: var(--orange); }
+
+/* Video thumbnail with play overlay */
+.video-thumbnail {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+  background: #000;
+}
+.video-thumbnail img { max-height: none; }
+
+.play-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  color: white;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: background 150ms ease;
+}
+.video-thumbnail:hover .play-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Story view */
+.story-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+}
+
+.story-scene {
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.story-scene-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.story-scene-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.story-scene-location { font-size: 0.8rem; color: var(--muted); }
+
+.story-shots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.story-shot-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.story-shot-card:hover { border-color: var(--accent); }
+
+.story-shot-media {
+  width: 100%;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+.story-shot-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.story-shot-media.video-thumbnail { border: none; border-radius: 0; }
+
+.story-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.story-shot-placeholder {
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.story-shot-info { padding: 0.5rem 0.6rem; }
+
+.story-shot-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+.story-shot-number { font-weight: 600; font-size: 0.8rem; }
+.story-shot-comp {
+  font-size: 0.7rem;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+.story-shot-duration {
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: var(--surface2);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
+.story-shot-action {
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .story-shots-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 
