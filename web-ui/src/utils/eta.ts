@@ -16,6 +16,57 @@ export function fmtDuration(seconds: number): string {
   return `${sec}s`;
 }
 
+/**
+ * Compute total active processing time in seconds by merging
+ * [startedAt, completedAt|now] intervals across all items.
+ * Overlapping intervals are merged so parallel work isn't double-counted.
+ */
+export function computeActiveElapsed(
+  queues: Record<QueueName, QueueSnapshot | null>,
+  now: number,
+): number {
+  const intervals: [number, number][] = [];
+
+  for (const qName of ["llm", "image", "video"] as QueueName[]) {
+    const q = queues[qName];
+    if (!q) continue;
+    for (const group of [q.inProgress, q.completed]) {
+      if (!group) continue;
+      for (const item of group) {
+        if (!item.startedAt) continue;
+        const start = new Date(item.startedAt).getTime();
+        const end = item.completedAt
+          ? new Date(item.completedAt).getTime()
+          : now;
+        if (end > start) {
+          intervals.push([start, end]);
+        }
+      }
+    }
+  }
+
+  if (intervals.length === 0) return 0;
+
+  // Sort by start time, then merge overlapping intervals
+  intervals.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [intervals[0]];
+  for (let i = 1; i < intervals.length; i++) {
+    const last = merged[merged.length - 1];
+    const cur = intervals[i];
+    if (cur[0] <= last[1]) {
+      last[1] = Math.max(last[1], cur[1]);
+    } else {
+      merged.push(cur);
+    }
+  }
+
+  let totalMs = 0;
+  for (const [s, e] of merged) {
+    totalMs += e - s;
+  }
+  return totalMs / 1000;
+}
+
 /** Collect all work items across all queues. */
 export function getAllItems(
   queues: Record<QueueName, QueueSnapshot | null>,

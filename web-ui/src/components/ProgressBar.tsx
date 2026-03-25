@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { QueueName, QueueSnapshot } from "../stores/pipeline-store";
-import { computeETA, fmtDuration } from "../utils/eta";
+import { computeActiveElapsed, computeETA, fmtDuration } from "../utils/eta";
 
 interface ProgressBarProps {
   queues: Record<QueueName, QueueSnapshot | null>;
@@ -36,7 +36,7 @@ export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) 
 
   const pct = Math.round((completedItems / totalItems) * 100);
   const allDone = completedItems === totalItems;
-  const elapsedSec = runStartTime ? (now - runStartTime) / 1000 : 0;
+  const elapsedSec = runStartTime ? computeActiveElapsed(queues, now) : 0;
   const eta = allDone ? null : computeETA(queues);
 
   let text = `${completedItems} / ${totalItems} items completed (${pct}%)`;
