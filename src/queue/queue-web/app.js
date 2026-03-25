@@ -937,25 +937,32 @@ window.handleAction = handleAction;
 window.showDetail = showDetail;
 
 async function handleAction(action, itemId) {
-  if (!state.activeRunId) return;
+  if (!state.activeRunId) {
+    console.warn(`[handleAction] No activeRunId — cannot ${action} item ${itemId}`);
+    return;
+  }
   const base = `${API}/api/runs/${state.activeRunId}/items/${itemId}`;
 
   try {
+    let res;
     if (action === 'retry') {
-      await fetch(`${base}/retry`, { method: 'POST' });
-      await Promise.all([fetchQueues(), fetchGraph()]);
-      closeDetail();
+      res = await fetch(`${base}/retry`, { method: 'POST' });
     } else if (action === 'redo') {
-      await fetch(`${base}/redo`, { method: 'POST' });
-      await Promise.all([fetchQueues(), fetchGraph()]);
-      closeDetail();
+      res = await fetch(`${base}/redo`, { method: 'POST' });
     } else if (action === 'cancel') {
-      await fetch(`${base}/cancel`, { method: 'POST' });
-      await Promise.all([fetchQueues(), fetchGraph()]);
-      closeDetail();
+      res = await fetch(`${base}/cancel`, { method: 'POST' });
+    } else {
+      console.warn(`[handleAction] Unknown action: ${action}`);
+      return;
     }
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`[handleAction] ${action} failed (${res.status}):`, text);
+    }
+    await Promise.all([fetchQueues(), fetchGraph()]);
+    closeDetail();
   } catch (e) {
-    console.error(`Action ${action} failed:`, e);
+    console.error(`[handleAction] ${action} failed:`, e);
   }
 }
 
