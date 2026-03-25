@@ -157,6 +157,7 @@ export class QueueProcessor extends EventEmitter {
         }
 
         const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[QueueProcessor] Error processing ${item.type} (${item.itemKey}): ${errorMsg}`);
         const currentRetryCount = item.retryCount ?? 0;
 
         if (currentRetryCount < MAX_RETRIES) {
