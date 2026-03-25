@@ -12,7 +12,7 @@ import { planShotsForScene } from '../tools/plan-shots.js';
 import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
-import { assembleVideo } from '../tools/assemble-video.js';
+import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
 import { analyzeClipPacing } from '../tools/analyze-video-pacing.js';
 import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
 
@@ -602,18 +602,47 @@ ${JSON.stringify(analysis, null, 2)}`,
       prevSceneNumber = shot.sceneNumber;
     }
 
-    // Build subtitles
+    // Get actual clip durations via ffprobe
+    const actualDurations: number[] = [];
+    for (const vp of videoPaths) {
+      actualDurations.push(await getVideoDuration(vp));
+    }
+
+    // Build a per-shot transition lookup: transitions[i] applies between shot i and shot i+1
+    // transitions array has one entry per scene boundary (in order), so map them to shot indices
+    const shotTransitions: Array<{ type: 'cut' | 'fade_black'; durationMs: number } | null> = [];
+    let transIdx = 0;
+    for (let i = 0; i < sortedShots.length - 1; i++) {
+      if (sortedShots[i].sceneNumber !== sortedShots[i + 1].sceneNumber) {
+        shotTransitions.push(transitions[transIdx] || null);
+        transIdx++;
+      } else {
+        shotTransitions.push(null); // no transition between shots in same scene
+      }
+    }
+
+    // Build subtitles using actual durations and accounting for xfade overlap
     const subtitles: Array<{ startSec: number; endSec: number; text: string }> = [];
     let cumulativeTime = 0;
-    for (const shot of sortedShots) {
+    for (let i = 0; i < sortedShots.length; i++) {
+      const shot = sortedShots[i];
+      const clipDuration = actualDurations[i] ?? shot.durationSeconds;
+
       if (shot.dialogue && shot.dialogue.trim().length > 0) {
         subtitles.push({
           startSec: cumulativeTime,
-          endSec: cumulativeTime + shot.durationSeconds,
+          endSec: cumulativeTime + clipDuration,
           text: shot.dialogue.trim(),
         });
       }
-      cumulativeTime += shot.durationSeconds;
+
+      cumulativeTime += clipDuration;
+
+      // Subtract xfade overlap at scene boundaries (the xfade causes clips to overlap)
+      const trans = shotTransitions[i];
+      if (trans && trans.type !== 'cut' && trans.durationMs > 0) {
+        cumulativeTime -= trans.durationMs / 1000;
+      }
     }
 
     const result = await assembleVideo({

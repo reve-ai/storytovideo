@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 /**
  * Get the duration of a video file in seconds using ffprobe.
  */
-async function getVideoDuration(videoPath: string): Promise<number> {
+export async function getVideoDuration(videoPath: string): Promise<number> {
   try {
     const { stdout } = await execFileAsync("ffprobe", [
       "-v", "error",
@@ -435,9 +435,29 @@ async function assembleWithXfade(
     }
   }
 
-  // Build audio concat filter chain to preserve audio tracks from all clips
-  const audioInputs = videoPaths.map((_, i) => `[${i}:a]`).join("");
-  filterComplex += `${audioInputs}concat=n=${videoPaths.length}:v=0:a=1[aout];`;
+  // Build audio filter chain that mirrors video xfade timing
+  // Use acrossfade for transitions and concat for cuts, matching the video filter
+  let previousAudioLabel = `${0}:a`;
+  for (let i = 1; i < videoPaths.length; i++) {
+    const transition = transitions[i - 1] || { type: "cut", durationMs: 0 };
+    const transitionDurationSec = transition.durationMs / 1000;
+    const audioOutLabel = `a${i}`;
+
+    if (transition.type === "cut" || transitionDurationSec <= 0) {
+      // For cuts, concatenate audio streams
+      filterComplex += `[${previousAudioLabel}][${i}:a]concat=n=2:v=0:a=1[${audioOutLabel}];`;
+    } else {
+      // For transitions, crossfade audio to match video xfade
+      filterComplex += `[${previousAudioLabel}][${i}:a]acrossfade=d=${transitionDurationSec}:c1=tri:c2=tri[${audioOutLabel}];`;
+    }
+    previousAudioLabel = audioOutLabel;
+  }
+  // Alias the final audio label
+  if (videoPaths.length > 1) {
+    filterComplex += `[${previousAudioLabel}]anull[aout];`;
+  } else {
+    filterComplex += `[0:a]anull[aout];`;
+  }
 
   // Remove trailing semicolon
   filterComplex = filterComplex.slice(0, -1);
