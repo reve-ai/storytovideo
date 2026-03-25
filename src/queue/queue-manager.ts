@@ -253,7 +253,15 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
-      // Create a new version of the dependent with updated dependency
+      // If the old item was a frame and this dependent is also a frame (continuity link),
+      // just update the dependency pointer — don't supersede/regenerate
+      const oldItem = this.getItem(oldItemId);
+      if (oldItem?.type === 'generate_frame' && dep.type === 'generate_frame') {
+        dep.dependencies = dep.dependencies.map(d => d === oldItemId ? newItemId : d);
+        continue;
+      }
+
+      // Normal cascade: create a new version of the dependent with updated dependency
       const updatedDeps = dep.dependencies.map(d =>
         d === oldItemId ? newItemId : this.latestVersionId(d)
       );
