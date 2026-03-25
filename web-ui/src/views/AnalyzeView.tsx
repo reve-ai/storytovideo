@@ -2,6 +2,31 @@ import { useCallback, useMemo, useState } from "react";
 import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 
+function ReviewAllButton({ runId }: { runId: string }) {
+  const [loading, setLoading] = useState(false);
+  const enqueueAll = usePipelineStore((s) => s.enqueueAllAnalysis);
+
+  const handleClick = useCallback(async () => {
+    setLoading(true);
+    try {
+      await enqueueAll(runId);
+    } finally {
+      setLoading(false);
+    }
+  }, [enqueueAll, runId]);
+
+  return (
+    <button
+      className="analyze-btn accept"
+      onClick={handleClick}
+      disabled={loading}
+      style={{ marginTop: 12 }}
+    >
+      {loading ? "Enqueuing…" : "Review All Clips"}
+    </button>
+  );
+}
+
 export default function AnalyzeView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const runs = useRunStore((s) => s.runs);
@@ -26,8 +51,9 @@ export default function AnalyzeView() {
 
   if (sorted.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center flex-col gap-2">
         <p className="text-[--muted] text-sm">No videos pending review</p>
+        <ReviewAllButton runId={activeRunId} />
       </div>
     );
   }

@@ -92,6 +92,7 @@ interface PipelineActions {
   fetchAnalyzeItems: (runId: string) => Promise<void>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
+  enqueueAllAnalysis: (runId: string) => Promise<number>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
 }
@@ -181,6 +182,19 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       set({ analyzeItems: get().analyzeItems.filter((i) => i.id !== itemId) });
     } catch (e) {
       console.error("rejectAnalyzeItem:", e);
+    }
+  },
+
+  enqueueAllAnalysis: async (runId: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/analyze/enqueue-all`, {
+        method: "POST",
+      });
+      const data: { created: number } = await res.json();
+      return data.created;
+    } catch (e) {
+      console.error("enqueueAllAnalysis:", e);
+      return 0;
     }
   },
 

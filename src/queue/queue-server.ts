@@ -633,6 +633,70 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/analyze/enqueue-all — create analyze_video items for all unreviewed clips
+      if (method === "POST" && action === "analyze" && pathParts.length === 5 && pathParts[4] === "enqueue-all") {
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        const state = qm.getState();
+        const analysis = state.storyAnalysis;
+        if (!analysis) { sendJson(res, 409, { error: "No story analysis available yet" }); return; }
+
+        const createdItems: WorkItem[] = [];
+        const allShots = analysis.scenes.flatMap(s => s.shots || []).filter(s => !s.skipped);
+
+        for (const shot of allShots) {
+          // Find the latest completed, non-superseded generate_video item for this shot
+          const videoItems = qm.getItemsByKey(`video:shot:${shot.shotNumber}`);
+          const completedVideo = videoItems.find(i => i.status === 'completed' && !i.supersededBy);
+          if (!completedVideo) continue;
+
+          // Check if an active (non-superseded, non-cancelled) analyze_video already exists
+          const existingAnalyze = qm.getItemsByKey(`analyze_video:shot:${shot.shotNumber}`);
+          if (existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) continue;
+
+          // Build reference image paths from generated outputs
+          const referenceImagePaths: string[] = [];
+          for (const [key, value] of Object.entries(state.generatedOutputs)) {
+            if (key.startsWith('character:') || key.startsWith('location:') || key.startsWith('object:')) {
+              const name = key.split(':')[1];
+              if (
+                shot.charactersPresent.includes(name) ||
+                shot.objectsPresent?.includes(name) ||
+                shot.location === name
+              ) {
+                referenceImagePaths.push(value);
+              }
+            }
+          }
+
+          const newItem = qm.addItem({
+            type: 'analyze_video',
+            queue: 'llm',
+            itemKey: `analyze_video:shot:${shot.shotNumber}`,
+            dependencies: [completedVideo.id],
+            inputs: {
+              shotNumber: shot.shotNumber,
+              videoPath: completedVideo.outputs.path as string,
+              startFramePath: completedVideo.inputs.startFramePath as string,
+              referenceImagePaths,
+              shot,
+            },
+          });
+          createdItems.push(newItem);
+        }
+
+        if (createdItems.length > 0) {
+          qm.save();
+          await runManager.resumeRun(runId);
+          for (const item of createdItems) {
+            emitEvent(runId, "item_started", { itemId: item.id, type: item.type, queue: item.queue, itemKey: item.itemKey });
+          }
+        }
+
+        sendJson(res, 200, { runId, created: createdItems.length, items: createdItems });
+        return;
+      }
+
       // POST /api/runs/:id/analyze/:itemId/accept — accept recommendation
       if (method === "POST" && action === "analyze" && pathParts.length >= 6 && pathParts[5] === "accept") {
         const itemId = decodeURIComponent(pathParts[4]);
