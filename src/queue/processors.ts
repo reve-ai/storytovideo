@@ -94,6 +94,9 @@ export class QueueProcessor extends EventEmitter {
   start(): void {
     if (this.running) return;
     this.running = true;
+    // Rebuild asset library from any already-completed assets in generatedOutputs
+    const state = this.queueManager.getState();
+    this.rebuildAssetLibrary(state);
     this.normalLanePromise = this.runLane('normal');
     this.highLanePromise = this.runLane('high');
   }
