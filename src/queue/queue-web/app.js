@@ -26,6 +26,10 @@ function playVideo(container, videoSrc) {
   video.controls = true;
   video.autoplay = true;
   video.className = container.dataset.videoClass || 'inline-video';
+  // Constrain video to the thumbnail container's current dimensions
+  const rect = container.getBoundingClientRect();
+  video.style.maxWidth = rect.width + 'px';
+  video.style.maxHeight = rect.height + 'px';
   video.addEventListener('ended', () => {
     container.innerHTML = container.dataset.thumbnailHtml;
     container.style.height = '';
