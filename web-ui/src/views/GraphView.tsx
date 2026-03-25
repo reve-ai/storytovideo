@@ -109,6 +109,7 @@ export default function GraphView() {
                 key={node.id}
                 transform={`translate(${pos.x},${pos.y})`}
                 className="cursor-pointer"
+                data-opens-detail
                 style={{ opacity: node.status === "superseded" ? 0.5 : 1 }}
                 onClick={() => openDetail(node.id)}
               >

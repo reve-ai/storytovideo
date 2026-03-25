@@ -58,11 +58,8 @@ export default function DetailPanel() {
     function handleClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
       if (panelRef.current?.contains(target)) return;
-      // Don't close when clicking queue items, graph nodes, or story cards
-      if (target.closest(".q-item")) return;
-      if (target.closest(".graph-node")) return;
-      if (target.closest(".story-shot-card")) return;
-      if (target.closest(".video-thumbnail")) return;
+      // Don't close when clicking elements that open the detail panel
+      if (target.closest("[data-opens-detail]")) return;
       closeDetail();
     }
     document.addEventListener("click", handleClick);

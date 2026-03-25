@@ -102,6 +102,7 @@ export default function QueueItem({ item }: QueueItemProps) {
   return (
     <div
       className={`cursor-pointer rounded-lg border border-[--border] bg-[--surface] p-3 transition-colors hover:border-[--accent] ${item.priority === "high" ? "border-l-2 border-l-[--orange]" : ""}`}
+      data-opens-detail
       onClick={() => openDetail(item.id)}
     >
       {/* Header */}

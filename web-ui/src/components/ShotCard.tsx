@@ -70,7 +70,7 @@ export default function ShotCard({
       : actionPrompt;
 
   return (
-    <div className="story-shot-card" onClick={handleCardClick}>
+    <div className="story-shot-card" data-opens-detail onClick={handleCardClick}>
       {/* Media area */}
       {playing && videoSrc ? (
         <div className="story-shot-media" style={{ aspectRatio }}>
