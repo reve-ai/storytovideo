@@ -8,7 +8,7 @@ import type { QueueName, Priority, WorkItem, RunState } from './types.js';
 import { QueueManager } from './queue-manager.js';
 import { analyzeStory } from '../tools/analyze-story.js';
 import { storyToScript } from '../tools/story-to-script.js';
-import { planShotsForScene, CINEMATIC_RULES } from '../tools/plan-shots.js';
+import { planShotsForScene } from '../tools/plan-shots.js';
 import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
@@ -255,14 +255,51 @@ export class QueueProcessor extends EventEmitter {
     const { object } = await (generateObject as any)({
       model: anthropic('claude-opus-4-6'),
       schema: sceneShotsSchema,
-      prompt: `You are a cinematic shot planner. Plan shots for scene ${sceneNumber} of this story.
+      prompt: `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
 
-${CINEMATIC_RULES}
+HOW GROK VIDEO GENERATION WORKS:
+Each shot has a START FRAME (an image prompt describing the visual setup) and an ACTION PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the action prompt. There are no end frames — Grok controls where the shot ends based on the action.
 
-IMPORTANT FOR GROK: Since the Grok backend does not use end frames, set endFramePrompt to an empty string for all shots. Apply the cinematic rules normally, but any mention of end frames should be treated as composition guidance only.
+SHOT PLANNING PRINCIPLES:
+- Each shot = one camera setup on one subject. To change camera angle or subject, make a new shot.
+- The startFramePrompt describes the complete visual scene: composition, characters, setting, lighting, camera angle.
+- The actionPrompt describes the motion/action that unfolds from that starting point (character gestures, movement, expressions, etc.).
+- endFramePrompt must always be an empty string "" (the field is required by the schema but unused).
+- Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
+
+COMPOSITION TYPES (what the camera sees and what happens):
+- wide_establishing: Wide view of the setting. Shows the environment, characters in context, spatial relationships. Action: characters move through space, enter/exit, interact with environment.
+- over_the_shoulder: Camera behind one character's shoulder, focused on the person they're facing. Action: the facing character speaks, reacts, gestures.
+- two_shot: Both characters framed together. Action: characters interact, exchange dialogue, react to each other.
+- close_up: Tight on one face or detail. Action: expressions change, character speaks, emotional reactions play out.
+- medium_shot: Waist-up framing of one character. Action: character speaks, gestures, shifts posture.
+- tracking: Camera follows a subject through space. Action: subject walks, runs, moves through environment.
+- pov: First-person view of what a character sees. Action: hands interact with objects, environment changes, reveals unfold.
+- insert_cutaway: Close detail of an object or prop. Action: hand picks up object, screen displays change, liquid pours, etc.
+- low_angle: Dramatic upward angle on a subject. Action: character looms, speaks powerfully, stands up.
+- high_angle: Dramatic downward angle on a subject. Action: character looks small, vulnerable, or surveyed from above.
+
+CONTINUITY (continuousFromPrevious):
+- When true: the previous shot's start frame is used as a style/continuity reference for this shot.
+- Set true ONLY when: same location, same characters, same visual style, and the shots are meant to feel like continuous coverage of the same moment.
+- Set false when: it's the first shot of a scene, the subject changes, the location changes, there's a time skip, or the camera setup is very different.
+
+DIALOGUE PACING:
+- ~2.5 words/second in film
+- Calculate minimum duration from dialogue: word_count / 2.5 + 0.5s buffer, rounded up to nearest integer.
+- Not every shot needs dialogue — silence and reactions are valid.
+
+DIALOGUE FORMATTING:
+- NEVER use ALL CAPS for normal words — TTS engines spell them out letter by letter.
+- Only use ALL CAPS for actual acronyms (FBI, CIA, DNA, NASA, etc.).
+- For emphasis, use the word normally — TTS handles natural stress from context.
+
+SCENE TRANSITIONS:
+- Scene 1 always uses "cut"
+- "cut" for immediate cuts (default, most common)
+- "fade_black" for dramatic mood shifts, time jumps, or emotional beats
 
 Plan shots for this scene with:
-- sceneNumber: the scene number
 - transition: the transition type into this scene
 - shots: an array of shot objects with all required fields
 
@@ -271,12 +308,11 @@ For this scene:
 2. ${durationGuidance}
 3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
 4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, or internal thought, include it as dialogue in the appropriate shot. Shot durations MUST be whole numbers (integers), minimum 2 seconds. Never use fractional durations like 1.5 or 2.5. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s → round up to 6s minimum.
-5. All shots use first_last_frame generation strategy
-6. Write detailed frame prompts that include the composition type
-7. Write action prompts for video generation. In actionPrompt and startFramePrompt and endFramePrompt fields ONLY, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name — character names in video prompts trigger content safety filters. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
+5. Write detailed startFramePrompt that fully describes the visual scene: composition type, characters' appearance, setting, lighting, camera angle. endFramePrompt must be an empty string "".
+6. Write actionPrompt describing what happens during the shot — character motion, gestures, expressions, environmental changes.
+7. In actionPrompt and startFramePrompt fields ONLY, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name — character names in video prompts trigger content safety filters. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
 8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
-9. The camera is FIXED for the duration of each shot. The start frame prompt must describe what the SAME stationary camera sees at the start of the shot. Since Grok does not use end frames, set endFramePrompt to an empty string for every shot.
-10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
+9. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
 
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}
