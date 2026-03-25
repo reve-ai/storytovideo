@@ -4,6 +4,7 @@ import type { StoryAnalysis, AssetLibrary } from '../types.js';
 export type WorkItemType =
   | 'story_to_script'
   | 'analyze_story'
+  | 'artifact'
   | 'name_run'
   | 'plan_shots'
   | 'generate_asset'

@@ -184,6 +184,7 @@ export class QueueProcessor extends EventEmitter {
     switch (item.type) {
       case 'story_to_script': return this.handleStoryToScript(item, signal);
       case 'analyze_story': return this.handleAnalyzeStory(item, signal);
+      case 'artifact': return this.handleArtifact(item);
       case 'name_run': return this.handleNameRun(item, signal);
       case 'plan_shots': return this.handlePlanShots(item, signal);
       case 'generate_asset': return this.handleGenerateAsset(item, signal);
@@ -216,6 +217,75 @@ export class QueueProcessor extends EventEmitter {
     const analysis = await analyzeStory(textToAnalyze);
     state.storyAnalysis = analysis;
     return { analysis };
+  }
+
+  private handleArtifact(item: WorkItem): Record<string, unknown> {
+    const state = this.queueManager.getState();
+    const artifactType = item.inputs.artifactType as string;
+
+    if (!state.storyAnalysis) {
+      // Backward compat: if no analysis yet, just pass through
+      return { ...item.inputs };
+    }
+
+    const analysis = state.storyAnalysis;
+
+    switch (artifactType) {
+      case 'character': {
+        const name = item.inputs.name as string;
+        const existing = analysis.characters.find(c => c.name === name);
+        if (existing) {
+          existing.physicalDescription = item.inputs.physicalDescription as string;
+          existing.personality = item.inputs.personality as string;
+          existing.ageRange = item.inputs.ageRange as string;
+        } else {
+          analysis.characters.push({
+            name,
+            physicalDescription: item.inputs.physicalDescription as string,
+            personality: item.inputs.personality as string,
+            ageRange: item.inputs.ageRange as string,
+          });
+        }
+        break;
+      }
+      case 'location': {
+        const name = item.inputs.name as string;
+        const existing = analysis.locations.find(l => l.name === name);
+        if (existing) {
+          existing.visualDescription = item.inputs.visualDescription as string;
+        }
+        break;
+      }
+      case 'object': {
+        const name = item.inputs.name as string;
+        const objects = analysis.objects ?? [];
+        const existing = objects.find(o => o.name === name);
+        if (existing) {
+          existing.visualDescription = item.inputs.visualDescription as string;
+        }
+        break;
+      }
+      case 'scene': {
+        const sceneNumber = item.inputs.sceneNumber as number;
+        const existing = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+        if (existing) {
+          existing.title = item.inputs.title as string;
+          existing.narrativeSummary = item.inputs.narrativeSummary as string;
+          existing.charactersPresent = item.inputs.charactersPresent as string[];
+          existing.location = item.inputs.location as string;
+          existing.estimatedDurationSeconds = item.inputs.estimatedDurationSeconds as number;
+        }
+        break;
+      }
+      case 'pacing': {
+        analysis.artStyle = item.inputs.artStyle as string;
+        analysis.title = item.inputs.title as string;
+        break;
+      }
+    }
+
+    this.queueManager.save();
+    return { ...item.inputs };
   }
 
   private async handleNameRun(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -552,6 +622,9 @@ ${JSON.stringify(analysis, null, 2)}`,
       case 'analyze_story':
         this.seedAfterAnalysis(item);
         break;
+      case 'artifact':
+        this.seedAfterArtifact(item);
+        break;
       case 'plan_shots':
         this.seedAfterPlanShots(item, outputs);
         break;
@@ -569,64 +642,156 @@ ${JSON.stringify(analysis, null, 2)}`,
     const analysis = state.storyAnalysis;
     if (!analysis) return;
 
-    // Seed plan_shots for each scene
-    for (const scene of analysis.scenes) {
-      this.queueManager.addItem({
-        type: 'plan_shots',
-        queue: 'llm',
-        itemKey: `plan_shots:scene:${scene.sceneNumber}`,
-        dependencies: [analyzeItem.id],
-        inputs: { sceneNumber: scene.sceneNumber },
-        priority: analyzeItem.priority,
-      });
-    }
-
-    // Seed generate_asset for characters (front view)
+    // Seed character artifacts
     for (const char of analysis.characters) {
       this.queueManager.addItem({
-        type: 'generate_asset',
-        queue: 'image',
-        itemKey: `asset:character:${char.name}:front`,
+        type: 'artifact',
+        queue: 'llm',
+        itemKey: `artifact:character:${char.name}`,
         dependencies: [analyzeItem.id],
         inputs: {
-          characterName: char.name,
-          description: char.physicalDescription,
-          artStyle: analysis.artStyle,
+          artifactType: 'character',
+          name: char.name,
+          physicalDescription: char.physicalDescription,
+          personality: char.personality,
+          ageRange: char.ageRange,
         },
         priority: analyzeItem.priority,
       });
     }
 
-    // Seed generate_asset for locations
+    // Seed location artifacts
     for (const loc of analysis.locations) {
       this.queueManager.addItem({
-        type: 'generate_asset',
-        queue: 'image',
-        itemKey: `asset:location:${loc.name}`,
+        type: 'artifact',
+        queue: 'llm',
+        itemKey: `artifact:location:${loc.name}`,
         dependencies: [analyzeItem.id],
         inputs: {
-          locationName: loc.name,
-          description: loc.visualDescription,
-          artStyle: analysis.artStyle,
+          artifactType: 'location',
+          name: loc.name,
+          visualDescription: loc.visualDescription,
         },
         priority: analyzeItem.priority,
       });
     }
 
-    // Seed generate_asset for objects
+    // Seed object artifacts
     for (const obj of (analysis.objects ?? [])) {
       this.queueManager.addItem({
-        type: 'generate_asset',
-        queue: 'image',
-        itemKey: `asset:object:${obj.name}`,
+        type: 'artifact',
+        queue: 'llm',
+        itemKey: `artifact:object:${obj.name}`,
         dependencies: [analyzeItem.id],
         inputs: {
-          objectName: obj.name,
-          description: obj.visualDescription,
-          artStyle: analysis.artStyle,
+          artifactType: 'object',
+          name: obj.name,
+          visualDescription: obj.visualDescription,
         },
         priority: analyzeItem.priority,
       });
+    }
+
+    // Seed scene artifacts
+    for (const scene of analysis.scenes) {
+      this.queueManager.addItem({
+        type: 'artifact',
+        queue: 'llm',
+        itemKey: `artifact:scene:${scene.sceneNumber}`,
+        dependencies: [analyzeItem.id],
+        inputs: {
+          artifactType: 'scene',
+          sceneNumber: scene.sceneNumber,
+          title: scene.title,
+          narrativeSummary: scene.narrativeSummary,
+          charactersPresent: scene.charactersPresent,
+          location: scene.location,
+          estimatedDurationSeconds: scene.estimatedDurationSeconds,
+        },
+        priority: analyzeItem.priority,
+      });
+    }
+
+    // Seed pacing artifact
+    this.queueManager.addItem({
+      type: 'artifact',
+      queue: 'llm',
+      itemKey: 'artifact:pacing',
+      dependencies: [analyzeItem.id],
+      inputs: {
+        artifactType: 'pacing',
+        title: analysis.title,
+        artStyle: analysis.artStyle,
+      },
+      priority: analyzeItem.priority,
+    });
+  }
+
+
+  private seedAfterArtifact(item: WorkItem): void {
+    const state = this.queueManager.getState();
+    const artifactType = item.inputs.artifactType as string;
+
+    switch (artifactType) {
+      case 'character': {
+        this.queueManager.addItem({
+          type: 'generate_asset',
+          queue: 'image',
+          itemKey: `asset:character:${item.inputs.name}:front`,
+          dependencies: [item.id],
+          inputs: {
+            characterName: item.inputs.name,
+            description: item.inputs.physicalDescription,
+            artStyle: state.storyAnalysis?.artStyle ?? '',
+          },
+          priority: item.priority,
+        });
+        break;
+      }
+      case 'location': {
+        this.queueManager.addItem({
+          type: 'generate_asset',
+          queue: 'image',
+          itemKey: `asset:location:${item.inputs.name}`,
+          dependencies: [item.id],
+          inputs: {
+            locationName: item.inputs.name,
+            description: item.inputs.visualDescription,
+            artStyle: state.storyAnalysis?.artStyle ?? '',
+          },
+          priority: item.priority,
+        });
+        break;
+      }
+      case 'object': {
+        this.queueManager.addItem({
+          type: 'generate_asset',
+          queue: 'image',
+          itemKey: `asset:object:${item.inputs.name}`,
+          dependencies: [item.id],
+          inputs: {
+            objectName: item.inputs.name,
+            description: item.inputs.visualDescription,
+            artStyle: state.storyAnalysis?.artStyle ?? '',
+          },
+          priority: item.priority,
+        });
+        break;
+      }
+      case 'scene': {
+        this.queueManager.addItem({
+          type: 'plan_shots',
+          queue: 'llm',
+          itemKey: `plan_shots:scene:${item.inputs.sceneNumber}`,
+          dependencies: [item.id],
+          inputs: { sceneNumber: item.inputs.sceneNumber },
+          priority: item.priority,
+        });
+        break;
+      }
+      case 'pacing':
+        // No downstream items — artStyle feeds into assets/frames via state
+        break;
     }
   }
 

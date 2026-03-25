@@ -543,6 +543,13 @@ function getItemDescription(item) {
   if (item.type === 'generate_frame') desc = item.inputs?.shot?.startFramePrompt;
   else if (item.type === 'generate_video') desc = item.inputs?.shot?.actionPrompt;
   else if (item.type === 'generate_asset') desc = item.inputs?.description;
+  else if (item.type === 'artifact') {
+    const at = item.inputs?.artifactType;
+    if (at === 'character') desc = item.inputs?.physicalDescription;
+    else if (at === 'location' || at === 'object') desc = item.inputs?.visualDescription;
+    else if (at === 'scene') desc = item.inputs?.narrativeSummary;
+    else if (at === 'pacing') desc = item.inputs?.artStyle;
+  }
   if (!desc) return null;
   return desc.length > 80 ? desc.slice(0, 80) + '…' : desc;
 }
@@ -551,7 +558,9 @@ function renderQueueItem(item) {
   const highClass = item.priority === 'high' ? ' high-priority' : '';
   const vBadge = item.version > 1 ? `<span class="badge badge-version">v${item.version}</span>` : '';
   const priBadge = item.priority === 'high' ? '<span class="badge badge-high">⚡ high</span>' : '';
-  const typeName = item.type.replace(/_/g, ' ');
+  const typeName = item.type === 'artifact' && item.inputs?.artifactType
+    ? item.inputs.artifactType
+    : item.type.replace(/_/g, ' ');
 
   let actions = '';
   if (item.status === 'failed') {
