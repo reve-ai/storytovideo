@@ -242,30 +242,41 @@ export class QueueProcessor extends EventEmitter {
     const scene = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
     if (!scene) throw new Error(`Scene ${sceneNumber} not found`);
 
-    const objectNames = (analysis.objects ?? []).map(o => o.name);
-    const objectsNote = objectNames.length > 0
-      ? `Known objects: ${objectNames.join(', ')}.`
+    const objectsNote = (analysis.objects ?? []).length > 0
+      ? ` Known objects: ${(analysis.objects ?? []).map(o => o.name).join(', ')}.`
       : '';
 
+    const durationGuidance = `Shots can be 1-15 seconds long. Choose the duration that best fits the action:
+- Very short (1-2s): flash cuts, inserts, whip pans, rapid montage
+- Short (2-4s): quick reactions, insert cutaways, snappy dialogue
+- Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
+- Long (8-15s): slow reveals, extended action, lingering moments`;
+
     const { object } = await (generateObject as any)({
-      model: anthropic('claude-sonnet-4-20250514'),
+      model: anthropic('claude-opus-4-6'),
       schema: sceneShotsSchema,
       prompt: `You are a cinematic shot planner. Plan shots for scene ${sceneNumber} of this story.
 
 ${CINEMATIC_RULES}
 
-IMPORTANT FOR GROK: Since the Grok backend does not use end frames, set endFramePrompt to an empty string for all shots.
+IMPORTANT FOR GROK: Since the Grok backend does not use end frames, set endFramePrompt to an empty string for all shots. Apply the cinematic rules normally, but any mention of end frames should be treated as composition guidance only.
 
-Rules:
-- Shots can be 1-15 seconds long. Choose duration that fits the action.
-- Each shot is exactly what a single, stationary camera sees.
-- In actionPrompt and startFramePrompt, describe characters by appearance, not name.
-- In dialogue, use actual character names.
-- Set speaker to identify who is speaking.
-- Populate objectsPresent with key objects in each shot. ${objectsNote}
-- Scene 1 always uses "cut" transition.
-- Shot durations must be whole numbers (integers), minimum 2 seconds.
-- Calculate minimum duration from dialogue word count at ~2.5 words/second + 0.5s buffer.
+Plan shots for this scene with:
+- sceneNumber: the scene number
+- transition: the transition type into this scene
+- shots: an array of shot objects with all required fields
+
+For this scene:
+1. Choose a transition type (Scene 1 is always "cut")
+2. ${durationGuidance}
+3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
+4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, or internal thought, include it as dialogue in the appropriate shot. Shot durations MUST be whole numbers (integers), minimum 2 seconds. Never use fractional durations like 1.5 or 2.5. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s → round up to 6s minimum.
+5. All shots use first_last_frame generation strategy
+6. Write detailed frame prompts that include the composition type
+7. Write action prompts for video generation. In actionPrompt and startFramePrompt and endFramePrompt fields ONLY, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name — character names in video prompts trigger content safety filters. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
+8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
+9. The camera is FIXED for the duration of each shot. The start frame prompt must describe what the SAME stationary camera sees at the start of the shot. Since Grok does not use end frames, set endFramePrompt to an empty string for every shot.
+10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
 
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}
