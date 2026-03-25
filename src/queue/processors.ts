@@ -530,6 +530,7 @@ ${JSON.stringify(analysis, null, 2)}`,
             outputDir: join(state.outputDir, 'videos'),
             videoBackend: 'grok',
             characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+            aspectRatio,
             abortSignal: signal,
           });
 
