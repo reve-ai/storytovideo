@@ -46,12 +46,12 @@ export default function VideoView() {
 
   return (
     <div className="flex h-full items-center justify-center p-8">
-      <div className="w-full max-w-3xl">
+      <div className="flex w-full max-w-3xl flex-col items-center max-h-[calc(100vh-8rem)]">
         <h3 className="mb-4 text-sm font-semibold">🎬 Final Assembled Video</h3>
         <VideoThumbnail
           videoSrc={src}
           aspectRatio={aspectRatio}
-          className="rounded-lg"
+          className="max-h-[calc(100vh-12rem)] rounded-lg"
         />
       </div>
     </div>

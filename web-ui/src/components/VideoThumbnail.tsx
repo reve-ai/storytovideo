@@ -36,7 +36,7 @@ export default function VideoThumbnail({
         controls
         autoPlay
         onEnded={handleEnded}
-        className={`w-full rounded ${className}`}
+        className={`w-full max-h-[inherit] object-contain rounded ${className}`}
         style={aspectRatio ? { aspectRatio } : undefined}
       />
     );
