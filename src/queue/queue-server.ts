@@ -2,11 +2,15 @@ import "dotenv/config";
 import {
   createReadStream,
   existsSync,
+  mkdirSync,
   readFileSync,
   statSync,
+  writeFileSync,
 } from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { join, resolve, extname } from "path";
+import { randomUUID } from "crypto";
+import sharp from "sharp";
 
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import type { QueueName, WorkItem } from "./types.js";
@@ -160,6 +164,57 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 1_000_000): Promise
   const raw = Buffer.concat(chunks).toString("utf-8");
   if (raw.trim().length === 0) return {};
   try { return JSON.parse(raw); } catch { throw new Error("Invalid JSON"); }
+}
+
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB
+
+async function readRawBody(req: IncomingMessage, maxBytes = MAX_UPLOAD_BYTES): Promise<Buffer> {
+  let total = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    total += buf.length;
+    if (total > maxBytes) throw new Error("Upload exceeds 20MB limit");
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Pad an image buffer to match a target aspect ratio by adding black letterbox/pillarbox bars.
+ */
+async function padImageToAspectRatio(imageBuffer: Buffer, targetAspectRatio: string): Promise<Buffer> {
+  const metadata = await sharp(imageBuffer).metadata();
+  const srcWidth = metadata.width!;
+  const srcHeight = metadata.height!;
+
+  const [arW, arH] = targetAspectRatio.split(":").map(Number);
+  const targetRatio = arW / arH;
+  const srcRatio = srcWidth / srcHeight;
+
+  // If already correct ratio (within tolerance), return original
+  if (Math.abs(srcRatio - targetRatio) < 0.05) {
+    return imageBuffer;
+  }
+
+  let newWidth: number, newHeight: number;
+  if (srcRatio > targetRatio) {
+    // Image is wider than target — add height (letterbox)
+    newWidth = srcWidth;
+    newHeight = Math.round(srcWidth / targetRatio);
+  } else {
+    // Image is taller than target — add width (pillarbox)
+    newHeight = srcHeight;
+    newWidth = Math.round(srcHeight * targetRatio);
+  }
+
+  return sharp(imageBuffer)
+    .resize(newWidth, newHeight, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    })
+    .png()
+    .toBuffer();
 }
 
 // ---------------------------------------------------------------------------
@@ -493,6 +548,65 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const run = runManager.getRun(runId);
         if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
         handleMediaRequest(res, req, resolveOutputDir(run.outputDir), pathParts.slice(4));
+        return;
+      }
+
+      // POST /api/runs/:id/upload — Upload an image for a run
+      if (method === "POST" && action === "upload") {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+        const imageData = await readRawBody(req);
+        if (imageData.length === 0) {
+          sendJson(res, 400, { error: "Empty request body" });
+          return;
+        }
+
+        // Determine file extension from Content-Type
+        const contentType = req.headers["content-type"] ?? "image/png";
+        const extMap: Record<string, string> = {
+          "image/png": ".png",
+          "image/jpeg": ".jpg",
+          "image/webp": ".webp",
+        };
+        const ext = extMap[contentType] ?? ".png";
+
+        // Save to uploads/ subfolder with UUID filename
+        const outputDir = resolveOutputDir(run.outputDir);
+        const uploadsDir = join(outputDir, "uploads");
+        mkdirSync(uploadsDir, { recursive: true });
+        const filename = `${randomUUID()}${ext}`;
+        const filePath = join(uploadsDir, filename);
+
+        // Pad to target aspect ratio if needed
+        const targetAspectRatio = run.options.aspectRatio ?? "16:9";
+        const paddedBuffer = await padImageToAspectRatio(imageData, targetAspectRatio);
+        writeFileSync(filePath, paddedBuffer);
+
+        const relativePath = `uploads/${filename}`;
+
+        // If itemId and field are provided, update the work item and trigger redo
+        const itemId = url.searchParams.get("itemId");
+        const field = url.searchParams.get("field");
+        if (itemId && field) {
+          const qm = runManager.getQueueManager(runId);
+          if (qm) {
+            const item = qm.getItem(itemId);
+            if (item) {
+              // Update the item's outputs with the new path
+              (item.outputs as Record<string, unknown>)[field] = relativePath;
+              // Redo the item so downstream items cascade
+              const newItem = runManager.redoItem(runId, itemId, { ...item.inputs, [field]: relativePath });
+              if (newItem) {
+                qm.save();
+                await runManager.resumeRun(runId);
+                emitEvent(runId, "item_redo", { oldItemId: itemId, newItem });
+              }
+            }
+          }
+        }
+
+        sendJson(res, 200, { path: relativePath });
         return;
       }
 
