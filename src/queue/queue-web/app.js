@@ -28,10 +28,14 @@ function playVideo(container, videoSrc) {
   video.className = container.dataset.videoClass || 'inline-video';
   video.addEventListener('ended', () => {
     container.innerHTML = container.dataset.thumbnailHtml;
+    container.style.height = '';
+    container.style.overflow = '';
     container.onclick = () => playVideo(container, videoSrc);
   });
   container.dataset.thumbnailHtml = container.innerHTML;
   container.innerHTML = '';
+  container.style.height = 'auto';
+  container.style.overflow = 'visible';
   container.appendChild(video);
   container.onclick = null;
 }
