@@ -92,6 +92,11 @@ async function loadRuns() {
       const latest = state.runs[state.runs.length - 1];
       sel.value = latest.id;
       selectRun(latest.id);
+    } else {
+      // No runs left — hide run controls
+      $('play-pause-btn').style.display = 'none';
+      $('run-status-badge').style.display = 'none';
+      $('delete-run-btn').style.display = 'none';
     }
   } catch (e) {
     console.error('Failed to load runs:', e);
@@ -138,6 +143,7 @@ function setupCreateDialog() {
 // --- Play/Pause ---
 function setupPlayPause() {
   $('play-pause-btn').addEventListener('click', togglePlayPause);
+  $('delete-run-btn').addEventListener('click', deleteRun);
 }
 
 async function togglePlayPause() {
@@ -166,14 +172,29 @@ async function fetchRunStatus() {
   } catch (e) { console.error('fetchRunStatus:', e); }
 }
 
+async function deleteRun() {
+  if (!state.activeRunId) return;
+  if (!confirm('Delete this run? This cannot be undone.')) return;
+  try {
+    await fetch(`${API}/api/runs/${state.activeRunId}`, { method: 'DELETE' });
+    state.activeRunId = null;
+    disconnectSSE();
+    await loadRuns();
+  } catch (e) {
+    console.error('Failed to delete run:', e);
+  }
+}
+
 function updateRunStatus(status) {
   state.runStatus = status;
   const btn = $('play-pause-btn');
   const badge = $('run-status-badge');
+  const deleteBtn = $('delete-run-btn');
 
   if (!state.activeRunId) {
     btn.style.display = 'none';
     badge.style.display = 'none';
+    deleteBtn.style.display = 'none';
     return;
   }
 
@@ -191,6 +212,11 @@ function updateRunStatus(status) {
   } else {
     btn.style.display = 'none';
   }
+
+  // Show delete button, disabled when running
+  deleteBtn.style.display = '';
+  deleteBtn.disabled = (status === 'running');
+  deleteBtn.title = status === 'running' ? 'Stop the run before deleting' : 'Delete run';
 }
 
 function showToast(message, type = 'info') {
