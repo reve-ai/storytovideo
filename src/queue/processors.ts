@@ -22,7 +22,7 @@ import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
 
 const perSceneShotSchema = z.object({
   shotInScene: z.number(),
-  durationSeconds: z.number().min(2).max(15),
+  durationSeconds: z.number(),
   shotType: z.literal('first_last_frame'),
   composition: z.string(),
   startFramePrompt: z.string(),

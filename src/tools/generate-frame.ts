@@ -353,7 +353,7 @@ export const generateFrameTool = {
       shotNumber: z.number(),
       sceneNumber: z.number(),
       shotInScene: z.number(),
-      durationSeconds: z.number().min(0.5).max(10),
+      durationSeconds: z.number(),
       shotType: z.literal("first_last_frame"),
       composition: z.string(),
       startFramePrompt: z.string(),
