@@ -43,7 +43,10 @@ export default function QueueColumn({ name, snapshot }: QueueColumnProps) {
     { label: "Cancelled", status: "cancelled", items: snapshot.cancelled || [] },
   ];
 
-  const allItems = groups.flatMap((g) => g.items);
+  const activeGroups = groups.filter(
+    (g) => g.status !== "superseded" && g.status !== "cancelled",
+  );
+  const activeItems = activeGroups.flatMap((g) => g.items);
   const doneCount = (snapshot.completed || []).length;
 
   return (
@@ -51,7 +54,7 @@ export default function QueueColumn({ name, snapshot }: QueueColumnProps) {
       <div className="flex items-center justify-between border-b border-[--border] px-3 py-2">
         <span className="text-sm font-semibold">{COLUMN_LABELS[name]}</span>
         <span className="text-xs text-[--muted]">
-          {doneCount}/{allItems.length}
+          {doneCount}/{activeItems.length}
         </span>
       </div>
       <div className="flex-1 space-y-1 overflow-y-auto p-2">

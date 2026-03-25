@@ -29,8 +29,6 @@ export function getAllItems(
       q.pending,
       q.completed,
       q.failed,
-      q.superseded,
-      q.cancelled,
     ]) {
       if (group) items.push(...group);
     }

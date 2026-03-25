@@ -22,7 +22,7 @@ export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) 
   for (const qName of ["llm", "image", "video"] as QueueName[]) {
     const q = queues[qName];
     if (!q) continue;
-    for (const g of [q.inProgress, q.pending, q.completed, q.failed, q.superseded, q.cancelled]) {
+    for (const g of [q.inProgress, q.pending, q.completed, q.failed]) {
       if (g) totalItems += g.length;
     }
     completedItems += (q.completed || []).length;
