@@ -91,6 +91,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
     await Promise.all([
       pipeline.fetchQueues(runId),
       pipeline.fetchGraph(runId),
+      pipeline.fetchAnalyzeItems(runId),
       get().fetchRunStatus(),
     ]);
 

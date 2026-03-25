@@ -21,6 +21,7 @@ export type WorkItemType =
   | "generate_asset"
   | "generate_frame"
   | "generate_video"
+  | "analyze_video"
   | "assemble";
 export type Priority = "normal" | "high";
 
@@ -37,6 +38,7 @@ export interface WorkItem {
   outputs: Record<string, unknown>;
   retryCount: number;
   error: string | null;
+  reviewStatus?: string;
   supersededBy: string | null;
   createdAt: string;
   startedAt: string | null;
@@ -80,12 +82,16 @@ export type SSEStatus = "disconnected" | "connecting" | "connected";
 interface PipelineState {
   queues: Record<QueueName, QueueSnapshot | null>;
   graph: DependencyGraph | null;
+  analyzeItems: WorkItem[];
   sseStatus: SSEStatus;
 }
 
 interface PipelineActions {
   fetchQueues: (runId: string) => Promise<void>;
   fetchGraph: (runId: string) => Promise<void>;
+  fetchAnalyzeItems: (runId: string) => Promise<void>;
+  acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
+  rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
 }
@@ -97,6 +103,7 @@ let eventSource: EventSource | null = null;
 export const usePipelineStore = create<PipelineStore>((set, get) => ({
   queues: { llm: null, image: null, video: null },
   graph: null,
+  analyzeItems: [],
   sseStatus: "disconnected",
 
   fetchQueues: async (runId: string) => {
@@ -143,6 +150,40 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     }
   },
 
+  fetchAnalyzeItems: async (runId: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/analyze`);
+      const data: { runId: string; items: WorkItem[] } = await res.json();
+      set({ analyzeItems: data.items });
+    } catch (e) {
+      console.error("fetchAnalyzeItems:", e);
+    }
+  },
+
+  acceptAnalyzeItem: async (runId: string, itemId: string, inputs?: Record<string, unknown>) => {
+    try {
+      await fetch(`/api/runs/${runId}/analyze/${itemId}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inputs ? { inputs } : {}),
+      });
+      set({ analyzeItems: get().analyzeItems.filter((i) => i.id !== itemId) });
+    } catch (e) {
+      console.error("acceptAnalyzeItem:", e);
+    }
+  },
+
+  rejectAnalyzeItem: async (runId: string, itemId: string) => {
+    try {
+      await fetch(`/api/runs/${runId}/analyze/${itemId}/reject`, {
+        method: "POST",
+      });
+      set({ analyzeItems: get().analyzeItems.filter((i) => i.id !== itemId) });
+    } catch (e) {
+      console.error("rejectAnalyzeItem:", e);
+    }
+  },
+
   connectSSE: (runId: string) => {
     get().disconnectSSE();
 
@@ -163,6 +204,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       if (!activeRunId) return;
       get().fetchQueues(activeRunId);
       get().fetchGraph(activeRunId);
+      get().fetchAnalyzeItems(activeRunId);
     };
 
     const handleItemEvent = () => {

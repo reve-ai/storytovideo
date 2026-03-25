@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { getUrlState, setUrlState } from "./run-store";
 
-export type ViewName = "queue" | "graph" | "story" | "video";
+export type ViewName = "queue" | "graph" | "story" | "video" | "analyze";
 export type ToastType = "info" | "warning" | "error";
 
 export interface ToastMessage {

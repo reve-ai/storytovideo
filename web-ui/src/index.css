@@ -310,3 +310,142 @@ body {
   .story-shots-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
 
+/* Analyze view */
+.analyze-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+}
+
+.analyze-card {
+  display: flex;
+  gap: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.analyze-card-media {
+  flex: 0 0 320px;
+  background: #000;
+  display: flex;
+  align-items: center;
+}
+
+.analyze-card-media video,
+.analyze-card-media img {
+  width: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.analyze-placeholder {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.analyze-card-body {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.analyze-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.analyze-score {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-left: auto;
+}
+
+.analyze-detail {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.analyze-section {
+  font-size: 0.8rem;
+}
+
+.analyze-section h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.analyze-section ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+}
+
+.analyze-section li {
+  margin-bottom: 0.15rem;
+}
+
+.analyze-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.analyze-btn {
+  padding: 0.4rem 0.8rem;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.analyze-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.analyze-btn.accept {
+  background: var(--green-dim);
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.analyze-btn.reject {
+  background: var(--red-dim);
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.analyze-btn.edit {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .analyze-card { flex-direction: column; }
+  .analyze-card-media { flex: none; }
+}
+

@@ -13,6 +13,7 @@ const VIEW_TABS = [
   { to: "/graph", label: "Graph", end: false },
   { to: "/story", label: "Story", end: false },
   { to: "/video", label: "Video", end: false },
+  { to: "/analyze", label: "Analyze", end: false },
 ] as const;
 
 export default function TopBar({ onNewRun }: TopBarProps) {
@@ -24,6 +25,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const togglePlayPause = useRunStore((s) => s.togglePlayPause);
   const deleteRun = useRunStore((s) => s.deleteRun);
   const sseStatus = usePipelineStore((s) => s.sseStatus);
+  const analyzeCount = usePipelineStore((s) => s.analyzeItems.length);
   const navigate = useNavigate();
 
   // Load runs on mount, restore state from URL hash
@@ -36,6 +38,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         graph: { route: "/graph", view: "graph" },
         story: { route: "/story", view: "story" },
         video: { route: "/video", view: "video" },
+        analyze: { route: "/analyze", view: "analyze" },
       };
       const mapping = viewMap[urlState.view];
       if (mapping) {
@@ -94,6 +97,9 @@ export default function TopBar({ onNewRun }: TopBarProps) {
               }
             >
               {label}
+              {label === "Analyze" && analyzeCount > 0 && (
+                <span className="tab-badge">{analyzeCount}</span>
+              )}
             </NavLink>
           ))}
         </nav>
