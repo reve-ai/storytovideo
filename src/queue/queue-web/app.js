@@ -16,6 +16,8 @@ let elapsedInterval = null;
 
 // Track original inputs for form dirty comparison
 var _originalInputs = null;
+// Track which item is currently shown in the detail panel
+var _currentDetailId = null;
 
 // --- URL state helpers ---
 function getUrlState() {
@@ -840,6 +842,7 @@ function setupDetailPanel() {
 }
 
 function closeDetail() {
+  _currentDetailId = null;
   $('detail-panel').classList.remove('open');
 }
 
@@ -857,10 +860,16 @@ function findItem(itemId) {
 }
 
 function showDetail(itemId) {
+  const panel = $('detail-panel');
+
+  // Toggle: if panel is open and showing the same item, close it
+  if (panel.classList.contains('open') && _currentDetailId === itemId) {
+    closeDetail();
+    return;
+  }
+
   const item = findItem(itemId);
   if (!item) return;
-
-  const panel = $('detail-panel');
   const content = $('detail-content');
 
   const typeName = item.type.replace(/_/g, ' ');
@@ -937,6 +946,7 @@ function showDetail(itemId) {
     ${actionsHtml ? `<div class="detail-actions">${actionsHtml}</div>` : ''}
   `;
 
+  _currentDetailId = itemId;
   panel.classList.add('open');
 }
 
