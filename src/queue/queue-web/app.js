@@ -565,6 +565,8 @@ function renderQueueItem(item) {
   let actions = '';
   if (item.status === 'failed') {
     actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>`;
+  } else if (item.status === 'completed') {
+    actions = `<button data-action="redo" data-id="${item.id}" class="primary">↻ Redo</button>`;
   } else if (item.status === 'pending' || item.status === 'in_progress') {
     actions = `<button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
   }
@@ -590,12 +592,15 @@ function renderQueueItem(item) {
   }
 
   const retryBadge = item.retryCount > 0 ? `<span class="badge badge-retry">↻${item.retryCount}</span>` : '';
+  const pacingBadge = item.outputs?.pacingAdjusted
+    ? `<span class="badge badge-pacing">⏱ ${item.outputs.originalDuration}s → ${item.outputs.newDuration}s</span>`
+    : '';
 
   return `<div class="q-item${highClass}" data-id="${item.id}">
     <div class="q-item-header">
       <span class="q-item-type">${typeName}</span>
       <span class="badge badge-${item.status}">${item.status}</span>
-      ${priBadge}${vBadge}${retryBadge}
+      ${priBadge}${vBadge}${retryBadge}${pacingBadge}
     </div>
     <div class="q-item-key">${item.itemKey}</div>
     ${(() => { const d = getItemDescription(item); return d ? `<div class="q-item-desc">${d}</div>` : ''; })()}
@@ -782,6 +787,8 @@ function showDetail(itemId) {
   let actionsHtml = '';
   if (item.status === 'failed') {
     actionsHtml = `<button class="primary" onclick="handleAction('retry','${item.id}')">↻ Retry</button>`;
+  } else if (item.status === 'completed') {
+    actionsHtml = `<button class="primary" onclick="handleAction('redo','${item.id}')">↻ Redo</button>`;
   } else if (item.status === 'pending' || item.status === 'in_progress') {
     actionsHtml = `
       <button class="danger" onclick="handleAction('cancel','${item.id}')">✕ Cancel</button>`;
@@ -808,6 +815,9 @@ function showDetail(itemId) {
   }
 
   const retryInfo = item.retryCount > 0 ? `<div class="detail-section"><h3>Retries</h3><span class="badge badge-retry">${item.retryCount}/3</span></div>` : '';
+  const pacingInfo = item.outputs?.pacingAdjusted
+    ? `<span class="badge badge-pacing" style="font-size:0.85rem">⏱ ${item.outputs.originalDuration}s → ${item.outputs.newDuration}s</span>`
+    : '';
 
   // Store original inputs for dirty tracking
   _originalInputs = item.inputs ? JSON.parse(JSON.stringify(item.inputs)) : {};
@@ -816,6 +826,7 @@ function showDetail(itemId) {
     <div class="detail-section">
       <h2 style="margin:0 0 0.5rem">${typeName} ${vBadge} ${priBadge}</h2>
       <span class="badge badge-${item.status}" style="font-size:0.85rem">${item.status}</span>
+      ${pacingInfo}
     </div>
     <div class="detail-section">
       <h3>Item Key</h3>

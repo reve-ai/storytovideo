@@ -25,6 +25,26 @@ async function getVideoDuration(videoPath: string): Promise<number> {
 }
 
 /**
+ * Get the resolution (width x height) of a video file using ffprobe.
+ */
+async function getVideoResolution(videoPath: string): Promise<{ width: number; height: number }> {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=s=x:p=0",
+      videoPath,
+    ]);
+    const [w, h] = stdout.trim().split("x").map(Number);
+    return { width: w, height: h };
+  } catch (error) {
+    console.error(`Failed to get resolution for ${videoPath}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Map transition type to ffmpeg xfade transition name.
  */
 function getXfadeTransitionName(transitionType: string): string {
@@ -309,33 +329,53 @@ export async function assembleVideo(params: {
 }
 
 /**
- * Assemble videos using ffmpeg concat demuxer (fast, no re-encoding).
+ * Assemble videos using ffmpeg filter_complex concat with resolution normalization.
+ * Detects the target resolution from the first clip, then scales and pads all clips
+ * to match before concatenating. This avoids aspect ratio / resolution mismatches.
  */
 async function assembleWithConcat(videoPaths: string[], outputPath: string): Promise<{ path: string }> {
-  const concatListPath = path.join(path.dirname(outputPath), ".concat_list.txt");
-  const concatContent = videoPaths
-    .map((videoPath) => `file '${path.resolve(videoPath)}'`)
-    .join("\n");
+  // Get target resolution from first clip
+  const targetRes = await getVideoResolution(videoPaths[0]);
+  const tw = targetRes.width;
+  const th = targetRes.height;
+  console.log(`[assembly] Normalizing ${videoPaths.length} clips to ${tw}x${th}`);
 
-  fs.writeFileSync(concatListPath, concatContent);
-
-  try {
-    await execFileAsync("ffmpeg", [
-      "-f", "concat",
-      "-safe", "0",
-      "-i", concatListPath,
-      "-c", "copy",
-      "-y",
-      outputPath,
-    ]);
-    return { path: outputPath };
-  } finally {
-    try {
-      fs.unlinkSync(concatListPath);
-    } catch {
-      // Ignore cleanup errors
-    }
+  // Build inputs and filter_complex
+  const inputs: string[] = [];
+  for (const vp of videoPaths) {
+    inputs.push("-i", vp);
   }
+
+  // Normalize each input: scale to fit within target, then pad to exact target size
+  let filterComplex = "";
+  for (let i = 0; i < videoPaths.length; i++) {
+    filterComplex += `[${i}:v]scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24[v${i}];`;
+  }
+
+  // Concat all normalized video streams
+  const videoLabels = videoPaths.map((_, i) => `[v${i}]`).join("");
+  filterComplex += `${videoLabels}concat=n=${videoPaths.length}:v=1:a=0[vout];`;
+
+  // Concat all audio streams
+  const audioLabels = videoPaths.map((_, i) => `[${i}:a]`).join("");
+  filterComplex += `${audioLabels}concat=n=${videoPaths.length}:v=0:a=1[aout]`;
+
+  const ffmpegArgs = [
+    ...inputs,
+    "-filter_complex", filterComplex,
+    "-map", "[vout]",
+    "-map", "[aout]",
+    "-c:v", "libx264",
+    "-preset", "medium",
+    "-crf", "23",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-y",
+    outputPath,
+  ];
+
+  await execFileAsync("ffmpeg", ffmpegArgs);
+  return { path: outputPath };
 }
 
 /**
