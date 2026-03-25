@@ -1,219 +1,247 @@
 # storytovideo
 
-Convert short stories into videos using AI. An agentic Claude Opus 4.6 orchestrator drives the entire pipeline — analyzing stories, planning cinematic shots, generating assets and video clips via Google APIs, and assembling the final output.
-
-**Status:** Experimental (uses preview APIs like Veo 3.1)
-
-## Quick Start
-
-```bash
-# Install dependencies
-npm install
-
-# Set up API keys
-cp .env.example .env
-# Edit .env with your Anthropic and Google AI API keys
-
-# Dry run — preview the shot plan without generating anything
-npx tsx src/cli.ts story.txt --dry-run --verbose
-
-# Full run with AI verification
-npx tsx src/cli.ts story.txt --verify --verbose
-
-# Resume after interruption
-npx tsx src/cli.ts story.txt --resume --verbose
-```
-
-## How It Works
-
-storytovideo breaks down story-to-video generation into six stages:
-
-```
-Story Text
-    ↓
-[1] Story Analysis (Gemini)
-    ↓ Extract: characters, locations, art style, scenes
-[2] Shot Planning (Gemini)
-    ↓ Break into ≤8s shots with cinematic composition
-[3] Asset Generation (Nano Banana)
-    ↓ Reference images: front view + 3/4 angle per character, one per location
-[4] Frame Generation (Nano Banana)
-    ↓ Start + end keyframes for each shot
-[5] Video Generation (Veo 3.1)
-    ↓ 8-second clips via first+last frame interpolation
-[6] Assembly (ffmpeg)
-    ↓
-Final MP4 Video
-```
-
-### The AI Stack
-
-- **Claude Opus 4.6** (Vercel AI SDK) — Agentic orchestrator that drives the entire pipeline
-- **Gemini 2.5 Flash** (Vercel AI SDK) — Story analysis, shot planning, quality verification
-- **Gemini 2.5 Flash Image** (Google GenAI) — Reference images and keyframe generation
-- **Veo 3.1** (Google GenAI) — 8-second video clip generation
-- **ffmpeg** — Final video assembly
-
-## CLI Options
-
-```bash
-npx tsx src/cli.ts <story-file> [options]
-
-Options:
-  --dry-run              Preview shot plan without generating assets/videos
-  --verify               Enable Gemini quality checks with automatic retries
-  --resume               Continue from where the pipeline was interrupted
-  --skip-to <stage>      Jump to a specific stage (analysis, shot_planning,
-                         asset_generation, frame_generation, video_generation, assembly)
-  --verbose              Show Claude's reasoning and all tool calls
-  --max-retries <n>      Max retries for failed generations (default: 2)
-  --output <file>        Output video path (default: final.mp4)
-  --output-dir <dir>     Directory for intermediate files (default: ./output)
-```
-
-## Key Features
-
-### Graceful Interruption & Resume
-Press Ctrl+C to interrupt. The pipeline saves its state and exits cleanly. Use `--resume` to pick up exactly where it left off — even at the item level (e.g., "assets for characters Bolt and Luna are done, but location Junkyard is not").
-
-### Dry-Run Mode
-Preview the full shot plan without spending on generation:
-```bash
-npx tsx src/cli.ts story.txt --dry-run --verbose
-cat output/story_analysis.json | jq .
-```
-
-### AI Verification
-Enable `--verify` to have Gemini check every generated asset, frame, and video. On failure, Claude automatically retries with specific feedback.
-
-### Context Windowing
-The orchestrator uses stage-based context windowing — each pipeline stage runs as a separate Claude conversation with fresh context. This keeps token usage reasonable even for complex stories.
-
-### 429 Retry with Backoff
-Rate limit errors automatically retry after 60 seconds (up to 5 times).
+Automated pipeline that converts text stories into fully produced short videos with AI-generated visuals, cinematic shot planning, and assembled final output with subtitles and transitions.
 
 ## Prerequisites
 
 - **Node.js 20+**
-- **ffmpeg** installed and on PATH
-- **Anthropic API key** (for Claude Opus 4.6)
-- **Google AI API key** (for Gemini + Veo)
+- **npm**
+- **ffmpeg** and **ffprobe** installed and on PATH
+- API keys for at least some of the supported AI services (see [Environment Variables](#environment-variables))
 
 ## Setup
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/spullara/storytovideo.git
 cd storytovideo
 ```
 
-2. Install dependencies:
+2. Install dependencies for both the backend and the web UI:
+
 ```bash
 npm install
+cd web-ui && npm install && cd ..
 ```
 
-3. Create `.env` file with your API keys:
-```bash
-cp .env.example .env
+3. Create a `.env` file in the project root with your API keys:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AI...
+XAI_API_KEY=xai-...
+REVE_API_KEY=...
 ```
 
-4. Edit `.env`:
-```
-ANTHROPIC_API_KEY=your_anthropic_key_here
-GEMINI_API_KEY=your_google_ai_key_here
-```
+See [Environment Variables](#environment-variables) for the full list.
 
-## Example
+## Building
 
-Try the included test story:
-
-```bash
-npx tsx src/cli.ts test_story.txt --dry-run --verbose
-```
-
-This will:
-1. Analyze the story
-2. Plan cinematic shots
-3. Save the full analysis to `output/story_analysis.json`
-4. Exit without generating images or videos
-
-Then run the full pipeline:
+Compile the TypeScript backend:
 
 ```bash
-npx tsx src/cli.ts test_story.txt --verify --verbose
+npm run build        # runs tsc, outputs to dist/
 ```
 
-Watch the progress as Claude orchestrates each stage. The final video will be saved to `final.mp4`.
+Build the React web UI for production:
 
-## Output Structure
-
-Intermediate files are saved to the output directory:
-
-```
-output/
-  story_analysis.json       — Full story analysis + shot plan
-  pipeline_state.json       — Pipeline state for resume
-  assets/                   — Character and location reference images
-  frames/                   — Start/end keyframes per shot
-  videos/                   — Generated 8-second video clips
-  final.mp4                 — Assembled final video
+```bash
+cd web-ui
+npm run build        # type-checks then runs vite build, outputs to web-ui/dist/
 ```
 
-## Cinematic Shot Composition
+Type-check without emitting files:
 
-The shot planner uses real film techniques, especially for dialogue:
+```bash
+npm run typecheck              # backend
+cd web-ui && npm run typecheck # web UI
+```
 
-- **Over-the-shoulder (OTS)** — Camera behind speaker A, focused on speaker B
-- **Shot/reverse-shot** — Cut between close-ups of each speaker
-- **Two-shot** — Both characters in frame
-- **Close-up reaction** — Tight on face during emotional beats
-- **Wide/establishing** — Full location, characters small
-- **Tracking** — Camera follows movement
+## Running
 
-Dialogue is paced at ~2.5 words/second, so an 8-second clip holds ~15-20 words.
+Start the queue server (runs the backend and serves the web UI):
 
-## Architecture
+```bash
+npm run dev
+# or equivalently:
+npx tsx src/queue/queue-server.ts
+```
 
-The pipeline is designed for **interruption and resumption**. Every stage saves its progress to `pipeline_state.json`, tracking:
-- Which stages are complete
-- Which individual items within a stage are complete (character assets, frames, videos)
-- The full story analysis and shot plan
+The server starts on port 3000 by default. Open http://localhost:3000 to access the web UI.
 
-When you resume, Claude receives the saved state and skips already-completed items.
+For web UI development with hot reload, run the Vite dev server in a second terminal:
 
-## Troubleshooting
+```bash
+cd web-ui
+npm run dev          # starts on port 5173, proxies API calls to port 3000
+```
 
-**"ffmpeg not found"**
-- Install ffmpeg: `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux)
+## How It Works
 
-**"API rate limit (429)"**
-- The pipeline automatically retries after 60 seconds. Wait and let it continue.
+The application takes a text story as input and produces a video through a multi-stage pipeline. Each stage runs as a work item in a queue-based system with three parallel processing lanes (LLM, Image, Video).
 
-**"Out of memory during TypeScript compilation"**
-- This is a known issue with complex generic types. Run `npm run build` to compile.
+```
+Story Text
+    ↓
+[1] Story to Script (optional) — Rewrites prose into filmable scenes
+    ↓
+[2] Story Analysis — Extracts characters, locations, objects, scenes
+    ↓
+[3] Asset Generation — Creates reference images for characters/locations/objects
+    ↓
+[4] Shot Planning — Plans cinematic shots for each scene
+    ↓
+[5] Frame Generation — Generates keyframe images for each shot
+    ↓
+[6] Video Generation — Produces video clips from keyframes
+    ↓
+[7] Assembly — Concatenates clips with transitions, subtitles, and audio
+    ↓
+Final MP4 Video
+```
 
-**"Ctrl+C doesn't save state"**
-- The pipeline waits for the current API call to finish (up to 30 seconds) before saving and exiting.
+### Pipeline Stages
 
-## File Structure
+**Story to Script** (optional) converts narration-heavy prose into visual, filmable scenes using Claude. It adds dialogue, action, and sensory details.
+
+**Story Analysis** uses Claude with Zod-validated structured output to extract a title, art style, characters (with physical descriptions), locations, objects, and numbered scenes. Real celebrity names are automatically replaced with fictional names.
+
+**Asset Generation** creates reference images for each character (front-facing, 1:1 aspect ratio), location (at the run's aspect ratio), and object using Reve or Grok image generation.
+
+**Shot Planning** produces detailed cinematic shot descriptions for each scene — composition type, start/end frame prompts, action prompt, dialogue, camera direction, duration, and transitions. Enforces cinematic rules: one camera setup per shot, dialogue paced at ~2.5 words/sec.
+
+**Frame Generation** creates keyframe images for each shot using reference images from the asset library plus continuity references from adjacent shots.
+
+**Video Generation** turns keyframes into video clips using one of three backends:
+- **Veo 3.1** (Google) — First+last frame interpolation, fixed 8s duration
+- **ComfyUI** — Custom workflow via remote API, arbitrary durations
+- **Grok** (xAI) — Start frame + action prompt, 1–15s duration, 720p
+
+**Assembly** concatenates clips using ffmpeg with resolution normalization, scene transitions (cuts or fade-to-black), soft subtitles (SRT), and optional audio overlay.
+
+### Import Pipeline
+
+An alternative entry point that works backwards from an existing video: split the video into clips using ffmpeg scene detection, analyze each clip's frames with Gemini Flash, then reconstruct the full story metadata with Claude.
+
+### Queue System
+
+Three parallel processing lanes with two priority levels each:
+- **LLM queue** — Story analysis, shot planning, assembly
+- **Image queue** — Asset generation, frame generation
+- **Video queue** — Video clip generation
+
+Work items form a dependency graph (DAG). The system supports redo with automatic cascade to downstream items, retry of failed items, cancel via AbortController, pause/resume with state persistence, and automatic seeding of downstream items as upstream items complete.
+
+### Web UI
+
+A React + Vite + Zustand single-page app with these views:
+- **Queues** — Work items grouped by queue with status indicators
+- **Graph** — Dependency graph visualization
+- **Story** — Story analysis and shot plan viewer
+- **Video** — Final assembled video player
+- **Analyze** — Human-in-the-loop video review with Gemini analysis
+
+Supports creating runs, play/pause, redo/retry/cancel on individual items, and real-time SSE updates.
+
+### REST API
+
+The server exposes a REST API for programmatic access:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/runs` | Create a new run (story text + options) |
+| `GET` | `/api/runs` | List all runs |
+| `GET` | `/api/runs/:id` | Run details with queue state |
+| `GET` | `/api/runs/:id/queues` | Queue snapshots by status |
+| `GET` | `/api/runs/:id/graph` | Dependency graph (nodes + edges) |
+| `GET` | `/api/runs/:id/events` | SSE stream with event replay |
+| `GET` | `/api/runs/:id/media/**` | Serve generated files (range requests supported) |
+| `POST` | `/api/runs/:id/items/:itemId/redo` | Redo item (cascades to dependents) |
+| `POST` | `/api/runs/:id/items/:itemId/retry` | Retry failed item |
+| `POST` | `/api/runs/:id/items/:itemId/cancel` | Cancel in-progress item |
+| `POST` | `/api/runs/:id/stop` | Pause the run |
+| `POST` | `/api/runs/:id/resume` | Resume a paused run |
+| `DELETE` | `/api/runs/:id` | Delete a run |
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key for Claude |
+| `GOOGLE_API_KEY` | Yes | Google API key for Gemini and Veo |
+| `XAI_API_KEY` | For Grok backend | xAI API key for Grok image/video |
+| `REVE_API_KEY` | For Reve backend | Reve API key for image generation |
+| `VIDEO_BACKEND` | No | Default video backend: `veo`, `comfy`, or `grok` |
+| `COMFY_API_BASE` | For ComfyUI | ComfyUI server URL |
+| `COMFY_API_KEY` | For ComfyUI | ComfyUI API key |
+| `QUEUE_SERVER_PORT` | No | HTTP server port (default: `3000`) |
+| `STORYTOVIDEO_RUN_DB_DIR` | No | Run database directory (default: `./output/api-server`) |
+| `STORYTOVIDEO_RUN_OUTPUT_ROOT` | No | Run output root (default: `./output/runs`) |
+
+## Project Structure
 
 ```
 src/
-  cli.ts                    — CLI entry point (commander)
-  orchestrator.ts           — Claude Opus 4.6 agentic loop
-  types.ts                  — TypeScript interfaces
-  google-client.ts          — Google GenAI singleton
-  signals.ts                — SIGINT handler for graceful interruption
-  tools/
-    analyze-story.ts        — Gemini story analysis
-    plan-shots.ts           — Gemini shot planning
-    generate-asset.ts       — Nano Banana reference images
-    generate-frame.ts       — Nano Banana keyframes
-    generate-video.ts       — Veo 3.1 video generation
-    verify-output.ts        — Gemini quality verification
-    assemble-video.ts       — ffmpeg concatenation
-    state.ts                — PipelineState save/load
+├── types.ts                       Core type definitions (Shot, Scene, StoryAnalysis)
+├── google-client.ts               Google GenAI SDK client singleton
+├── grok-client.ts                 xAI Grok video generation client
+├── grok-image-client.ts           xAI Grok image generation/remix client
+├── reve-client.ts                 Reve image generation/remix client
+├── comfy-client.ts                ComfyUI workflow client
+├── import-orchestrator.ts         Reverse pipeline (video → metadata)
+├── tools/
+│   ├── story-to-script.ts         Raw story → visual script conversion
+│   ├── analyze-story.ts           Story → structured StoryAnalysis
+│   ├── plan-shots.ts              Scene → cinematic shot plan
+│   ├── generate-asset.ts          Character/location/object reference images
+│   ├── generate-frame.ts          Shot keyframe generation with references
+│   ├── generate-video.ts          Video clip generation (Veo/ComfyUI/Grok)
+│   ├── assemble-video.ts          Final video assembly with transitions/subtitles
+│   ├── analyze-video-pacing.ts    Post-generation pacing optimization
+│   ├── analyze-shots.ts           Vision-based shot analysis (import pipeline)
+│   ├── reverse-engineer-metadata.ts  Reconstruct StoryAnalysis from shots
+│   ├── split-video.ts             Scene detection and video splitting
+│   └── state.ts                   Pipeline state persistence
+└── queue/
+    ├── types.ts                   Queue system types (WorkItem, RunState)
+    ├── queue-manager.ts           Work item management, dependencies, redo/versioning
+    ├── queue-server.ts            HTTP server with REST API and SSE
+    ├── processors.ts              Queue processors with downstream seeding logic
+    └── run-manager.ts             Multi-run lifecycle management
+
+web-ui/
+├── src/
+│   ├── App.tsx                    Router and layout
+│   ├── stores/                    Zustand stores (pipeline, run, UI state)
+│   ├── components/                Shared components (TopBar, DetailPanel, etc.)
+│   └── views/                     Page views (Queue, Graph, Story, Video, Analyze)
+├── vite.config.ts                 Vite config with API proxy
+└── package.json
 ```
+
+## Key npm Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `ai` + `@ai-sdk/anthropic` | Vercel AI SDK for structured Claude output |
+| `@google/genai` | Google GenAI SDK (Gemini + Veo) |
+| `zod` | Schema validation for structured AI output |
+| `sharp` | Image processing and aspect ratio padding |
+| `dotenv` | Environment variable management |
+| `react` + `react-dom` | Web UI framework |
+| `zustand` | State management for the web UI |
+| `vite` | Web UI bundler and dev server |
+
+## Troubleshooting
+
+**"ffmpeg not found"** — Install ffmpeg: `brew install ffmpeg` (macOS) or `apt-get install ffmpeg` (Linux).
+
+**API rate limits (429)** — The pipeline retries automatically with backoff. Veo has a 30-second cooldown between calls.
+
+**Blank or failing video generation** — Check that the appropriate `VIDEO_BACKEND` environment variable is set and the corresponding API key is configured.
+
+**Web UI not loading** — Make sure you've built the web UI (`cd web-ui && npm run build`) or are running the Vite dev server (`cd web-ui && npm run dev`).
 
 ## License
 
