@@ -68,6 +68,7 @@ function setupTabs() {
       $$('.view').forEach(v => v.classList.remove('active'));
       $(`${view}-view`).classList.add('active');
       if (view === 'graph' && state.graph) renderGraph();
+      if (view === 'story') renderStoryView();
     });
   }
 }
@@ -556,6 +557,9 @@ function renderQueues() {
 
   // Assembly check
   checkAssembly();
+
+  // Refresh story view if active
+  if (state.currentView === 'story') renderStoryView();
 }
 
 // Get the media file path from item outputs based on item type
@@ -1095,6 +1099,141 @@ function collectFormValues(original, prefix) {
 }
 
 window.markInputDirty = markInputDirty;
+
+// --- Story view ---
+function renderStoryView() {
+  const container = $('story-content');
+  if (!container) return;
+
+  const allItems = getAllItems();
+  if (allItems.length === 0) {
+    container.innerHTML = '<div class="story-empty">No items yet. Select a run to see the story view.</div>';
+    return;
+  }
+
+  // Collect frame and video items (latest version only — skip superseded)
+  const frameItems = allItems.filter(i => i.type === 'generate_frame' && i.status !== 'superseded');
+  const videoItems = allItems.filter(i => i.type === 'generate_video' && i.status !== 'superseded');
+  const planItems = allItems.filter(i => i.type === 'plan_shots' && i.status === 'completed');
+
+  // Build a map of shots by sceneNumber
+  const shotItems = [...frameItems, ...videoItems];
+  const sceneMap = new Map(); // sceneNumber -> { frames: [], videos: [] }
+
+  for (const item of frameItems) {
+    const sceneNum = item.inputs?.shot?.sceneNumber;
+    if (sceneNum == null) continue;
+    if (!sceneMap.has(sceneNum)) sceneMap.set(sceneNum, { frames: new Map(), videos: new Map(), location: null });
+    const scene = sceneMap.get(sceneNum);
+    const shotNum = item.inputs?.shot?.shotNumber;
+    if (shotNum != null) {
+      // Keep latest version per shot
+      const existing = scene.frames.get(shotNum);
+      if (!existing || item.version > existing.version) scene.frames.set(shotNum, item);
+    }
+    if (!scene.location && item.inputs?.shot?.location) scene.location = item.inputs.shot.location;
+  }
+
+  for (const item of videoItems) {
+    const sceneNum = item.inputs?.shot?.sceneNumber;
+    if (sceneNum == null) continue;
+    if (!sceneMap.has(sceneNum)) sceneMap.set(sceneNum, { frames: new Map(), videos: new Map(), location: null });
+    const scene = sceneMap.get(sceneNum);
+    const shotNum = item.inputs?.shot?.shotNumber;
+    if (shotNum != null) {
+      const existing = scene.videos.get(shotNum);
+      if (!existing || item.version > existing.version) scene.videos.set(shotNum, item);
+    }
+    if (!scene.location && item.inputs?.shot?.location) scene.location = item.inputs.shot.location;
+  }
+
+  // Build plan_shots info per scene
+  const planByScene = new Map();
+  for (const item of planItems) {
+    const sceneNum = item.outputs?.sceneNumber ?? item.inputs?.sceneNumber;
+    if (sceneNum != null) planByScene.set(sceneNum, item);
+  }
+
+  if (sceneMap.size === 0) {
+    container.innerHTML = '<div class="story-empty">No shots found yet. Waiting for frame/video generation to begin.</div>';
+    return;
+  }
+
+  // Sort scenes by number
+  const sortedScenes = [...sceneMap.entries()].sort((a, b) => a[0] - b[0]);
+  const aspectRatio = getAspectRatio();
+
+  let html = '';
+  for (const [sceneNum, sceneData] of sortedScenes) {
+    const plan = planByScene.get(sceneNum);
+    const sceneTitle = plan?.outputs?.title || `Scene ${sceneNum}`;
+    const location = sceneData.location || plan?.outputs?.location || '';
+
+    html += `<div class="story-scene">`;
+    html += `<div class="story-scene-header">`;
+    html += `<h2 class="story-scene-title">Scene ${sceneNum}: ${esc(sceneTitle)}</h2>`;
+    if (location) html += `<span class="story-scene-location">📍 ${esc(location)}</span>`;
+    html += `</div>`;
+
+    // Collect all shot numbers from both frames and videos
+    const shotNums = new Set([...sceneData.frames.keys(), ...sceneData.videos.keys()]);
+    const sortedShots = [...shotNums].sort((a, b) => a - b);
+
+    html += `<div class="story-shots-grid">`;
+    for (const shotNum of sortedShots) {
+      const frameItem = sceneData.frames.get(shotNum);
+      const videoItem = sceneData.videos.get(shotNum);
+      const shot = frameItem?.inputs?.shot || videoItem?.inputs?.shot || {};
+      const clickId = videoItem?.id || frameItem?.id;
+
+      html += `<div class="story-shot-card" ${clickId ? `onclick="showDetail('${clickId}')"` : ''}>`;
+
+      // Media area
+      const frameCompleted = frameItem?.status === 'completed';
+      const videoCompleted = videoItem?.status === 'completed';
+
+      if (frameCompleted && frameItem.outputs?.startPath) {
+        const frameSrc = `${API}/api/runs/${state.activeRunId}/media/${frameItem.outputs.startPath}`;
+        if (videoCompleted && videoItem.outputs?.path) {
+          const videoSrc = `${API}/api/runs/${state.activeRunId}/media/${videoItem.outputs.path}`;
+          html += `<div class="story-shot-media video-thumbnail" style="aspect-ratio:${aspectRatio}" data-video-class="inline-video" onclick="event.stopPropagation(); playVideo(this, '${videoSrc}')">`;
+          html += `<img src="${frameSrc}" alt="Shot ${shotNum}" />`;
+          html += `<div class="play-overlay">▶</div>`;
+          html += `</div>`;
+        } else {
+          html += `<div class="story-shot-media" style="aspect-ratio:${aspectRatio}">`;
+          html += `<img src="${frameSrc}" alt="Shot ${shotNum}" />`;
+          html += `</div>`;
+        }
+      } else {
+        // Placeholder
+        const status = videoItem?.status || frameItem?.status || 'pending';
+        html += `<div class="story-shot-media story-shot-placeholder" style="aspect-ratio:${aspectRatio}">`;
+        html += `<span class="badge badge-${status}">${status.replace('_', ' ')}</span>`;
+        html += `</div>`;
+      }
+
+      // Info area
+      html += `<div class="story-shot-info">`;
+      html += `<div class="story-shot-meta">`;
+      html += `<span class="story-shot-number">Shot ${shotNum}</span>`;
+      if (shot.composition) html += `<span class="story-shot-comp">${esc(shot.composition)}</span>`;
+      if (shot.durationSeconds) html += `<span class="story-shot-duration">${shot.durationSeconds}s</span>`;
+      html += `</div>`;
+      if (shot.actionPrompt) {
+        const truncated = shot.actionPrompt.length > 100 ? shot.actionPrompt.slice(0, 100) + '…' : shot.actionPrompt;
+        html += `<div class="story-shot-action">${esc(truncated)}</div>`;
+      }
+      html += `</div>`;
+
+      html += `</div>`; // .story-shot-card
+    }
+    html += `</div>`; // .story-shots-grid
+    html += `</div>`; // .story-scene
+  }
+
+  container.innerHTML = html;
+}
 
 window.saveInputForm = async function(itemId) {
   if (!_originalInputs || !state.activeRunId) return;
