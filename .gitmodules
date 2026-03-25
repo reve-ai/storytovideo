@@ -1,0 +1,3 @@
+[submodule "tooscut"]
+	path = tooscut
+	url = https://github.com/spullara/tooscut

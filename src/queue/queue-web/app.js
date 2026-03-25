@@ -820,6 +820,23 @@ function layoutNodes(layers, nodes) {
 // --- Detail panel ---
 function setupDetailPanel() {
   $('close-detail').addEventListener('click', closeDetail);
+
+  // Close detail panel when clicking outside it
+  document.addEventListener('click', (e) => {
+    const panel = $('detail-panel');
+    if (!panel.classList.contains('open')) return;
+    // Don't close if clicking inside the detail panel
+    if (panel.contains(e.target)) return;
+    // Don't close if clicking on a queue item (opens a different detail)
+    if (e.target.closest('.q-item')) return;
+    // Don't close if clicking on a graph node (opens a different detail)
+    if (e.target.closest('.graph-node')) return;
+    // Don't close if clicking on a story shot card (opens a different detail)
+    if (e.target.closest('.story-shot-card')) return;
+    // Don't close if clicking on a video thumbnail (playing a video)
+    if (e.target.closest('.video-thumbnail')) return;
+    closeDetail();
+  });
 }
 
 function closeDetail() {
