@@ -3,6 +3,7 @@ import AppLayout from "./components/AppLayout";
 import GraphView from "./views/GraphView";
 import QueueView from "./views/QueueView";
 import StoryView from "./views/StoryView";
+import VideoView from "./views/VideoView";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
         <Route path="/" element={<QueueView />} />
         <Route path="/graph" element={<GraphView />} />
         <Route path="/story" element={<StoryView />} />
+        <Route path="/video" element={<VideoView />} />
       </Route>
     </Routes>
   );

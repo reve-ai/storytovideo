@@ -12,6 +12,7 @@ const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
   { to: "/graph", label: "Graph", end: false },
   { to: "/story", label: "Story", end: false },
+  { to: "/video", label: "Video", end: false },
 ] as const;
 
 export default function TopBar({ onNewRun }: TopBarProps) {
@@ -34,6 +35,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         queue: { route: "/", view: "queue" },
         graph: { route: "/graph", view: "graph" },
         story: { route: "/story", view: "story" },
+        video: { route: "/video", view: "video" },
       };
       const mapping = viewMap[urlState.view];
       if (mapping) {
