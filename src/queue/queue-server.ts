@@ -43,7 +43,7 @@ function detectMimeType(filePath: string): string {
 // ---------------------------------------------------------------------------
 
 const PORT = Number(process.env.QUEUE_SERVER_PORT ?? "3000");
-const WEB_ROOT = resolve(process.cwd(), "src", "queue", "queue-web");
+const WEB_ROOT = resolve(process.cwd(), "web-ui", "dist");
 const SHUTDOWN_TIMEOUT_MS = 1_500;
 const SSE_HEARTBEAT_MS = 15_000;
 const EVENT_HISTORY_LIMIT = 2_000;
@@ -396,17 +396,19 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
-    // Static file serving for queue web UI
+    // Static file serving for queue web UI (Vite/React SPA)
     if (method === "GET" && !url.pathname.startsWith("/api/")) {
-      let filePath: string;
-      if (url.pathname === "/" || url.pathname === "/index.html") {
-        filePath = join(WEB_ROOT, "index.html");
-      } else {
-        filePath = join(WEB_ROOT, url.pathname);
+      // Try to serve the exact file first (JS, CSS, images, etc.)
+      if (url.pathname !== "/") {
+        const filePath = join(WEB_ROOT, url.pathname);
+        const resolved = resolve(filePath);
+        if (resolved.startsWith(resolve(WEB_ROOT)) && serveStaticFile(res, resolved)) {
+          return;
+        }
       }
-      // Prevent path traversal
-      const resolved = resolve(filePath);
-      if (resolved.startsWith(resolve(WEB_ROOT)) && serveStaticFile(res, resolved)) {
+      // SPA fallback: serve index.html for all unmatched routes
+      const indexPath = join(WEB_ROOT, "index.html");
+      if (serveStaticFile(res, indexPath)) {
         return;
       }
     }
