@@ -922,9 +922,11 @@ ${JSON.stringify(analysis, null, 2)}`,
       objectImages: {},
     };
 
+    // generateAsset() returns keys formatted as `${assetType}:${assetName}:${angleType}`
+    // (no 'asset:' prefix). Characters use :front/:angle, locations and objects also get :front.
     for (const char of analysis.characters) {
-      const frontPath = state.generatedOutputs[`asset:character:${char.name}:front`];
-      const anglePath = state.generatedOutputs[`asset:character:${char.name}:angle`];
+      const frontPath = state.generatedOutputs[`character:${char.name}:front`];
+      const anglePath = state.generatedOutputs[`character:${char.name}:angle`];
       if (frontPath) {
         lib.characterImages[char.name] = {
           front: this.absolutePath(frontPath),
@@ -934,16 +936,17 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     for (const loc of analysis.locations) {
-      const path = state.generatedOutputs[`asset:location:${loc.name}`];
+      const path = state.generatedOutputs[`location:${loc.name}:front`];
       if (path) lib.locationImages[loc.name] = this.absolutePath(path);
     }
 
     for (const obj of (analysis.objects ?? [])) {
-      const path = state.generatedOutputs[`asset:object:${obj.name}`];
+      const path = state.generatedOutputs[`object:${obj.name}:front`];
       if (path) lib.objectImages[obj.name] = this.absolutePath(path);
     }
 
     state.assetLibrary = lib;
+    console.log('[rebuildAssetLibrary] Asset library:', JSON.stringify(lib, null, 2));
   }
 }
 
