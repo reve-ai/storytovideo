@@ -386,6 +386,7 @@ For this scene:
 7. In actionPrompt and startFramePrompt fields ONLY, describe characters by their visual appearance (e.g., "the man in the blue suit", "the woman with red hair") rather than by name — character names in video prompts trigger content safety filters. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
 8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
 9. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
+10. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
 
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}

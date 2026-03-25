@@ -18,6 +18,13 @@ A shot is what a single, stationary camera sees. The camera does not move, pan, 
 - To switch focus to a different person, END the current shot and START a new shot on that person. This is how real films work — cut to the new subject.
 - Example: Shot 3 = close-up of Alice speaking (start & end both on Alice). Shot 4 = close-up of Bob reacting (start & end both on Bob). Two shots, one cut.
 
+NO CUTS WITHIN A SHOT:
+A single shot NEVER contains a cut, transition, or camera angle change. Phrases like "Cut to...", "We then see...", "Switch to...", or "The camera moves to show..." within a shot's action prompt are WRONG.
+- If you need a different angle, framing, or subject — that is a NEW SHOT.
+- Each shot's actionPrompt describes continuous action from ONE camera position.
+- Bad: "He picks up the glass. Cut to a medium angle showing him drinking." → This is TWO shots.
+- Good: Shot 1: "He picks up the glass and lifts it." Shot 2: "Medium angle — he drinks in measured sips."
+
 FRAME INTERPOLATION CONSTRAINTS:
 Each shot generates a START frame and an END frame. A video model then interpolates between them.
 - The start and end frames MUST show the SAME scene from the SAME camera angle and composition.
