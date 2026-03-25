@@ -1,6 +1,5 @@
 import * as fs from "fs";
 import * as path from "path";
-import { interrupted } from "./signals";
 
 /**
  * Get the ComfyUI API base URL from environment variable or default
@@ -122,7 +121,7 @@ export async function pollJob(
   let lastProgress = -1;
 
   while (true) {
-    if (interrupted || signal?.aborted) {
+    if (signal?.aborted) {
       await cancelJob(jobId);
       throw new Error(`Job ${jobId} cancelled due to pipeline interruption`);
     }

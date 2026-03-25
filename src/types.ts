@@ -86,20 +86,6 @@ export interface GeneratedFrameSet {
   endReferences?: FrameReference[];
 }
 
-export interface VerificationResult {
-  passed: boolean;
-  score: number;               // 0.0-1.0
-  issues: string[];
-  suggestions: string[];       // prompt improvements
-}
-
-export interface ItemDirective {
-  target: string;        // item key, e.g. "shot:16:start_frame", "shot:16:video", "asset:character:Lupov:front", "shot:8:action_prompt"
-  directive: string;     // user's instruction, e.g. "make the lighting darker, more ominous"
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface PipelineOptions {
   outputDir: string;
   dryRun: boolean;
@@ -109,26 +95,12 @@ export interface PipelineOptions {
   redo?: string;
   resume: boolean;
   verbose: boolean;
-  reviewMode?: boolean;
   videoBackend?: "veo" | "comfy" | "grok";
   aspectRatio?: "16:9" | "9:16" | "1:1";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   onProgress?: (message: string) => void;
   onNameRun?: (name: string) => void;
   abortSignal?: AbortSignal;
-}
-
-export interface StageInstructionRecord {
-  stage: string;
-  instruction: string;
-  submittedAt: string;
-}
-
-export interface StageDecisionRecord {
-  stage: string;
-  decision: "continue" | "instruction";
-  decidedAt: string;
-  instructionCount: number;
 }
 
 export interface PipelineState {
@@ -143,17 +115,9 @@ export interface PipelineState {
   generatedVideos: Record<number, string>;
 	videoPromptsSent?: Record<number, string>;
   errors: Array<{ stage: string; shot?: number; error: string; timestamp: string }>;
-  verifications: Array<{ stage: string; shot?: number; passed: boolean; score: number; issues: string[]; timestamp: string }>;
   interrupted: boolean;                            // true if last run was interrupted
-  awaitingUserReview: boolean;                     // true when next stage needs explicit user continue
-  continueRequested: boolean;                      // true when user requested continue while awaiting review
-  pendingStageInstructions: Record<string, string[]>;
-  instructionHistory: StageInstructionRecord[];
-  decisionHistory: StageDecisionRecord[];
   pendingJobs: Record<string, { jobId: string; outputPath: string }>;
   importedAudio?: Record<number, string>;              // shotNumber → audio file path (from import pipeline)
-  itemDirectives: Record<string, ItemDirective>;     // keyed by target
-  rollbackTarget?: string;                          // stage to roll back to (set by RAI handler)
   videoVersions?: Record<number, ArtifactVersion[]>;    // shotNumber -> versions
   frameVersions?: Record<number, Record<string, ArtifactVersion[]>>; // shotNumber -> { start: versions, end: versions }
   selectedVersions?: {

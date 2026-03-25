@@ -3,14 +3,9 @@
   "version": "0.1.0",
   "description": "Convert short stories to videos using Claude and Google APIs",
   "type": "module",
-  "main": "dist/cli.js",
-  "bin": {
-    "storytovideo": "./bin/storytovideo"
-  },
+  "main": "dist/queue/queue-server.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "dev:server": "tsx src/server.ts",
     "dev:queue-server": "tsx src/queue/queue-server.ts",
     "typecheck": "tsc --noEmit"
   },

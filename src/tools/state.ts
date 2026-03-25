@@ -3,17 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type { PipelineState } from "../types";
 
-function withReviewDefaults(state: PipelineState): PipelineState {
+function withDefaults(state: PipelineState): PipelineState {
   return {
     ...state,
-    awaitingUserReview: state.awaitingUserReview ?? false,
-    continueRequested: state.continueRequested ?? false,
-    pendingStageInstructions: state.pendingStageInstructions ?? {},
-    instructionHistory: state.instructionHistory ?? [],
-    decisionHistory: state.decisionHistory ?? [],
     // Ensure newer fields have defaults for old state files
     pendingJobs: state.pendingJobs ?? {},
-    itemDirectives: state.itemDirectives ?? {},
     videoVersions: state.videoVersions ?? {},
     frameVersions: state.frameVersions ?? {},
     selectedVersions: state.selectedVersions ?? { videos: {}, frames: {} },
@@ -107,7 +101,7 @@ export function loadState(outputDir: string): PipelineState | null {
       fs.writeFileSync(statePath, JSON.stringify(parsed, null, 2));
     }
 
-    return withReviewDefaults(parsed);
+    return withDefaults(parsed);
   } catch (error) {
     console.error(`Failed to load state from ${statePath}:`, error);
     return null;
@@ -146,28 +140,7 @@ export const saveStateTool = {
       })),
       generatedVideos: z.record(z.string(), z.string()),
       errors: z.array(z.object({ stage: z.string(), shot: z.number().optional(), error: z.string(), timestamp: z.string() })),
-      verifications: z.array(z.object({ stage: z.string(), shot: z.number().optional(), passed: z.boolean(), score: z.number(), issues: z.array(z.string()), timestamp: z.string() })),
       interrupted: z.boolean(),
-      awaitingUserReview: z.boolean(),
-      continueRequested: z.boolean(),
-      pendingStageInstructions: z.record(z.string(), z.array(z.string())),
-      instructionHistory: z.array(z.object({
-        stage: z.string(),
-        instruction: z.string(),
-        submittedAt: z.string(),
-      })),
-      decisionHistory: z.array(z.object({
-        stage: z.string(),
-        decision: z.enum(["continue", "instruction"]),
-        decidedAt: z.string(),
-        instructionCount: z.number(),
-      })),
-      itemDirectives: z.record(z.string(), z.object({
-        target: z.string(),
-        directive: z.string(),
-        createdAt: z.string(),
-        updatedAt: z.string(),
-      })).optional(),
       lastSavedAt: z.string(),
     }).describe("Full pipeline state to save"),
   }),

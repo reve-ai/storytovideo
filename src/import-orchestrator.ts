@@ -116,15 +116,8 @@ export async function runImportPipeline(
     generatedFrames: {},
     generatedVideos: {},
     errors: [],
-    verifications: [],
     interrupted: false,
-    awaitingUserReview: false,
-    continueRequested: false,
-    pendingStageInstructions: {},
-    instructionHistory: [],
-    decisionHistory: [],
     pendingJobs: {},
-    itemDirectives: {},
     lastSavedAt: new Date().toISOString(),
   };
 
