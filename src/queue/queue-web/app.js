@@ -85,8 +85,10 @@ async function loadRuns() {
       opt.textContent = run.name || run.id.slice(0, 8);
       sel.appendChild(opt);
     }
-    // Auto-select most recent
-    if (state.runs.length > 0 && !state.activeRunId) {
+    // Preserve active selection, or auto-select most recent
+    if (state.activeRunId && state.runs.some(r => r.id === state.activeRunId)) {
+      sel.value = state.activeRunId;
+    } else if (state.runs.length > 0) {
       const latest = state.runs[state.runs.length - 1];
       sel.value = latest.id;
       selectRun(latest.id);
