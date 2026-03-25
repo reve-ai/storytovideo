@@ -6,10 +6,22 @@ import * as path from "path";
 
 // --- Structured video analysis (used by analyze_video work items) ---
 
+export interface VideoRecommendation {
+  type: 'redo_video' | 'redo_frame' | 'no_change';
+  commentary: string;        // explains what the AI changed and why
+  suggestedInputs?: {
+    actionPrompt?: string;
+    startFramePrompt?: string;
+    endFramePrompt?: string;
+    durationSeconds?: number;
+    cameraDirection?: string;
+  };
+}
+
 export interface VideoClipAnalysis {
   matchScore: number;            // 0-100, how well the video matches the intended shot
   issues: string[];              // list of specific issues found
-  recommendations: string[];     // actionable suggestions
+  recommendations: VideoRecommendation[];
 }
 
 export interface AnalyzeVideoClipOptions {
@@ -20,6 +32,8 @@ export interface AnalyzeVideoClipOptions {
   dialogue?: string;
   actionPrompt: string;
   durationSeconds: number;
+  cameraDirection?: string;
+  startFramePrompt?: string;
 }
 
 export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<VideoClipAnalysis> {
@@ -70,6 +84,8 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
 
 The intended action for this shot was: "${opts.actionPrompt}"
 ${opts.dialogue ? `Dialogue: "${opts.dialogue}"` : "No dialogue in this shot."}
+Current camera direction: "${opts.cameraDirection || 'not specified'}"
+Current start frame prompt: "${opts.startFramePrompt || 'not specified'}"
 
 The first image after the video is the start frame that was used as input to generate this clip.
 ${opts.referenceImagePaths.length > 0 ? "The remaining images are character/location/object reference sheets from the asset library." : ""}
@@ -81,14 +97,28 @@ Evaluate:
 4. Is the pacing appropriate for the content?
 5. Are there static/frozen frames or unnecessary repetition?
 
+For each recommendation, provide a structured object with:
+- "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
+- "commentary": explain what you're changing and why
+- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, startFramePrompt, endFramePrompt, durationSeconds, cameraDirection.
+
+IMPORTANT: When suggesting changes to actionPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
+
 Return JSON:
-\`\`\`json
 {
-  "matchScore": <0-100, how well the video matches the intended shot>,
+  "matchScore": <0-100>,
   "issues": ["<specific issue 1>", "<specific issue 2>"],
-  "recommendations": ["<actionable suggestion 1>", "<actionable suggestion 2>"]
-}
-\`\`\``,
+  "recommendations": [
+    {
+      "type": "redo_video" | "redo_frame" | "no_change",
+      "commentary": "<explanation of the change>",
+      "suggestedInputs": {
+        "actionPrompt": "<complete rewritten action prompt if changing>",
+        "startFramePrompt": "<complete rewritten frame prompt if changing>"
+      }
+    }
+  ]
+}`,
   });
 
   const response = await client.models.generateContent({

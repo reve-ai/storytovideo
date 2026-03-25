@@ -532,6 +532,8 @@ ${JSON.stringify(analysis, null, 2)}`,
       dialogue: shot.dialogue,
       actionPrompt: shot.actionPrompt,
       durationSeconds: shot.durationSeconds,
+      cameraDirection: shot.cameraDirection,
+      startFramePrompt: shot.startFramePrompt,
     });
 
     console.log(`[analyze_video] Shot ${shotNumber}: matchScore=${analysis.matchScore}, issues=${analysis.issues.length}`);
