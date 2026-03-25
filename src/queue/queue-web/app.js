@@ -554,7 +554,7 @@ function renderQueueItem(item) {
   let actions = '';
   if (item.status === 'failed') {
     actions = `<button data-action="retry" data-id="${item.id}" class="primary">↻ Retry</button>`;
-  } else if (item.status === 'pending') {
+  } else if (item.status === 'pending' || item.status === 'in_progress') {
     actions = `<button data-action="cancel" data-id="${item.id}" class="danger">✕ Cancel</button>`;
   }
 
@@ -771,7 +771,7 @@ function showDetail(itemId) {
   let actionsHtml = '';
   if (item.status === 'failed') {
     actionsHtml = `<button class="primary" onclick="handleAction('retry','${item.id}')">↻ Retry</button>`;
-  } else if (item.status === 'pending') {
+  } else if (item.status === 'pending' || item.status === 'in_progress') {
     actionsHtml = `
       <button class="danger" onclick="handleAction('cancel','${item.id}')">✕ Cancel</button>`;
   }

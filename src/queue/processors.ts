@@ -64,6 +64,7 @@ export class QueueProcessor extends EventEmitter {
   private running = false;
   private normalLanePromise: Promise<void> | null = null;
   private highLanePromise: Promise<void> | null = null;
+  private activeAbortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly queueName: QueueName,
@@ -108,6 +109,13 @@ export class QueueProcessor extends EventEmitter {
     return this.running;
   }
 
+  cancelItem(itemId: string): boolean {
+    const controller = this.activeAbortControllers.get(itemId);
+    if (!controller) return false;
+    controller.abort();
+    return true;
+  }
+
   private async runLane(priority: Priority): Promise<void> {
     while (this.running) {
       const item = this.queueManager.getNextReady(this.queueName, priority);
@@ -117,12 +125,16 @@ export class QueueProcessor extends EventEmitter {
         continue;
       }
 
+      const abortController = new AbortController();
+      this.activeAbortControllers.set(item.id, abortController);
+
       try {
         this.queueManager.markInProgress(item.id);
         this.emit('item:started', { runId: this.runId, item });
 
-        const outputs = await this.executeItem(item);
+        const outputs = await this.executeItem(item, abortController.signal);
 
+        this.activeAbortControllers.delete(item.id);
         this.queueManager.markCompleted(item.id, outputs);
         this.emit('item:completed', { runId: this.runId, item: { ...item, status: 'completed', outputs } });
 
@@ -131,6 +143,16 @@ export class QueueProcessor extends EventEmitter {
 
         this.queueManager.save();
       } catch (err) {
+        this.activeAbortControllers.delete(item.id);
+
+        // If aborted, mark as cancelled (not failed) and don't retry
+        if (abortController.signal.aborted) {
+          this.queueManager.cancelItem(item.id);
+          this.emit('item:cancelled', { runId: this.runId, item: { ...item, status: 'cancelled' }, error: 'Cancelled by user' });
+          this.queueManager.save();
+          continue;
+        }
+
         const errorMsg = err instanceof Error ? err.message : String(err);
         const currentRetryCount = item.retryCount ?? 0;
 
@@ -158,15 +180,15 @@ export class QueueProcessor extends EventEmitter {
   // Work item dispatch
   // ---------------------------------------------------------------------------
 
-  private async executeItem(item: WorkItem): Promise<Record<string, unknown>> {
+  private async executeItem(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     switch (item.type) {
-      case 'story_to_script': return this.handleStoryToScript(item);
-      case 'analyze_story': return this.handleAnalyzeStory(item);
-      case 'name_run': return this.handleNameRun(item);
-      case 'plan_shots': return this.handlePlanShots(item);
-      case 'generate_asset': return this.handleGenerateAsset(item);
-      case 'generate_frame': return this.handleGenerateFrame(item);
-      case 'generate_video': return this.handleGenerateVideo(item);
+      case 'story_to_script': return this.handleStoryToScript(item, signal);
+      case 'analyze_story': return this.handleAnalyzeStory(item, signal);
+      case 'name_run': return this.handleNameRun(item, signal);
+      case 'plan_shots': return this.handlePlanShots(item, signal);
+      case 'generate_asset': return this.handleGenerateAsset(item, signal);
+      case 'generate_frame': return this.handleGenerateFrame(item, signal);
+      case 'generate_video': return this.handleGenerateVideo(item, signal);
       case 'assemble': return this.handleAssemble(item);
       default:
         throw new Error(`Unknown work item type: ${item.type}`);
@@ -177,7 +199,8 @@ export class QueueProcessor extends EventEmitter {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  private async handleStoryToScript(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleStoryToScript(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
     const script = await storyToScript(storyText);
     const state = this.queueManager.getState();
@@ -185,7 +208,8 @@ export class QueueProcessor extends EventEmitter {
     return { script };
   }
 
-  private async handleAnalyzeStory(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleAnalyzeStory(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const state = this.queueManager.getState();
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
@@ -194,7 +218,8 @@ export class QueueProcessor extends EventEmitter {
     return { analysis };
   }
 
-  private async handleNameRun(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleNameRun(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
     const { text } = await generateText({
       model: anthropic('claude-sonnet-4-20250514'),
@@ -207,7 +232,8 @@ export class QueueProcessor extends EventEmitter {
     return { name };
   }
 
-  private async handlePlanShots(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handlePlanShots(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const state = this.queueManager.getState();
     const analysis = state.storyAnalysis;
     if (!analysis) throw new Error('plan_shots requires storyAnalysis');
@@ -264,7 +290,8 @@ ${JSON.stringify(analysis, null, 2)}`,
     };
   }
 
-  private async handleGenerateAsset(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleGenerateAsset(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const state = this.queueManager.getState();
     const aspectRatio = state.options?.aspectRatio;
     const result = await generateAsset({
@@ -287,7 +314,8 @@ ${JSON.stringify(analysis, null, 2)}`,
     return { key: result.key, path: this.relativePath(result.path) };
   }
 
-  private async handleGenerateFrame(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleGenerateFrame(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
+    signal.throwIfAborted();
     const state = this.queueManager.getState();
     if (!state.storyAnalysis || !state.assetLibrary) {
       throw new Error('generate_frame requires storyAnalysis and assetLibrary');
@@ -323,7 +351,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     };
   }
 
-  private async handleGenerateVideo(item: WorkItem): Promise<Record<string, unknown>> {
+  private async handleGenerateVideo(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     const state = this.queueManager.getState();
     const shot = item.inputs.shot as Shot;
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
@@ -346,6 +374,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       videoBackend: 'grok',
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
       aspectRatio,
+      abortSignal: signal,
     });
 
     state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(result.path);
@@ -381,6 +410,7 @@ ${JSON.stringify(analysis, null, 2)}`,
             outputDir: join(state.outputDir, 'videos'),
             videoBackend: 'grok',
             characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
+            abortSignal: signal,
           });
 
           state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(regenResult.path);
@@ -721,6 +751,7 @@ export class ProcessorGroup extends EventEmitter {
       proc.on('item:started', (data) => this.emit('item:started', data));
       proc.on('item:completed', (data) => this.emit('item:completed', data));
       proc.on('item:failed', (data) => this.emit('item:failed', data));
+      proc.on('item:cancelled', (data) => this.emit('item:cancelled', data));
       proc.on('pipeline:pause', (data) => this.emit('pipeline:pause', data));
       return proc;
     });

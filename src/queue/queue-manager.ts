@@ -188,9 +188,7 @@ export class QueueManager {
 
   cancelItem(id: string): void {
     const item = this.requireItem(id);
-    if (item.status === 'in_progress' || item.status === 'completed') {
-      return; // can't cancel in-progress or completed items
-    }
+    if (item.status === 'completed') return;
     item.status = 'cancelled';
     this.touch();
   }

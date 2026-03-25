@@ -197,6 +197,7 @@ export class RunManager extends EventEmitter {
       proc.on("item:started", (data) => this.emit("item:started", data));
       proc.on("item:completed", (data) => this.emit("item:completed", data));
       proc.on("item:failed", (data) => this.emit("item:failed", data));
+      proc.on("item:cancelled", (data) => this.emit("item:cancelled", data));
       proc.on("pipeline:pause", (data) => {
         this.emit("pipeline:pause", data);
         // Auto-pause: stop all processors for this run
@@ -263,6 +264,28 @@ export class RunManager extends EventEmitter {
 
     this.startProcessors(runId, qm);
     this.patchRun(runId, { status: "running", startedAt: new Date().toISOString() });
+    return true;
+  }
+
+  // -- Cancel item -----------------------------------------------------------
+
+  cancelItem(runId: string, itemId: string): boolean {
+    const procs = this.processors.get(runId);
+    const qm = this.queueManagers.get(runId);
+    if (!qm) return false;
+
+    // Try to abort in-progress work
+    if (procs) {
+      for (const proc of procs) {
+        if (proc.cancelItem(itemId)) {
+          break;
+        }
+      }
+    }
+
+    // Update status in queue manager
+    qm.cancelItem(itemId);
+    qm.save();
     return true;
   }
 
