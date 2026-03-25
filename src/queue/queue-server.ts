@@ -398,18 +398,30 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
     // Static file serving for queue web UI (Vite/React SPA)
     if (method === "GET" && !url.pathname.startsWith("/api/")) {
-      // Try to serve the exact file first (JS, CSS, images, etc.)
-      if (url.pathname !== "/") {
-        const filePath = join(WEB_ROOT, url.pathname);
-        const resolved = resolve(filePath);
-        if (resolved.startsWith(resolve(WEB_ROOT)) && serveStaticFile(res, resolved)) {
+      // In dev mode, delegate to Vite's middleware for HMR + SPA fallback
+      if (viteDevServer) {
+        await new Promise<void>((resolvePromise) => {
+          viteDevServer!.middlewares.handle(req, res, () => {
+            // Vite called next() — it didn't handle the request.
+            // Fall through to the 404 at the bottom.
+            resolvePromise();
+          });
+        });
+        if (res.writableEnded) return;
+      } else {
+        // Production: serve built static files
+        if (url.pathname !== "/") {
+          const filePath = join(WEB_ROOT, url.pathname);
+          const resolved = resolve(filePath);
+          if (resolved.startsWith(resolve(WEB_ROOT)) && serveStaticFile(res, resolved)) {
+            return;
+          }
+        }
+        // SPA fallback: serve index.html for all unmatched routes
+        const indexPath = join(WEB_ROOT, "index.html");
+        if (serveStaticFile(res, indexPath)) {
           return;
         }
-      }
-      // SPA fallback: serve index.html for all unmatched routes
-      const indexPath = join(WEB_ROOT, "index.html");
-      if (serveStaticFile(res, indexPath)) {
-        return;
       }
     }
 
@@ -649,6 +661,33 @@ const server = createServer((req, res) => {
   void requestHandler(req, res);
 });
 
+// ---------------------------------------------------------------------------
+// Vite dev middleware (dev mode only)
+// ---------------------------------------------------------------------------
+
+// Typed loosely to avoid coupling to Vite's Connect types at compile time
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let viteDevServer: any;
+
+async function setupViteDevServer(): Promise<void> {
+  if (process.env.NODE_ENV === "production") return;
+  try {
+    const vite = await (import("vite") as Promise<typeof import("vite")>);
+    const webUiRoot = resolve(process.cwd(), "web-ui");
+    viteDevServer = await vite.createServer({
+      root: webUiRoot,
+      configFile: resolve(webUiRoot, "vite.config.ts"),
+      server: {
+        middlewareMode: true,
+        hmr: { server },
+      },
+    });
+    console.log("[queue-server] Vite dev middleware attached (HMR enabled)");
+  } catch {
+    console.log("[queue-server] Vite not available, serving static files from web-ui/dist/");
+  }
+}
+
 let shutdownInProgress = false;
 
 function initiateShutdown(reason: string, exitCode: number): void {
@@ -658,6 +697,10 @@ function initiateShutdown(reason: string, exitCode: number): void {
 
   const exitTimer = setTimeout(() => process.exit(exitCode), SHUTDOWN_TIMEOUT_MS);
   exitTimer.unref();
+
+  if (viteDevServer) {
+    void viteDevServer.close();
+  }
 
   server.close(() => {
     process.exit(exitCode);
@@ -675,6 +718,11 @@ process.on("unhandledRejection", (reason) => {
   initiateShutdown("unhandled_rejection", 1);
 });
 
-server.listen(PORT, () => {
-  console.log(`Queue server listening on http://localhost:${PORT}`);
-});
+async function start(): Promise<void> {
+  await setupViteDevServer();
+  server.listen(PORT, () => {
+    console.log(`Queue server listening on http://localhost:${PORT}`);
+  });
+}
+
+void start();
