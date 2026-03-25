@@ -1,0 +1,153 @@
+/* Top bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.top-bar-left,
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Tabs */
+.view-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.tab {
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tab:hover:not(.active) {
+  color: var(--text);
+}
+
+/* SSE badge */
+.sse-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.sse-badge.connected {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.sse-badge.disconnected,
+.sse-badge.connecting {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+/* Play/Pause button */
+.play-pause-btn {
+  font-size: 1.1rem;
+  padding: 0.3rem 0.6rem;
+  min-width: 36px;
+  border-radius: 6px;
+  line-height: 1;
+  text-align: center;
+}
+
+.play-pause-btn.running {
+  background: var(--orange-dim);
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.play-pause-btn.stopped {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* Delete run button */
+.delete-run-btn {
+  font-size: 1rem;
+  padding: 0.3rem 0.6rem;
+  min-width: 36px;
+  border-radius: 6px;
+  line-height: 1;
+  text-align: center;
+  color: var(--red);
+  border-color: var(--border);
+  background: var(--surface2);
+}
+
+.delete-run-btn:hover:not(:disabled) {
+  background: var(--red-dim);
+  border-color: var(--red);
+}
+
+.delete-run-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Run status badge */
+.run-status-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.run-status-badge.running {
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.run-status-badge.pausing {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.run-status-badge.stopped {
+  background: var(--orange-dim);
+  color: var(--orange);
+}
+
+.run-status-badge.completed {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.run-status-badge.failed {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
