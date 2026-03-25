@@ -17,6 +17,19 @@ let elapsedInterval = null;
 // Track original inputs for form dirty comparison
 var _originalInputs = null;
 
+// --- URL state helpers ---
+function getUrlState() {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return { runId: params.get('run'), view: params.get('view') };
+}
+
+function setUrlState(runId, view) {
+  const params = new URLSearchParams();
+  if (runId) params.set('run', runId);
+  if (view) params.set('view', view);
+  history.replaceState(null, '', '#' + params.toString());
+}
+
 // --- DOM helpers ---
 const $ = (id) => document.getElementById(id);
 
@@ -26,10 +39,6 @@ function playVideo(container, videoSrc) {
   video.controls = true;
   video.autoplay = true;
   video.className = container.dataset.videoClass || 'inline-video';
-  // Constrain video to the thumbnail container's current dimensions
-  const rect = container.getBoundingClientRect();
-  video.style.maxWidth = rect.width + 'px';
-  video.style.maxHeight = rect.height + 'px';
   video.addEventListener('ended', () => {
     container.innerHTML = container.dataset.thumbnailHtml;
     container.style.height = '';
@@ -38,8 +47,6 @@ function playVideo(container, videoSrc) {
   });
   container.dataset.thumbnailHtml = container.innerHTML;
   container.innerHTML = '';
-  container.style.height = 'auto';
-  container.style.overflow = 'visible';
   container.appendChild(video);
   container.onclick = null;
 }
@@ -54,7 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCreateDialog();
   setupDetailPanel();
   setupGraphControls();
-  loadRuns();
+  loadRuns().then(() => {
+    const urlState = getUrlState();
+    if (urlState.view) {
+      const tab = document.querySelector(`.tab[data-view="${urlState.view}"]`);
+      if (tab) tab.click();
+    }
+  });
 });
 
 // --- View tabs ---
@@ -65,6 +78,7 @@ function setupTabs() {
       tab.classList.add('active');
       const view = tab.dataset.view;
       state.currentView = view;
+      setUrlState(state.activeRunId, view);
       $$('.view').forEach(v => v.classList.remove('active'));
       $(`${view}-view`).classList.add('active');
       if (view === 'graph' && state.graph) renderGraph();
@@ -94,9 +108,13 @@ async function loadRuns() {
       opt.textContent = run.name || run.id.slice(0, 8);
       sel.appendChild(opt);
     }
-    // Preserve active selection, or auto-select most recent
+    // Preserve active selection, check URL state, or auto-select most recent
+    const urlState = getUrlState();
     if (state.activeRunId && state.runs.some(r => r.id === state.activeRunId)) {
       sel.value = state.activeRunId;
+    } else if (urlState.runId && state.runs.find(r => r.id === urlState.runId)) {
+      sel.value = urlState.runId;
+      selectRun(urlState.runId);
     } else if (state.runs.length > 0) {
       const latest = state.runs[state.runs.length - 1];
       sel.value = latest.id;
@@ -114,6 +132,7 @@ async function loadRuns() {
 
 async function selectRun(runId) {
   state.activeRunId = runId;
+  setUrlState(runId, state.currentView);
   state.runStartTime = null;
   clearElapsedInterval();
   $('run-select').value = runId;
@@ -187,6 +206,7 @@ async function deleteRun() {
   try {
     await fetch(`${API}/api/runs/${state.activeRunId}`, { method: 'DELETE' });
     state.activeRunId = null;
+    setUrlState(null, state.currentView);
     disconnectSSE();
     await loadRuns();
   } catch (e) {
