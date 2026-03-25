@@ -464,7 +464,7 @@ function updateElapsedDisplay() {
   for (const qName of ['llm', 'image', 'video']) {
     const q = state.queues[qName];
     if (!q) continue;
-    const groups = [q.inProgress, q.pending, q.completed, q.failed, q.superseded, q.cancelled];
+    const groups = [q.inProgress, q.pending, q.completed, q.failed];
     for (const g of groups) { if (g) totalItems += g.length; }
     completedItems += (q.completed || []).length;
   }
@@ -512,10 +512,12 @@ function renderQueues() {
     ];
 
     const allItems = groups.flatMap(g => g.items);
+    const activeGroups = groups.filter(g => g.status !== 'superseded' && g.status !== 'cancelled');
+    const activeItems = activeGroups.flatMap(g => g.items);
     const done = (q.completed || []).length;
-    totalItems += allItems.length;
+    totalItems += activeItems.length;
     completedItems += done;
-    countEl.textContent = `${done}/${allItems.length}`;
+    countEl.textContent = `${done}/${activeItems.length}`;
 
     // Find earliest startedAt
     for (const item of allItems) {
