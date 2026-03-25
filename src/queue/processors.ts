@@ -913,6 +913,7 @@ ${JSON.stringify(analysis, null, 2)}`,
   }
 
   private rebuildAssetLibrary(state: RunState): void {
+    console.log('[rebuildAssetLibrary] generatedOutputs keys:', Object.keys(state.generatedOutputs));
     const analysis = state.storyAnalysis;
     if (!analysis) return;
 

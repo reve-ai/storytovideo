@@ -185,6 +185,12 @@ async function generateSingleFrame(params: {
     cameraDirection: shot.cameraDirection,
   });
 
+  console.log(`[generateFrame] Shot ${shot.shotNumber} (${isEndFrame ? 'end' : 'start'}): Building references...`);
+  console.log(`[generateFrame]   assetLibrary.characterImages:`, JSON.stringify(assetLibrary.characterImages));
+  console.log(`[generateFrame]   assetLibrary.locationImages:`, JSON.stringify(assetLibrary.locationImages));
+  console.log(`[generateFrame]   shot.charactersPresent:`, shot.charactersPresent);
+  console.log(`[generateFrame]   shot.location:`, shot.location);
+
   // Collect reference image file paths.
   // Order: location > character > object > continuity (previous end frame as low-priority style ref).
   const characterRefPaths = new Map<string, string>(); // path -> character name
@@ -205,6 +211,7 @@ async function generateSingleFrame(params: {
   if (locationRef && fs.existsSync(locationRef)) {
     referenceImagePaths.push(locationRef);
   }
+  console.log(`[generateFrame]   Location ref "${shot.location}": path=${JSON.stringify(locationRef)}, exists=${locationRef ? fs.existsSync(locationRef) : 'N/A'}`);
 
   // Add character reference images for all characters present
   for (const charName of shot.charactersPresent) {
@@ -215,6 +222,9 @@ async function generateSingleFrame(params: {
         referenceImagePaths.push(refPath);
         characterRefPaths.set(refPath, charName);
       }
+      console.log(`[generateFrame]   Character ref "${charName}": front=${JSON.stringify(charRefs?.front)}, angle=${JSON.stringify(charRefs?.angle)}, chosen=${JSON.stringify(refPath)}, exists=${refPath ? fs.existsSync(refPath) : 'N/A'}`);
+    } else {
+      console.log(`[generateFrame]   Character ref "${charName}": NOT FOUND in assetLibrary`);
     }
   }
 
@@ -274,6 +284,9 @@ async function generateSingleFrame(params: {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
+    console.log(`[generateFrame]   Final reference paths (${limitedReferencePaths.length}):`, limitedReferencePaths);
+    console.log(`[generateFrame]   Prompt (first 200 chars): ${remixPrompt.substring(0, 200)}...`);
+
     if (videoBackend === "grok") {
       return {
         path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
@@ -293,6 +306,8 @@ async function generateSingleFrame(params: {
     }
   } else {
     // No reference images — use text-to-image generation
+    console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
+    console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
     if (videoBackend !== "grok" && prompt.length > 2560) {
       console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
