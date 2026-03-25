@@ -10,6 +10,7 @@ export type WorkItemType =
   | 'generate_asset'
   | 'generate_frame'
   | 'generate_video'
+  | 'analyze_video'
   | 'assemble';
 
 // Which queue processes a given work item
@@ -40,6 +41,7 @@ export interface WorkItem {
   outputs: Record<string, unknown>;     // results after completion
   retryCount: number;                   // number of times this item has been retried (0 = first attempt)
   error: string | null;                 // error message if failed
+  reviewStatus?: string;                // review status for analyze_video items (e.g. "pending", "approved", "rejected")
   supersededBy: string | null;          // ID of the newer version that replaced this item
   createdAt: string;                    // ISO timestamp
   startedAt: string | null;            // ISO timestamp

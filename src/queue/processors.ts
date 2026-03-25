@@ -13,7 +13,7 @@ import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
-import { analyzeClipPacing } from '../tools/analyze-video-pacing.js';
+import { analyzeVideoClip } from '../tools/analyze-video-pacing.js';
 import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -201,6 +201,7 @@ export class QueueProcessor extends EventEmitter {
       case 'generate_asset': return this.handleGenerateAsset(item, signal);
       case 'generate_frame': return this.handleGenerateFrame(item, signal);
       case 'generate_video': return this.handleGenerateVideo(item, signal);
+      case 'analyze_video': return this.handleAnalyzeVideo(item);
       case 'assemble': return this.handleAssemble(item);
       default:
         throw new Error(`Unknown work item type: ${item.type}`);
@@ -508,64 +509,38 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(result.path);
 
-    // Post-generation pacing analysis
-    const isManualDuration = state.manualDurations?.[shot.shotNumber];
-    if (isManualDuration) {
-      console.log(`[pacing] Skipping pacing analysis for shot ${result.shotNumber} (duration manually set by user)`);
-    }
-
-    if (result.path && !isManualDuration) {
-      try {
-        const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === result.shotNumber);
-        const shotDialogue = shotObj?.dialogue;
-        const absolutePath = this.absolutePath(this.relativePath(result.path));
-        const analysis = await analyzeClipPacing(absolutePath, result.shotNumber, result.duration, shotDialogue);
-        console.log(`[pacing] Shot ${result.shotNumber}: ${result.duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
-
-        const savings = result.duration - analysis.recommendedDuration;
-        if (savings >= 1 && analysis.confidence !== 'low') {
-          console.log(`[pacing] Regenerating shot ${result.shotNumber} at ${analysis.recommendedDuration}s (saving ${savings.toFixed(1)}s)`);
-
-          const regenResult = await generateVideo({
-            shotNumber: shot.shotNumber,
-            shotType: 'first_last_frame',
-            actionPrompt: shot.actionPrompt,
-            dialogue: shot.dialogue,
-            soundEffects: shot.soundEffects,
-            cameraDirection: shot.cameraDirection,
-            durationSeconds: analysis.recommendedDuration,
-            startFramePath,
-            endFramePath: endFramePath ?? startFramePath,
-            outputDir: join(this.resolvedOutputDir(), 'videos'),
-            videoBackend: 'grok',
-            characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
-            aspectRatio,
-            abortSignal: signal,
-          });
-
-          state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(regenResult.path);
-          if (shotObj) shotObj.durationSeconds = analysis.recommendedDuration;
-
-          return {
-            shotNumber: regenResult.shotNumber,
-            path: this.relativePath(regenResult.path),
-            duration: regenResult.duration,
-            promptSent: regenResult.promptSent,
-            pacingAdjusted: true,
-            originalDuration: result.duration,
-            newDuration: analysis.recommendedDuration,
-          };
-        }
-      } catch (err) {
-        console.warn(`[pacing] Failed to analyze shot ${result.shotNumber}, keeping original:`, err);
-      }
-    }
-
     return {
       shotNumber: result.shotNumber,
       path: this.relativePath(result.path),
       duration: result.duration,
       promptSent: result.promptSent,
+    };
+  }
+
+  private async handleAnalyzeVideo(item: WorkItem): Promise<Record<string, unknown>> {
+    const shotNumber = item.inputs.shotNumber as number;
+    const videoPath = this.absolutePath(item.inputs.videoPath as string);
+    const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
+    const referenceImagePaths = (item.inputs.referenceImagePaths as string[]).map(p => this.absolutePath(p));
+    const shot = item.inputs.shot as Shot;
+
+    const analysis = await analyzeVideoClip({
+      videoPath,
+      shotNumber,
+      startFramePath,
+      referenceImagePaths,
+      dialogue: shot.dialogue,
+      actionPrompt: shot.actionPrompt,
+      durationSeconds: shot.durationSeconds,
+    });
+
+    console.log(`[analyze_video] Shot ${shotNumber}: matchScore=${analysis.matchScore}, issues=${analysis.issues.length}`);
+
+    return {
+      shotNumber,
+      matchScore: analysis.matchScore,
+      issues: analysis.issues,
+      recommendations: analysis.recommendations,
     };
   }
 
@@ -674,7 +649,7 @@ ${JSON.stringify(analysis, null, 2)}`,
         this.seedAfterGenerateFrame(item, outputs);
         break;
       case 'generate_video':
-        this.seedAfterGenerateVideo();
+        this.seedAfterGenerateVideo(item, outputs);
         break;
     }
   }
@@ -891,12 +866,52 @@ ${JSON.stringify(analysis, null, 2)}`,
     });
   }
 
-  private seedAfterGenerateVideo(_item?: WorkItem): void {
+  private seedAfterGenerateVideo(item: WorkItem, outputs: Record<string, unknown>): void {
     const state = this.queueManager.getState();
     const analysis = state.storyAnalysis;
     if (!analysis) return;
 
-    // Check if ALL video items are completed
+    // Seed an analyze_video item for this completed video
+    const shotNumber = outputs.shotNumber as number;
+    const videoPath = outputs.path as string;
+    const startFramePath = item.inputs.startFramePath as string;
+    const shot = item.inputs.shot as Shot;
+
+    // Collect reference image paths from the asset library for characters/objects/location in this shot
+    const referenceImagePaths: string[] = [];
+    for (const [key, value] of Object.entries(state.generatedOutputs)) {
+      if (key.startsWith('character:') || key.startsWith('location:') || key.startsWith('object:')) {
+        const name = key.split(':')[1];
+        if (
+          shot.charactersPresent.includes(name) ||
+          shot.objectsPresent?.includes(name) ||
+          shot.location === name
+        ) {
+          referenceImagePaths.push(value);
+        }
+      }
+    }
+
+    // Check if analyze_video already exists for this shot
+    const existingAnalyze = this.queueManager.getItemsByKey(`analyze_video:shot:${shotNumber}`);
+    if (!existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) {
+      this.queueManager.addItem({
+        type: 'analyze_video',
+        queue: 'llm',
+        itemKey: `analyze_video:shot:${shotNumber}`,
+        dependencies: [item.id],
+        inputs: {
+          shotNumber,
+          videoPath,
+          startFramePath,
+          referenceImagePaths,
+          shot,
+        },
+        priority: item.priority,
+      });
+    }
+
+    // Check if ALL video items are completed to seed assemble
     const allShots = analysis.scenes.flatMap(s => s.shots || []).filter(s => !s.skipped);
     const allVideosDone = allShots.every(shot => {
       const items = this.queueManager.getItemsByKey(`video:shot:${shot.shotNumber}`);

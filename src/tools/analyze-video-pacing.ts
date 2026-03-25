@@ -1,7 +1,110 @@
 import { getGoogleClient } from "../google-client";
 import { FileState } from "@google/genai";
+import type { Part } from "@google/genai";
 import * as fs from "fs";
 import * as path from "path";
+
+// --- Structured video analysis (used by analyze_video work items) ---
+
+export interface VideoClipAnalysis {
+  matchScore: number;            // 0-100, how well the video matches the intended shot
+  issues: string[];              // list of specific issues found
+  recommendations: string[];     // actionable suggestions
+}
+
+export interface AnalyzeVideoClipOptions {
+  videoPath: string;
+  shotNumber: number;
+  startFramePath: string;
+  referenceImagePaths: string[];
+  dialogue?: string;
+  actionPrompt: string;
+  durationSeconds: number;
+}
+
+export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<VideoClipAnalysis> {
+  const client = getGoogleClient();
+
+  const videoData = fs.readFileSync(opts.videoPath);
+  const videoB64 = videoData.toString("base64");
+
+  console.log(`[analyze_video] Analyzing shot ${opts.shotNumber}: ${opts.videoPath} (${(videoData.length / 1024 / 1024).toFixed(1)}MB)`);
+
+  const parts: Part[] = [
+    {
+      inlineData: {
+        mimeType: "video/mp4",
+        data: videoB64,
+      },
+    },
+  ];
+
+  // Include start frame
+  if (fs.existsSync(opts.startFramePath)) {
+    const startFrameData = fs.readFileSync(opts.startFramePath);
+    parts.push({
+      inlineData: {
+        mimeType: "image/png",
+        data: startFrameData.toString("base64"),
+      },
+    });
+  }
+
+  // Include reference images from asset library
+  for (const refPath of opts.referenceImagePaths) {
+    if (fs.existsSync(refPath)) {
+      const refData = fs.readFileSync(refPath);
+      const ext = path.extname(refPath).toLowerCase();
+      const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+      parts.push({
+        inlineData: {
+          mimeType,
+          data: refData.toString("base64"),
+        },
+      });
+    }
+  }
+
+  parts.push({
+    text: `Analyze this video clip (shot ${opts.shotNumber}, ${opts.durationSeconds}s) for quality and accuracy.
+
+The intended action for this shot was: "${opts.actionPrompt}"
+${opts.dialogue ? `Dialogue: "${opts.dialogue}"` : "No dialogue in this shot."}
+
+The first image after the video is the start frame that was used as input to generate this clip.
+${opts.referenceImagePaths.length > 0 ? "The remaining images are character/location/object reference sheets from the asset library." : ""}
+
+Evaluate:
+1. How well does the generated video match the intended action and start frame?
+2. Are there visual artifacts, glitches, or quality issues?
+3. Do characters/objects match their reference images?
+4. Is the pacing appropriate for the content?
+5. Are there static/frozen frames or unnecessary repetition?
+
+Return JSON:
+\`\`\`json
+{
+  "matchScore": <0-100, how well the video matches the intended shot>,
+  "issues": ["<specific issue 1>", "<specific issue 2>"],
+  "recommendations": ["<actionable suggestion 1>", "<actionable suggestion 2>"]
+}
+\`\`\``,
+  });
+
+  const response = await client.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [{ role: "user", parts }],
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.2,
+    },
+  });
+
+  const text = response.text ?? "";
+  const result = JSON.parse(text) as VideoClipAnalysis;
+  result.matchScore = Math.max(0, Math.min(100, Math.round(result.matchScore)));
+  return result;
+}
 
 
 export interface TrimRecommendation {
