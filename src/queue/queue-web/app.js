@@ -61,10 +61,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCreateDialog();
   setupDetailPanel();
   setupGraphControls();
+  const initialUrlState = getUrlState();
+  if (initialUrlState.view) {
+    state.currentView = initialUrlState.view;
+  }
   loadRuns().then(() => {
-    const urlState = getUrlState();
-    if (urlState.view) {
-      const tab = document.querySelector(`.tab[data-view="${urlState.view}"]`);
+    if (initialUrlState.view) {
+      const tab = document.querySelector(`.tab[data-view="${initialUrlState.view}"]`);
       if (tab) tab.click();
     }
   });
