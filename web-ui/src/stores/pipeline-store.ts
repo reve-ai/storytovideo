@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useRunStore } from "./run-store";
+import { useUIStore } from "./ui-store";
 
 // --- API types (mirrored from src/queue/types.ts for the web client) ---
 
@@ -108,6 +109,24 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         queues[q.queue] = q;
       }
       set({ queues });
+
+      // Compute runStartTime: earliest startedAt across all items
+      let earliestStart: number | null = null;
+      for (const qName of ["llm", "image", "video"] as QueueName[]) {
+        const q = queues[qName];
+        if (!q) continue;
+        for (const group of [q.inProgress, q.pending, q.completed, q.failed, q.superseded, q.cancelled]) {
+          for (const item of group) {
+            if (item.startedAt) {
+              const t = new Date(item.startedAt).getTime();
+              if (earliestStart === null || t < earliestStart) earliestStart = t;
+            }
+          }
+        }
+      }
+      if (earliestStart !== null) {
+        useRunStore.getState().setRunStartTime(earliestStart);
+      }
     } catch (e) {
       console.error("fetchQueues:", e);
     }
@@ -183,8 +202,14 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     });
 
     // Pipeline paused event
-    es.addEventListener("pipeline_paused", () => {
+    es.addEventListener("pipeline_paused", (e: MessageEvent) => {
       useRunStore.getState().setRunStatus("stopped");
+      let reason = "Pipeline paused";
+      try {
+        const data = JSON.parse(e.data) as { payload?: { reason?: string } };
+        if (data.payload?.reason) reason = data.payload.reason;
+      } catch { /* ignore */ }
+      useUIStore.getState().showToast(reason, "warning");
       useRunStore.getState().loadRuns();
       refreshData();
     });
@@ -217,6 +242,8 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
           refreshData();
         } else if (data.type === "pipeline_paused") {
           useRunStore.getState().setRunStatus("stopped");
+          const reason = data.payload?.reason || "Pipeline paused";
+          useUIStore.getState().showToast(reason, "warning");
           useRunStore.getState().loadRuns();
           refreshData();
         }

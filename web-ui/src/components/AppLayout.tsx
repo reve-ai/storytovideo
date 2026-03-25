@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Outlet } from "react-router";
 import TopBar from "./TopBar";
 import CreateRunDialog from "./CreateRunDialog";
+import DetailPanel from "./DetailPanel";
+import Toast from "./Toast";
 
 export default function AppLayout() {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -16,6 +18,8 @@ export default function AppLayout() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
       />
+      <DetailPanel />
+      <Toast />
     </div>
   );
 }

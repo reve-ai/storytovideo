@@ -1,6 +1,20 @@
 import { create } from "zustand";
 import { usePipelineStore } from "./pipeline-store";
 
+// --- URL hash helpers ---
+
+export function getUrlState(): { runId: string | null; view: string | null } {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return { runId: params.get("run"), view: params.get("view") };
+}
+
+export function setUrlState(runId: string | null, view: string | null): void {
+  const params = new URLSearchParams();
+  if (runId) params.set("run", runId);
+  if (view) params.set("view", view);
+  history.replaceState(null, "", "#" + params.toString());
+}
+
 // --- API types ---
 
 export type RunStatus =
@@ -40,6 +54,7 @@ interface RunActions {
   loadRuns: () => Promise<void>;
   selectRun: (runId: string) => Promise<void>;
   setRunStatus: (status: RunStatus) => void;
+  setRunStartTime: (time: number) => void;
   createRun: (
     storyText: string,
     options?: { aspectRatio?: string },
@@ -66,6 +81,9 @@ export const useRunStore = create<RunStore>((set, get) => ({
 
   selectRun: async (runId: string) => {
     set({ activeRunId: runId, runStartTime: null, runStatus: null });
+    // Sync URL hash — read current view from hash since ui-store may not be imported here
+    const currentHash = getUrlState();
+    setUrlState(runId, currentHash.view);
 
     const pipeline = usePipelineStore.getState();
     pipeline.disconnectSSE();
@@ -81,6 +99,10 @@ export const useRunStore = create<RunStore>((set, get) => ({
 
   setRunStatus: (status: RunStatus) => {
     set({ runStatus: status });
+  },
+
+  setRunStartTime: (time: number) => {
+    set({ runStartTime: time });
   },
 
   createRun: async (storyText, options = {}) => {
@@ -100,6 +122,8 @@ export const useRunStore = create<RunStore>((set, get) => ({
     const pipeline = usePipelineStore.getState();
     pipeline.disconnectSSE();
     set({ activeRunId: null, runStatus: null, runStartTime: null });
+    const currentHash = getUrlState();
+    setUrlState(null, currentHash.view);
     await get().loadRuns();
   },
 

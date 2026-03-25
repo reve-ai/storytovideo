@@ -1,7 +1,8 @@
 import { useEffect, useCallback } from "react";
 import { NavLink, useNavigate } from "react-router";
-import { useRunStore } from "../stores/run-store";
+import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
+import { useUIStore, type ViewName } from "../stores/ui-store";
 
 interface TopBarProps {
   onNewRun: () => void;
@@ -24,16 +25,37 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const sseStatus = usePipelineStore((s) => s.sseStatus);
   const navigate = useNavigate();
 
-  // Load runs on mount, auto-select latest
+  // Load runs on mount, restore state from URL hash
   useEffect(() => {
+    const urlState = getUrlState();
+    // Restore view from hash
+    if (urlState.view) {
+      const viewMap: Record<string, { route: string; view: ViewName }> = {
+        queue: { route: "/", view: "queue" },
+        graph: { route: "/graph", view: "graph" },
+        story: { route: "/story", view: "story" },
+      };
+      const mapping = viewMap[urlState.view];
+      if (mapping) {
+        useUIStore.getState().setView(mapping.view);
+        navigate(mapping.route);
+      }
+    }
+
     loadRuns().then(() => {
       const state = useRunStore.getState();
       if (!state.activeRunId && state.runs.length > 0) {
-        const latest = state.runs[state.runs.length - 1];
-        selectRun(latest.id);
+        // Prefer run ID from URL hash
+        const hashRunId = urlState.runId;
+        if (hashRunId && state.runs.some((r) => r.id === hashRunId)) {
+          selectRun(hashRunId);
+        } else {
+          const latest = state.runs[state.runs.length - 1];
+          selectRun(latest.id);
+        }
       }
     });
-  }, [loadRuns, selectRun]);
+  }, [loadRuns, selectRun, navigate]);
 
   const handleRunChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
