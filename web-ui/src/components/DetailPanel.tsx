@@ -3,6 +3,7 @@ import { useUIStore } from "../stores/ui-store";
 import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import InputForm from "./InputForm";
+import ImageUpload from "./ImageUpload";
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -292,12 +293,19 @@ function DetailOutputs({
         );
       }
     } else {
+      const uploadField =
+        item.type === "generate_frame" ? "startPath" : item.type === "generate_asset" ? "path" : null;
       mediaEl = (
-        <img
-          src={src}
-          style={{ maxWidth: "100%", borderRadius: 6 }}
-          alt="Output"
-        />
+        <div className="detail-media-wrap">
+          <img
+            src={src}
+            style={{ maxWidth: "100%", borderRadius: 6 }}
+            alt="Output"
+          />
+          {uploadField && (
+            <ImageUpload itemId={item.id} field={uploadField} />
+          )}
+        </div>
       );
     }
   }

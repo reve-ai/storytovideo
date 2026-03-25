@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
+import ImageUpload from "./ImageUpload";
 
 interface ShotCardProps {
   shotNum: number;
@@ -91,6 +92,9 @@ export default function ShotCard({
         >
           <img src={frameSrc} alt={`Shot ${shotNum}`} />
           {videoSrc && <div className="play-overlay">▶</div>}
+          {frameItem && (
+            <ImageUpload itemId={frameItem.id} field="startPath" />
+          )}
         </div>
       ) : (
         <div

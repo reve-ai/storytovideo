@@ -92,6 +92,7 @@ interface PipelineActions {
   fetchAnalyzeItems: (runId: string) => Promise<void>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
+  uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
@@ -182,6 +183,28 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       set({ analyzeItems: get().analyzeItems.filter((i) => i.id !== itemId) });
     } catch (e) {
       console.error("rejectAnalyzeItem:", e);
+    }
+  },
+
+  uploadImage: async (runId: string, file: File, itemId?: string, field?: string) => {
+    try {
+      const params = new URLSearchParams();
+      if (itemId) params.set("itemId", itemId);
+      if (field) params.set("field", field);
+      const res = await fetch(`/api/runs/${runId}/upload?${params}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) {
+        console.error("uploadImage failed:", await res.text());
+        return false;
+      }
+      await get().fetchQueues(runId);
+      return true;
+    } catch (e) {
+      console.error("uploadImage:", e);
+      return false;
     }
   },
 
