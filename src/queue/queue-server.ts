@@ -618,6 +618,120 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // GET /api/runs/:id/analyze — list analyze_video items pending review
+      if (method === "GET" && action === "analyze" && pathParts.length === 4) {
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        const state = qm.getState();
+        const pendingReview = state.workItems.filter(item =>
+          item.type === 'analyze_video' &&
+          item.status === 'completed' &&
+          item.reviewStatus !== 'accepted' &&
+          item.reviewStatus !== 'rejected'
+        );
+        sendJson(res, 200, { runId, items: pendingReview });
+        return;
+      }
+
+      // POST /api/runs/:id/analyze/:itemId/accept — accept recommendation
+      if (method === "POST" && action === "analyze" && pathParts.length >= 6 && pathParts[5] === "accept") {
+        const itemId = decodeURIComponent(pathParts[4]);
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        const item = qm.getItem(itemId);
+        if (!item || item.type !== 'analyze_video') {
+          sendJson(res, 404, { error: `Analyze item not found: ${itemId}` });
+          return;
+        }
+        if (item.status !== 'completed') {
+          sendJson(res, 409, { error: `Item is not completed: ${item.status}` });
+          return;
+        }
+
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const editedInputs = body.inputs as Record<string, unknown> | undefined;
+
+        // Find the upstream generate_video item this analysis depends on
+        const videoItemId = item.dependencies.find(depId => {
+          const dep = qm.getItem(depId);
+          return dep && dep.type === 'generate_video';
+        });
+
+        if (!videoItemId) {
+          sendJson(res, 500, { error: "Could not find upstream generate_video item" });
+          return;
+        }
+
+        // Determine what to redo based on recommendations
+        const recommendations = (item.outputs.recommendations ?? []) as Array<{ type: string; suggestedInputs?: Record<string, unknown> }>;
+        const redoFrame = recommendations.some(r => r.type === 'redo_frame');
+
+        // Merge suggested inputs from recommendations
+        let suggestedInputs: Record<string, unknown> = {};
+        for (const rec of recommendations) {
+          if (rec.suggestedInputs) {
+            suggestedInputs = { ...suggestedInputs, ...rec.suggestedInputs };
+          }
+        }
+
+        // If the user provided edited inputs, those override suggestions
+        if (editedInputs) {
+          suggestedInputs = { ...suggestedInputs, ...editedInputs };
+        }
+
+        // Mark as accepted
+        qm.setReviewStatus(itemId, 'accepted');
+
+        // Redo the appropriate upstream item
+        let targetItemId = videoItemId;
+        if (redoFrame) {
+          // Find the frame item that the video depends on
+          const videoItem = qm.getItem(videoItemId);
+          const frameItemId = videoItem?.dependencies.find(depId => {
+            const dep = qm.getItem(depId);
+            return dep && dep.type === 'generate_frame';
+          });
+          if (frameItemId) {
+            targetItemId = frameItemId;
+          }
+        }
+
+        const targetItem = qm.getItem(targetItemId);
+        const mergedInputs = Object.keys(suggestedInputs).length > 0
+          ? { ...targetItem?.inputs, ...suggestedInputs }
+          : undefined;
+
+        const newItem = runManager.redoItem(runId, targetItemId, mergedInputs);
+        if (!newItem) {
+          sendJson(res, 500, { error: `Failed to redo item: ${targetItemId}` });
+          return;
+        }
+
+        qm.save();
+        await runManager.resumeRun(runId);
+        emitEvent(runId, "analyze_accepted", { analyzeItemId: itemId, redoItemId: targetItemId, newItem });
+        sendJson(res, 200, { accepted: itemId, newItem });
+        return;
+      }
+
+      // POST /api/runs/:id/analyze/:itemId/reject — reject recommendation
+      if (method === "POST" && action === "analyze" && pathParts.length >= 6 && pathParts[5] === "reject") {
+        const itemId = decodeURIComponent(pathParts[4]);
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        const item = qm.getItem(itemId);
+        if (!item || item.type !== 'analyze_video') {
+          sendJson(res, 404, { error: `Analyze item not found: ${itemId}` });
+          return;
+        }
+
+        qm.setReviewStatus(itemId, 'rejected');
+        qm.save();
+        emitEvent(runId, "analyze_rejected", { analyzeItemId: itemId });
+        sendJson(res, 200, { rejected: itemId });
+        return;
+      }
+
       // POST /api/runs/:id/stop
       if (method === "POST" && action === "stop") {
         const stopped = await runManager.stopRun(runId);

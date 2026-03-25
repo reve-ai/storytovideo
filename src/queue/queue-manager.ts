@@ -226,6 +226,13 @@ export class QueueManager {
     this.touch();
   }
 
+  setReviewStatus(id: string, reviewStatus: 'accepted' | 'rejected'): WorkItem {
+    const item = this.requireItem(id);
+    item.reviewStatus = reviewStatus;
+    this.touch();
+    return item;
+  }
+
   // --- Queue picking ---
 
   getNextReady(queue: QueueName, priority: Priority): WorkItem | null {
