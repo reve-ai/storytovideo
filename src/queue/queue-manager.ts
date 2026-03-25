@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, isAbsolute, relative, resolve } from 'path';
 import type {
   WorkItem,
   WorkItemType,
@@ -27,7 +27,9 @@ export class QueueManager {
   private stateFilePath: string;
 
   constructor(runId: string, storyFile: string, outputDir: string, options?: RunState['options']) {
-    this.stateFilePath = join(outputDir, 'queue_state.json');
+    // Resolve to absolute for fs operations; store the (possibly relative) outputDir as-is in state
+    const absOutputDir = isAbsolute(outputDir) ? outputDir : resolve(process.cwd(), outputDir);
+    this.stateFilePath = join(absOutputDir, 'queue_state.json');
     this.state = {
       runId,
       storyFile,
@@ -56,29 +58,60 @@ export class QueueManager {
     return mgr;
   }
 
-  /** Migrate any absolute paths in generatedOutputs and work item inputs/outputs to relative. */
+  /** Migrate any absolute paths in generatedOutputs, work item inputs/outputs, and outputDir to relative. */
   private migrateAbsolutePaths(): void {
-    const outputDir = this.state.outputDir;
     let changed = false;
 
-    for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
-      if (val.startsWith(outputDir)) {
-        this.state.generatedOutputs[key] = val.slice(outputDir.length).replace(/^\//, '');
-        changed = true;
-      }
-    }
+    // Migrate outputDir itself from absolute → relative to process.cwd()
+    if (isAbsolute(this.state.outputDir)) {
+      const absOutputDir = this.state.outputDir;
+      this.state.outputDir = relative(process.cwd(), absOutputDir);
+      changed = true;
 
-    for (const item of this.state.workItems) {
-      for (const [key, val] of Object.entries(item.outputs)) {
-        if (typeof val === 'string' && val.startsWith(outputDir)) {
-          (item.outputs as Record<string, unknown>)[key] = val.slice(outputDir.length).replace(/^\//, '');
+      // Strip the old absolute outputDir prefix from generatedOutputs and work items
+      for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
+        if (val.startsWith(absOutputDir)) {
+          this.state.generatedOutputs[key] = val.slice(absOutputDir.length).replace(/^\//, '');
           changed = true;
         }
       }
-      for (const [key, val] of Object.entries(item.inputs)) {
-        if (typeof val === 'string' && val.startsWith(outputDir)) {
-          (item.inputs as Record<string, unknown>)[key] = val.slice(outputDir.length).replace(/^\//, '');
+
+      for (const item of this.state.workItems) {
+        for (const [key, val] of Object.entries(item.outputs)) {
+          if (typeof val === 'string' && val.startsWith(absOutputDir)) {
+            (item.outputs as Record<string, unknown>)[key] = val.slice(absOutputDir.length).replace(/^\//, '');
+            changed = true;
+          }
+        }
+        for (const [key, val] of Object.entries(item.inputs)) {
+          if (typeof val === 'string' && val.startsWith(absOutputDir)) {
+            (item.inputs as Record<string, unknown>)[key] = val.slice(absOutputDir.length).replace(/^\//, '');
+            changed = true;
+          }
+        }
+      }
+    } else {
+      // outputDir is already relative; still strip any lingering absolute prefixes using resolved path
+      const resolvedDir = resolve(process.cwd(), this.state.outputDir);
+      for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
+        if (val.startsWith(resolvedDir)) {
+          this.state.generatedOutputs[key] = val.slice(resolvedDir.length).replace(/^\//, '');
           changed = true;
+        }
+      }
+
+      for (const item of this.state.workItems) {
+        for (const [key, val] of Object.entries(item.outputs)) {
+          if (typeof val === 'string' && val.startsWith(resolvedDir)) {
+            (item.outputs as Record<string, unknown>)[key] = val.slice(resolvedDir.length).replace(/^\//, '');
+            changed = true;
+          }
+        }
+        for (const [key, val] of Object.entries(item.inputs)) {
+          if (typeof val === 'string' && val.startsWith(resolvedDir)) {
+            (item.inputs as Record<string, unknown>)[key] = val.slice(resolvedDir.length).replace(/^\//, '');
+            changed = true;
+          }
         }
       }
     }

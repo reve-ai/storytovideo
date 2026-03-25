@@ -8,7 +8,7 @@ import {
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { join, resolve, extname } from "path";
 
-import { RunManager } from "./run-manager.js";
+import { RunManager, resolveOutputDir } from "./run-manager.js";
 import type { QueueName, WorkItem } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -478,7 +478,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       if (method === "GET" && action === "media" && pathParts.length >= 5) {
         const run = runManager.getRun(runId);
         if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
-        handleMediaRequest(res, req, run.outputDir, pathParts.slice(4));
+        handleMediaRequest(res, req, resolveOutputDir(run.outputDir), pathParts.slice(4));
         return;
       }
 

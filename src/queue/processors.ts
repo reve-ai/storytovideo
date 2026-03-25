@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { join } from 'path';
+import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
@@ -74,21 +74,28 @@ export class QueueProcessor extends EventEmitter {
     super();
   }
 
-  /** Convert an absolute path to a path relative to the run's outputDir. */
-  private relativePath(absolutePath: string): string {
+  /** Resolve the run's outputDir to an absolute path. */
+  private resolvedOutputDir(): string {
     const outputDir = this.queueManager.getState().outputDir;
-    if (absolutePath.startsWith(outputDir)) {
-      let rel = absolutePath.slice(outputDir.length);
+    if (isAbsolute(outputDir)) return outputDir;
+    return resolve(process.cwd(), outputDir);
+  }
+
+  /** Convert an absolute path to a path relative to the run's outputDir. */
+  private relativePath(absPath: string): string {
+    const outputDir = this.resolvedOutputDir();
+    if (absPath.startsWith(outputDir)) {
+      let rel = absPath.slice(outputDir.length);
       if (rel.startsWith('/')) rel = rel.slice(1);
       return rel;
     }
-    return absolutePath;
+    return absPath;
   }
 
   /** Resolve a potentially-relative path to absolute using the run's outputDir. */
-  private absolutePath(relativePath: string): string {
-    if (relativePath.startsWith('/')) return relativePath; // already absolute
-    return join(this.queueManager.getState().outputDir, relativePath);
+  private absolutePath(relPath: string): string {
+    if (isAbsolute(relPath)) return relPath;
+    return join(this.resolvedOutputDir(), relPath);
   }
 
   start(): void {
@@ -422,7 +429,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       objectName: item.inputs.objectName as string | undefined,
       description: item.inputs.description as string,
       artStyle: item.inputs.artStyle as string,
-      outputDir: join(state.outputDir, 'assets'),
+      outputDir: join(this.resolvedOutputDir(), 'assets'),
       referenceImagePath: item.inputs.referenceImagePath as string | undefined,
       videoBackend: 'grok',
       aspectRatio,
@@ -453,7 +460,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       shot,
       artStyle: state.storyAnalysis.artStyle,
       assetLibrary: state.assetLibrary,
-      outputDir: state.outputDir,
+      outputDir: this.resolvedOutputDir(),
       previousEndFramePath,
       videoBackend: 'grok',
       aspectRatio,
@@ -492,7 +499,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       durationSeconds: shot.durationSeconds,
       startFramePath,
       endFramePath: endFramePath ?? startFramePath,
-      outputDir: join(state.outputDir, 'videos'),
+      outputDir: join(this.resolvedOutputDir(), 'videos'),
       videoBackend: 'grok',
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
       aspectRatio,
@@ -529,7 +536,7 @@ ${JSON.stringify(analysis, null, 2)}`,
             durationSeconds: analysis.recommendedDuration,
             startFramePath,
             endFramePath: endFramePath ?? startFramePath,
-            outputDir: join(state.outputDir, 'videos'),
+            outputDir: join(this.resolvedOutputDir(), 'videos'),
             videoBackend: 'grok',
             characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
             aspectRatio,
@@ -613,7 +620,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       videoPaths,
       transitions,
       subtitles,
-      outputDir: state.outputDir,
+      outputDir: this.resolvedOutputDir(),
     });
 
     return { path: this.relativePath(result.path) };

@@ -1,10 +1,26 @@
 import { randomUUID } from "crypto";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, relative, isAbsolute } from "path";
 import { EventEmitter } from "events";
 import { QueueManager } from "./queue-manager.js";
 import { QueueProcessor } from "./processors.js";
 import type { WorkItem, QueueName } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Path helpers — stored paths are relative to process.cwd()
+// ---------------------------------------------------------------------------
+
+/** Convert a potentially-absolute outputDir to a path relative to process.cwd(). */
+export function toRelativeOutputDir(outputDir: string): string {
+  if (!isAbsolute(outputDir)) return outputDir;
+  return relative(process.cwd(), outputDir);
+}
+
+/** Resolve a (potentially relative) outputDir to an absolute path. */
+export function resolveOutputDir(outputDir: string): string {
+  if (isAbsolute(outputDir)) return outputDir;
+  return resolve(process.cwd(), outputDir);
+}
 
 // ---------------------------------------------------------------------------
 // Run record persisted to queue-runs.json
@@ -37,7 +53,8 @@ export interface RunOptions {
 
 const RUN_DB_DIR = resolve(process.env.STORYTOVIDEO_RUN_DB_DIR ?? "./output/api-server");
 const RUN_DB_PATH = join(RUN_DB_DIR, "queue-runs.json");
-const RUN_OUTPUT_ROOT = resolve(process.env.STORYTOVIDEO_RUN_OUTPUT_ROOT ?? "./output/runs");
+/** Relative output root for run directories (e.g. "output/runs"). */
+const RUN_OUTPUT_ROOT = process.env.STORYTOVIDEO_RUN_OUTPUT_ROOT ?? "output/runs";
 
 // ---------------------------------------------------------------------------
 // RunManager
@@ -61,9 +78,16 @@ export class RunManager extends EventEmitter {
     try {
       const raw = readFileSync(RUN_DB_PATH, "utf-8");
       const records = JSON.parse(raw) as QueueRunRecord[];
+      let migrated = false;
       for (const r of records) {
+        // Migrate absolute outputDir → relative
+        if (isAbsolute(r.outputDir)) {
+          r.outputDir = toRelativeOutputDir(r.outputDir);
+          migrated = true;
+        }
         this.runs.set(r.id, r);
       }
+      if (migrated) this.persistRuns();
     } catch (err) {
       console.error("[RunManager] Failed to load queue-runs.json:", err);
     }
@@ -107,8 +131,8 @@ export class RunManager extends EventEmitter {
 
   createRun(storyText: string, options: RunOptions = {}): QueueRunRecord {
     const runId = randomUUID();
-    const outputDir = resolve(join(RUN_OUTPUT_ROOT, runId));
-    mkdirSync(outputDir, { recursive: true });
+    const outputDir = join(RUN_OUTPUT_ROOT, runId);           // relative path for storage
+    mkdirSync(resolveOutputDir(outputDir), { recursive: true }); // absolute for fs
 
     const now = new Date().toISOString();
 
@@ -250,8 +274,8 @@ export class RunManager extends EventEmitter {
 
     let qm = this.queueManagers.get(runId);
     if (!qm) {
-      // Reload from disk
-      const stateFile = join(record.outputDir, "queue_state.json");
+      // Reload from disk — resolve relative outputDir to absolute for fs access
+      const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
       qm = QueueManager.load(stateFile);
       this.queueManagers.set(runId, qm);
     }
@@ -341,7 +365,7 @@ export class RunManager extends EventEmitter {
     for (const [runId, record] of this.runs) {
       if (record.status === "running" || record.status === "stopped" || record.status === "pausing") {
         try {
-          const stateFile = join(record.outputDir, "queue_state.json");
+          const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
           if (!existsSync(stateFile)) continue;
           const qm = QueueManager.load(stateFile);
           this.queueManagers.set(runId, qm);
