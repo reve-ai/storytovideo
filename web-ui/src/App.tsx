@@ -1,11 +1,8 @@
 import { Routes, Route, NavLink } from "react-router";
+import GraphView from "./views/GraphView";
 
 function Queue() {
   return <div className="p-4 text-[--muted]">Queue view</div>;
-}
-
-function Graph() {
-  return <div className="p-4 text-[--muted]">Graph view</div>;
 }
 
 function Story() {
@@ -41,7 +38,7 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Queue />} />
-          <Route path="/graph" element={<Graph />} />
+          <Route path="/graph" element={<GraphView />} />
           <Route path="/story" element={<Story />} />
         </Routes>
       </main>
