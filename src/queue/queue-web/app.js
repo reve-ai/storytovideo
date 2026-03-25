@@ -934,6 +934,7 @@ function esc(s) {
 // --- Actions ---
 // Make handleAction global for onclick attributes
 window.handleAction = handleAction;
+window.showDetail = showDetail;
 
 async function handleAction(action, itemId) {
   if (!state.activeRunId) return;
