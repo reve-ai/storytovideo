@@ -656,11 +656,43 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           }
         }
 
-        const newItem = runManager.redoItem(runId, itemId, newInputs);
-        if (!newItem) { sendJson(res, 404, { error: `Item not found: ${itemId}` }); return; }
+        // If this is a generate_video item and frame-related fields changed,
+        // redo the upstream generate_frame item instead (cascade will recreate the video)
+        let targetItemId = itemId;
+        let targetInputs = newInputs;
+        if (newInputs) {
+          const qm = runManager.getQueueManager(runId);
+          if (qm) {
+            const oldItem = qm.getItem(itemId);
+            if (oldItem && oldItem.type === 'generate_video') {
+              const newShot = newInputs.shot as Record<string, unknown> | undefined;
+              const oldShot = oldItem.inputs.shot as Record<string, unknown> | undefined;
+              const frameKeys = ['startFramePrompt', 'endFramePrompt'];
+              const frameFieldChanged = newShot && oldShot && frameKeys.some(key =>
+                key in newShot && newShot[key] !== oldShot[key]
+              );
+              if (frameFieldChanged) {
+                // Find the upstream generate_frame dependency
+                const frameItemId = oldItem.dependencies.find(depId => {
+                  const dep = qm.getItem(depId);
+                  return dep && dep.type === 'generate_frame';
+                });
+                if (frameItemId) {
+                  const frameItem = qm.getItem(frameItemId);
+                  targetItemId = frameItemId;
+                  // Merge the new shot fields into the frame item's inputs
+                  targetInputs = { ...frameItem?.inputs, ...newInputs };
+                }
+              }
+            }
+          }
+        }
+
+        const newItem = runManager.redoItem(runId, targetItemId, targetInputs);
+        if (!newItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
         // Auto-resume processors if run is stopped/completed
         await runManager.resumeRun(runId);
-        emitEvent(runId, "item_redo", { oldItemId: itemId, newItem });
+        emitEvent(runId, "item_redo", { oldItemId: targetItemId, newItem });
         sendJson(res, 200, { newItem });
         return;
       }
