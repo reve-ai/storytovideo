@@ -547,7 +547,7 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     const allShots = state.storyAnalysis.scenes.flatMap(s => s.shots || []);
     const sortedShots = [...allShots]
-      .sort((a, b) => a.shotNumber - b.shotNumber)
+      .sort((a, b) => a.sceneNumber - b.sceneNumber || a.shotInScene - b.shotInScene)
       .filter(s => !s.skipped);
 
     const videoPaths = sortedShots

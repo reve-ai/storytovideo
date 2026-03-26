@@ -297,6 +297,7 @@ Return your analysis as JSON:${shotContext}
 }
 
 export interface ClipAnalysis {
+  sceneNumber?: number;
   shotNumber: number;
   currentDuration: number;
   recommendedDuration: number;
@@ -311,6 +312,7 @@ export interface ClipAnalysis {
 
 export async function analyzeClipPacing(
   clipPath: string,
+  sceneNumber: number | undefined,
   shotNumber: number,
   originalDuration: number,
   dialogue?: string,
@@ -338,7 +340,7 @@ export async function analyzeClipPacing(
               },
             },
             {
-              text: `Analyze this video clip (shot ${shotNumber}, ${originalDuration}s) for pacing.
+              text: `Analyze this video clip (${sceneNumber !== undefined ? `scene ${sceneNumber}, shot ${shotNumber}` : `shot ${shotNumber}`}, ${originalDuration}s) for pacing.
 
 This clip is one shot from a larger video. Evaluate whether it could be shorter.
 
@@ -355,6 +357,7 @@ ${dialogue && dialogue.trim().length > 0
 Return JSON:
 \`\`\`json
 {
+  ${sceneNumber !== undefined ? `"sceneNumber": ${sceneNumber},` : ""}
   "shotNumber": ${shotNumber},
   "currentDuration": ${originalDuration},
   "recommendedDuration": <integer - whole seconds, minimum 2>,
@@ -379,6 +382,8 @@ Return JSON:
 
     const text = response.text ?? "";
     const result = JSON.parse(text) as ClipAnalysis;
+    if (sceneNumber !== undefined) result.sceneNumber = sceneNumber;
+    result.shotNumber = shotNumber;
     result.recommendedDuration = Math.max(2, Math.ceil(result.recommendedDuration));
     return result;
   } catch (error: any) {
@@ -410,26 +415,32 @@ export async function getClipDuration(clipPath: string): Promise<number> {
 export async function analyzeAllClips(
   clipsDir: string,
 ): Promise<ClipAnalysis[]> {
+  const clipNameRegex = /^(?:scene_(\d+)_)?shot_(\d+)\.mp4$/;
   const files = fs.readdirSync(clipsDir)
-    .filter(f => f.match(/^shot_\d+\.mp4$/))
+    .filter(f => clipNameRegex.test(f))
     .sort();
 
   console.log(`[pacing] Found ${files.length} clips to analyze`);
 
   const results: ClipAnalysis[] = [];
   for (const file of files) {
-    const shotNumber = parseInt(file.match(/shot_(\d+)/)?.[1] ?? "0", 10);
+    const match = file.match(clipNameRegex);
+    if (!match) continue;
+
+    const sceneNumber = match[1] ? parseInt(match[1], 10) : undefined;
+    const shotNumber = parseInt(match[2] ?? "0", 10);
+    const shotLabel = sceneNumber !== undefined ? `scene ${sceneNumber} shot ${shotNumber}` : `shot ${shotNumber}`;
     const clipPath = path.join(clipsDir, file);
 
     // Get duration with ffprobe
     const duration = await getClipDuration(clipPath);
 
     try {
-      const analysis = await analyzeClipPacing(clipPath, shotNumber, duration);
+      const analysis = await analyzeClipPacing(clipPath, sceneNumber, shotNumber, duration);
       results.push(analysis);
-      console.log(`[pacing] Shot ${shotNumber}: ${duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
+      console.log(`[pacing] ${shotLabel}: ${duration}s → ${analysis.recommendedDuration}s (${analysis.reason})`);
     } catch (err) {
-      console.error(`[pacing] Failed to analyze shot ${shotNumber}:`, err);
+      console.error(`[pacing] Failed to analyze ${shotLabel}:`, err);
     }
   }
 
