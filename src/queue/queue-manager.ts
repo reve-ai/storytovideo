@@ -123,15 +123,16 @@ export class QueueManager {
   // --- Accessors ---
 
   getState(): RunState {
-    return this.state;
+    return this.snapshot(this.state);
   }
 
   getItem(id: string): WorkItem | undefined {
-    return this.state.workItems.find(item => item.id === id);
+    const item = this.findItem(id);
+    return item ? this.snapshot(item) : undefined;
   }
 
   getItemsByKey(itemKey: string): WorkItem[] {
-    return this.state.workItems.filter(item => item.itemKey === itemKey);
+    return this.snapshot(this.findItemsByKey(itemKey));
   }
 
   claimNextReady(queue: QueueName): WorkItem | null {
@@ -141,7 +142,7 @@ export class QueueManager {
       item.status = 'in_progress';
       item.startedAt = new Date().toISOString();
       this.touch();
-      return item;
+      return this.snapshot(item);
     }
     return null;
   }
@@ -149,7 +150,7 @@ export class QueueManager {
   // --- Add items ---
 
   addItem(opts: AddItemOptions): WorkItem {
-    const existing = this.getItemsByKey(opts.itemKey);
+    const existing = this.findItemsByKey(opts.itemKey);
     const version = existing.length > 0
       ? Math.max(...existing.map(i => i.version)) + 1
       : 1;
@@ -175,7 +176,7 @@ export class QueueManager {
 
     this.state.workItems.push(item);
     this.touch();
-    return item;
+    return this.snapshot(item);
   }
 
   // --- Status transitions ---
@@ -237,7 +238,7 @@ export class QueueManager {
     item.startedAt = null;
     item.completedAt = null;
     this.touch();
-    return item;
+    return this.snapshot(item);
   }
 
   cancelItem(id: string): boolean {
@@ -255,7 +256,7 @@ export class QueueManager {
     }
     item.reviewStatus = reviewStatus;
     this.touch();
-    return item;
+    return this.snapshot(item);
   }
 
   updateItemInputs(id: string, fields: Record<string, unknown>): WorkItem {
@@ -265,7 +266,7 @@ export class QueueManager {
     }
     item.inputs = { ...item.inputs, ...fields };
     this.touch();
-    return item;
+    return this.snapshot(item);
   }
 
   setItemPriority(id: string, priority: Priority): WorkItem {
@@ -275,7 +276,7 @@ export class QueueManager {
     }
     item.priority = priority;
     this.touch();
-    return item;
+    return this.snapshot(item);
   }
 
   deleteAnalyzeItems(): number {
@@ -296,12 +297,13 @@ export class QueueManager {
   // --- Queue picking ---
 
   getNextReady(queue: QueueName, priority: Priority): WorkItem | null {
-    return this.findNextReady(queue, priority);
+    const item = this.findNextReady(queue, priority);
+    return item ? this.snapshot(item) : null;
   }
 
   private areDependenciesMet(item: WorkItem): boolean {
     return item.dependencies.every(depId => {
-      const dep = this.getItem(depId);
+      const dep = this.findItem(depId);
       return dep !== undefined && dep.status === 'completed';
     });
   }
@@ -333,7 +335,7 @@ export class QueueManager {
     this.cascadeRedo(old.id, newItem.id);
 
     this.touch();
-    return newItem;
+    return this.snapshot(newItem);
   }
 
   private cascadeRedo(oldItemId: string, newItemId: string): void {
@@ -347,7 +349,7 @@ export class QueueManager {
     for (const dep of dependents) {
       // If the old item was a frame and this dependent is also a frame (continuity link),
       // just update the dependency pointer — don't supersede/regenerate
-      const oldItem = this.getItem(oldItemId);
+      const oldItem = this.findItem(oldItemId);
       if (oldItem?.type === 'generate_frame' && dep.type === 'generate_frame') {
         dep.dependencies = dep.dependencies.map(d => d === oldItemId ? newItemId : d);
         continue;
@@ -377,7 +379,7 @@ export class QueueManager {
   }
 
   private latestVersionId(itemId: string): string {
-    const item = this.getItem(itemId);
+    const item = this.findItem(itemId);
     if (!item) return itemId;
     if (item.supersededBy) {
       return this.latestVersionId(item.supersededBy);
@@ -389,7 +391,7 @@ export class QueueManager {
 
   getQueueSnapshot(queue: QueueName): QueueSnapshot {
     const items = this.state.workItems.filter(i => i.queue === queue);
-    return {
+    return this.snapshot({
       queue,
       pending: items.filter(i => i.status === 'pending'),
       inProgress: items.filter(i => i.status === 'in_progress'),
@@ -397,7 +399,7 @@ export class QueueManager {
       failed: items.filter(i => i.status === 'failed'),
       cancelled: items.filter(i => i.status === 'cancelled'),
       superseded: items.filter(i => i.status === 'superseded'),
-    };
+    });
   }
 
   getDependencyGraph(): DependencyGraph {
@@ -418,7 +420,7 @@ export class QueueManager {
       }
     }
 
-    return { nodes, edges };
+    return this.snapshot({ nodes, edges });
   }
 
   // --- Scoped state mutation helpers ---
@@ -553,11 +555,19 @@ export class QueueManager {
   // --- Helpers ---
 
   private requireItem(id: string): WorkItem {
-    const item = this.getItem(id);
+    const item = this.findItem(id);
     if (!item) {
       throw new Error(`Work item not found: ${id}`);
     }
     return item;
+  }
+
+  private findItem(id: string): WorkItem | undefined {
+    return this.state.workItems.find(item => item.id === id);
+  }
+
+  private findItemsByKey(itemKey: string): WorkItem[] {
+    return this.state.workItems.filter(item => item.itemKey === itemKey);
   }
 
   private findNextReady(queue: QueueName, priority: Priority): WorkItem | null {
@@ -572,6 +582,23 @@ export class QueueManager {
 
     candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return candidates[0];
+  }
+
+  private snapshot<T>(value: T): T {
+    return this.deepFreeze(structuredClone(value));
+  }
+
+  private deepFreeze<T>(value: T): T {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+
+    const obj = value as Record<string, unknown>;
+    const props = Object.getOwnPropertyNames(obj);
+    for (const prop of props) {
+      this.deepFreeze(obj[prop]);
+    }
+    return Object.freeze(value);
   }
 
   private touch(): void {

@@ -26,6 +26,31 @@ function testClaimNextReady(): void {
   console.log('  ✓ claimNextReady claims only once');
 }
 
+function testReadSnapshotsAreIsolated(): void {
+  const qm = makeQueueManager();
+  const item = qm.addItem({
+    type: 'artifact',
+    queue: 'llm',
+    itemKey: 'artifact:a',
+    inputs: { nested: { prompt: 'hello' } },
+  });
+
+  const state = qm.getState();
+  const snapshot = qm.getItem(item.id);
+  assert.ok(snapshot);
+
+  assert.throws(() => {
+    state.workItems[0].status = 'completed';
+  }, /read only|frozen|extensible|assign/i);
+  assert.throws(() => {
+    (snapshot!.inputs.nested as { prompt: string }).prompt = 'changed';
+  }, /read only|frozen|extensible|assign/i);
+
+  assert.equal(qm.getItem(item.id)?.status, 'pending');
+  assert.equal(((qm.getItem(item.id)?.inputs.nested as { prompt: string }).prompt), 'hello');
+  console.log('  ✓ read APIs return frozen snapshots');
+}
+
 function testCancelledItemsStayCancelled(): void {
   const qm = makeQueueManager();
   const item = qm.addItem({ type: 'artifact', queue: 'llm', itemKey: 'artifact:a' });
@@ -120,6 +145,7 @@ async function testConcurrentResumeIsSerialized(): Promise<void> {
 async function main(): Promise<void> {
   console.log('Queue state concurrency tests:');
   testClaimNextReady();
+  testReadSnapshotsAreIsolated();
   testCancelledItemsStayCancelled();
   testRedoRejectsInProgress();
   testPendingOnlyMutations();
