@@ -486,6 +486,8 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
+      sceneNumber: shot.sceneNumber,
+      shotInScene: shot.shotInScene,
       shotType: 'first_last_frame',
       actionPrompt: shot.actionPrompt,
       dialogue: shot.dialogue,

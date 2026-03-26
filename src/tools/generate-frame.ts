@@ -10,6 +10,10 @@ type GeneratedSingleFrameResult = {
   referencesUsed: FrameReference[];
 };
 
+function formatShotContext(shot: Pick<Shot, "shotNumber" | "sceneNumber" | "shotInScene">): string {
+  return `scene ${shot.sceneNumber} shot ${shot.shotInScene} (shot ${shot.shotNumber})`;
+}
+
 /**
  * Generates start keyframe image for a shot using the Reve/Grok API.
  */
@@ -27,6 +31,7 @@ export async function generateFrame(params: {
   startReferences?: FrameReference[];
 }> {
   const { shot, artStyle, assetLibrary, outputDir, dryRun = false, videoBackend, aspectRatio } = params;
+  const shotContext = formatShotContext(shot);
 
   // Create frames directory if it doesn't exist
   const framesDir = path.join(outputDir, "frames");
@@ -34,7 +39,7 @@ export async function generateFrame(params: {
     fs.mkdirSync(framesDir, { recursive: true });
   }
 
-  const startPath = path.join(framesDir, `shot_${shot.shotNumber}_start.png`);
+  const startPath = path.join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_start.png`);
 
   if (dryRun) {
     // Return placeholder paths without calling API
@@ -62,7 +67,7 @@ export async function generateFrame(params: {
     };
   } catch (error) {
     throw new Error(
-      `Failed to generate frame for shot ${shot.shotNumber}: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to generate frame for ${shotContext}: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }
@@ -99,7 +104,9 @@ async function generateSingleFrame(params: {
     cameraDirection: shot.cameraDirection,
   });
 
-  console.log(`[generateFrame] Shot ${shot.shotNumber} (start): Building references...`);
+  const shotContext = formatShotContext(shot);
+
+  console.log(`[generateFrame] ${shotContext} (start): Building references...`);
   console.log(`[generateFrame]   assetLibrary.characterImages:`, JSON.stringify(assetLibrary.characterImages));
   console.log(`[generateFrame]   assetLibrary.locationImages:`, JSON.stringify(assetLibrary.locationImages));
   console.log(`[generateFrame]   shot.charactersPresent:`, shot.charactersPresent);
@@ -181,7 +188,7 @@ async function generateSingleFrame(params: {
     const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
     const remixPrompt = imgPrefix + prompt;
     if (videoBackend !== "grok" && remixPrompt.length > 2560) {
-      console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
+      console.warn(`[generateFrame] ${shotContext}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
     console.log(`[generateFrame]   Final reference paths (${limitedReferencePaths.length}):`, limitedReferencePaths);
@@ -209,7 +216,7 @@ async function generateSingleFrame(params: {
     console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
     console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
     if (videoBackend !== "grok" && prompt.length > 2560) {
-      console.warn(`[generateFrame] Shot ${shot.shotNumber}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
+      console.warn(`[generateFrame] ${shotContext}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
     if (videoBackend === "grok") {
       return {
