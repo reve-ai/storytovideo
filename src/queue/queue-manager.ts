@@ -347,10 +347,11 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
-      // Don't cascade analyze_video — it will be re-seeded by seedAfterGenerateVideo
-      // with correct paths from the new video's outputs.
-      if (dep.type === 'analyze_video') {
+      // Don't cascade items whose inputs come from parent outputs. They will be
+      // re-seeded later with fresh paths after the upstream item completes.
+      if (dep.type === 'generate_video' || dep.type === 'analyze_video') {
         dep.status = 'superseded';
+        this.supersedeDependents(dep.id);
         continue;
       }
 
@@ -382,6 +383,19 @@ export class QueueManager {
 
       // Recurse into this dependent's dependents
       this.cascadeRedo(dep.id, newDep.id);
+    }
+  }
+
+  private supersedeDependents(itemId: string): void {
+    const dependents = this.state.workItems.filter(item =>
+      item.dependencies.includes(itemId) &&
+      item.status !== 'superseded' &&
+      item.status !== 'cancelled'
+    );
+
+    for (const dep of dependents) {
+      dep.status = 'superseded';
+      this.supersedeDependents(dep.id);
     }
   }
 
