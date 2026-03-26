@@ -469,7 +469,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     });
 
     if (result.startPath) {
-      this.queueManager.setGeneratedOutput(`frame:shot:${shot.shotNumber}:start`, this.relativePath(result.startPath));
+      this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, this.relativePath(result.startPath));
     }
 
     return {
@@ -502,7 +502,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       abortSignal: signal,
     });
 
-    this.queueManager.setGeneratedOutput(`video:shot:${shot.shotNumber}`, this.relativePath(result.path));
+    this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
 
     return {
       shotNumber: result.shotNumber,
@@ -551,7 +551,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       .filter(s => !s.skipped);
 
     const videoPaths = sortedShots
-      .map(s => state.generatedOutputs[`video:shot:${s.shotNumber}`])
+      .map(s => state.generatedOutputs[`video:scene:${s.sceneNumber}:shot:${s.shotInScene}`])
       .filter((p): p is string => !!p)
       .map(p => this.absolutePath(p));
 
@@ -826,7 +826,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       this.queueManager.addItem({
         type: 'generate_frame',
         queue: 'image',
-        itemKey: `frame:shot:${shot.shotNumber}`,
+        itemKey: `frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
         dependencies: frameDeps,
         inputs: { shot },
         priority: planItem.priority,
@@ -842,7 +842,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     if (!startPath) return; // No frame generated (shouldn't happen)
 
     // Check if a generate_video item already exists for this shot (e.g. from cascade redo)
-    const existingVideo = this.queueManager.getItemsByKey(`video:shot:${shotNumber}`);
+    const existingVideo = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
     if (existingVideo.some(i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(frameItem.id))) {
       return; // Already seeded by cascade, skip duplicate
     }
@@ -850,7 +850,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     this.queueManager.addItem({
       type: 'generate_video',
       queue: 'video',
-      itemKey: `video:shot:${shotNumber}`,
+      itemKey: `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
       dependencies: [frameItem.id],
       inputs: {
         shot,
@@ -887,13 +887,17 @@ ${JSON.stringify(analysis, null, 2)}`,
       }
     }
 
-    // Check if analyze_video already exists for this shot
-    const existingAnalyze = this.queueManager.getItemsByKey(`analyze_video:shot:${shotNumber}`);
-    if (!existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) {
+    // Check if analyze_video already exists for this shot AND depends on this video item.
+    // If the existing analyze depends on an older/superseded video, allow a new one.
+    const existingAnalyze = this.queueManager.getItemsByKey(`analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
+    const hasCurrentAnalysis = existingAnalyze.some(
+      i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(item.id)
+    );
+    if (!hasCurrentAnalysis) {
       this.queueManager.addItem({
         type: 'analyze_video',
         queue: 'llm',
-        itemKey: `analyze_video:shot:${shotNumber}`,
+        itemKey: `analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
         dependencies: [item.id],
         inputs: {
           shotNumber,
@@ -909,7 +913,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     // Check if ALL video items are completed to seed assemble
     const allShots = analysis.scenes.flatMap(s => s.shots || []).filter(s => !s.skipped);
     const allVideosDone = allShots.every(shot => {
-      const items = this.queueManager.getItemsByKey(`video:shot:${shot.shotNumber}`);
+      const items = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
       return items.some(i => i.status === 'completed' && !i.supersededBy);
     });
 
@@ -922,7 +926,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     // Collect all video item IDs as dependencies
     const videoItemIds = allShots
       .map(shot => {
-        const items = this.queueManager.getItemsByKey(`video:shot:${shot.shotNumber}`);
+        const items = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
         return items.find(i => i.status === 'completed' && !i.supersededBy);
       })
       .filter((i): i is WorkItem => !!i)

@@ -799,9 +799,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           const completedVideo = videoItems.find(i => i.status === 'completed' && !i.supersededBy);
           if (!completedVideo) continue;
 
-          // Check if an active (non-superseded, non-cancelled) analyze_video already exists
+          // Check if an active analyze_video already exists that depends on this video
           const existingAnalyze = qm.getItemsByKey(`analyze_video:shot:${shot.shotNumber}`);
-          if (existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) continue;
+          if (existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(completedVideo.id))) continue;
 
           // Build reference image paths from generated outputs
           const referenceImagePaths: string[] = [];
