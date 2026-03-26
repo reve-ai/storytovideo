@@ -4,7 +4,7 @@ import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
-import type { QueueName, WorkItem, RunState } from './types.js';
+import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
 import { rateLimiters } from './rate-limiter-registry.js';
 import { analyzeStory } from '../tools/analyze-story.js';
@@ -101,8 +101,7 @@ export class QueueProcessor extends EventEmitter {
     if (this.running) return;
     this.running = true;
     // Rebuild asset library from any already-completed assets in generatedOutputs
-    const state = this.queueManager.getState();
-    this.rebuildAssetLibrary(state);
+    this.rebuildAssetLibrary();
     this.workerPromises = [];
     for (let i = 0; i < this.concurrency; i++) {
       this.workerPromises.push(this.runWorker(i));
@@ -219,8 +218,7 @@ export class QueueProcessor extends EventEmitter {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
     const script = await storyToScript(storyText);
-    const state = this.queueManager.getState();
-    state.convertedScript = script;
+    this.queueManager.setConvertedScript(script);
     return { script };
   }
 
@@ -230,7 +228,7 @@ export class QueueProcessor extends EventEmitter {
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
     const analysis = await analyzeStory(textToAnalyze);
-    state.storyAnalysis = analysis;
+    this.queueManager.setStoryAnalysis(analysis);
     return { analysis };
   }
 
@@ -243,58 +241,42 @@ export class QueueProcessor extends EventEmitter {
       return { ...item.inputs };
     }
 
-    const analysis = state.storyAnalysis;
-
     switch (artifactType) {
       case 'character': {
-        const name = item.inputs.name as string;
-        const existing = analysis.characters.find(c => c.name === name);
-        if (existing) {
-          existing.physicalDescription = item.inputs.physicalDescription as string;
-          existing.personality = item.inputs.personality as string;
-          existing.ageRange = item.inputs.ageRange as string;
-        } else {
-          analysis.characters.push({
-            name,
-            physicalDescription: item.inputs.physicalDescription as string,
-            personality: item.inputs.personality as string,
-            ageRange: item.inputs.ageRange as string,
-          });
-        }
+        this.queueManager.updateCharacter(item.inputs.name as string, {
+          physicalDescription: item.inputs.physicalDescription as string,
+          personality: item.inputs.personality as string,
+          ageRange: item.inputs.ageRange as string,
+        });
         break;
       }
       case 'location': {
-        const name = item.inputs.name as string;
-        const existing = analysis.locations.find(l => l.name === name);
-        if (existing) {
-          existing.visualDescription = item.inputs.visualDescription as string;
-        }
+        this.queueManager.updateLocation(item.inputs.name as string, {
+          visualDescription: item.inputs.visualDescription as string,
+        });
         break;
       }
       case 'object': {
-        const name = item.inputs.name as string;
-        const objects = analysis.objects ?? [];
-        const existing = objects.find(o => o.name === name);
-        if (existing) {
-          existing.visualDescription = item.inputs.visualDescription as string;
-        }
+        this.queueManager.updateObject(item.inputs.name as string, {
+          visualDescription: item.inputs.visualDescription as string,
+        });
         break;
       }
       case 'scene': {
-        const sceneNumber = item.inputs.sceneNumber as number;
-        const existing = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
-        if (existing) {
-          existing.title = item.inputs.title as string;
-          existing.narrativeSummary = item.inputs.narrativeSummary as string;
-          existing.charactersPresent = item.inputs.charactersPresent as string[];
-          existing.location = item.inputs.location as string;
-          existing.estimatedDurationSeconds = item.inputs.estimatedDurationSeconds as number;
-        }
+        this.queueManager.updateScene(item.inputs.sceneNumber as number, {
+          title: item.inputs.title as string,
+          narrativeSummary: item.inputs.narrativeSummary as string,
+          charactersPresent: item.inputs.charactersPresent as string[],
+          location: item.inputs.location as string,
+          estimatedDurationSeconds: item.inputs.estimatedDurationSeconds as number,
+        });
         break;
       }
       case 'pacing': {
-        analysis.artStyle = item.inputs.artStyle as string;
-        analysis.title = item.inputs.title as string;
+        this.queueManager.updateAnalysisMeta({
+          artStyle: item.inputs.artStyle as string,
+          title: item.inputs.title as string,
+        });
         break;
       }
     }
@@ -315,8 +297,7 @@ export class QueueProcessor extends EventEmitter {
         maxTokens: 30,
       } as any);
       const name = text.trim();
-      const state = this.queueManager.getState();
-      state.runName = name;
+      this.queueManager.setRunName(name);
       return { name };
     } catch (error: any) {
       if (error?.status === 429 || error?.message?.includes('429')) {
@@ -434,12 +415,8 @@ ${JSON.stringify(analysis, null, 2)}`,
       analysis,
     );
 
-    // Mutate the scene in-place instead of cloning the whole analysis
-    const scene2 = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
-    if (scene2) {
-      scene2.shots = processedShots;
-      scene2.transition = object.transition;
-    }
+    // Use scoped mutation helper instead of direct state mutation
+    this.queueManager.updateSceneShots(sceneNumber, processedShots, object.transition);
 
     return {
       sceneNumber,
@@ -464,10 +441,10 @@ ${JSON.stringify(analysis, null, 2)}`,
       aspectRatio,
     });
 
-    state.generatedOutputs[result.key] = this.relativePath(result.path);
+    this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
 
     // Build asset library from generated outputs
-    this.rebuildAssetLibrary(state);
+    this.rebuildAssetLibrary();
 
     return { key: result.key, path: this.relativePath(result.path) };
   }
@@ -492,7 +469,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     });
 
     if (result.startPath) {
-      state.generatedOutputs[`frame:shot:${shot.shotNumber}:start`] = this.relativePath(result.startPath);
+      this.queueManager.setGeneratedOutput(`frame:shot:${shot.shotNumber}:start`, this.relativePath(result.startPath));
     }
 
     return {
@@ -525,7 +502,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       abortSignal: signal,
     });
 
-    state.generatedOutputs[`video:shot:${shot.shotNumber}`] = this.relativePath(result.path);
+    this.queueManager.setGeneratedOutput(`video:shot:${shot.shotNumber}`, this.relativePath(result.path));
 
     return {
       shotNumber: result.shotNumber,
@@ -987,7 +964,8 @@ ${JSON.stringify(analysis, null, 2)}`,
     return ids;
   }
 
-  private rebuildAssetLibrary(state: RunState): void {
+  private rebuildAssetLibrary(): void {
+    const state = this.queueManager.getState();
     console.log('[rebuildAssetLibrary] generatedOutputs keys:', Object.keys(state.generatedOutputs));
     const analysis = state.storyAnalysis;
     if (!analysis) return;
@@ -1021,7 +999,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       if (path) lib.objectImages[obj.name] = this.absolutePath(path);
     }
 
-    state.assetLibrary = lib;
+    this.queueManager.setAssetLibrary(lib);
     console.log('[rebuildAssetLibrary] Asset library:', JSON.stringify(lib, null, 2));
   }
 }

@@ -622,19 +622,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (durationOverride !== undefined) {
           const qm = runManager.getQueueManager(runId);
           if (qm) {
-            const state = qm.getState();
-            const oldItem = state.workItems.find(i => i.id === itemId);
+            const oldItem = qm.getItem(itemId);
             if (oldItem && oldItem.type === 'generate_video') {
               const shot = (newInputs?.shot ?? oldItem.inputs.shot) as Record<string, unknown> | undefined;
               const shotNumber = shot?.shotNumber as number | undefined;
               if (shotNumber !== undefined) {
-                // Update shot duration in storyAnalysis
-                const shotObj = state.storyAnalysis?.scenes.flatMap(s => s.shots).find(s => s.shotNumber === shotNumber);
-                if (shotObj) shotObj.durationSeconds = durationOverride;
+                // Update shot duration in storyAnalysis via scoped helper
+                const sceneNumber = shot?.sceneNumber as number | undefined;
+                const shotInScene = shot?.shotInScene as number | undefined;
+                if (sceneNumber !== undefined && shotInScene !== undefined) {
+                  qm.updateShotDuration(sceneNumber, shotInScene, durationOverride);
+                }
 
                 // Mark as manual duration (skip pacing analysis)
-                if (!state.manualDurations) state.manualDurations = {};
-                state.manualDurations[shotNumber] = true;
+                qm.setManualDuration(shotNumber, true);
 
                 // Update the shot in inputs with the new duration
                 if (!newInputs) {

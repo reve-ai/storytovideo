@@ -12,6 +12,7 @@ import type {
   DependencyGraphNode,
   DependencyGraphEdge,
 } from './types.js';
+import type { StoryAnalysis, AssetLibrary, Shot, Character, Location as StoryLocation, StoryObject, Scene } from '../types.js';
 
 interface AddItemOptions {
   type: WorkItemType;
@@ -367,6 +368,124 @@ export class QueueManager {
     }
 
     return { nodes, edges };
+  }
+
+  // --- Scoped state mutation helpers ---
+
+  /** Set initial story analysis (run-once, safe to replace). */
+  setStoryAnalysis(analysis: StoryAnalysis): void {
+    this.state.storyAnalysis = analysis;
+    this.touch();
+  }
+
+  /** Set converted script (run-once, safe to replace). */
+  setConvertedScript(script: string): void {
+    this.state.convertedScript = script;
+    this.touch();
+  }
+
+  /** Set run name (run-once, safe to replace). */
+  setRunName(name: string): void {
+    this.state.runName = name;
+    this.touch();
+  }
+
+  /** Set one scene's shots in-place. Finds the scene by number and sets only scene.shots and scene.transition. */
+  updateSceneShots(sceneNumber: number, shots: Shot[], transition: 'cut' | 'fade_black'): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateSceneShots: no storyAnalysis');
+    const scene = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    if (!scene) throw new Error(`updateSceneShots: scene ${sceneNumber} not found`);
+    scene.shots = shots;
+    scene.transition = transition;
+    this.touch();
+  }
+
+  /** Update or push a character by name. */
+  updateCharacter(name: string, fields: Partial<Omit<Character, 'name'>>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateCharacter: no storyAnalysis');
+    const existing = analysis.characters.find(c => c.name === name);
+    if (existing) {
+      Object.assign(existing, fields);
+    } else {
+      analysis.characters.push({ name, physicalDescription: '', personality: '', ageRange: '', ...fields });
+    }
+    this.touch();
+  }
+
+  /** Update a location by name. */
+  updateLocation(name: string, fields: Partial<Omit<StoryLocation, 'name'>>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateLocation: no storyAnalysis');
+    const existing = analysis.locations.find(l => l.name === name);
+    if (existing) {
+      Object.assign(existing, fields);
+    }
+    this.touch();
+  }
+
+  /** Update an object by name. */
+  updateObject(name: string, fields: Partial<Omit<StoryObject, 'name'>>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateObject: no storyAnalysis');
+    const objects = analysis.objects ?? [];
+    const existing = objects.find(o => o.name === name);
+    if (existing) {
+      Object.assign(existing, fields);
+    }
+    this.touch();
+  }
+
+  /** Update one scene's metadata (title, narrativeSummary, etc.) by scene number. */
+  updateScene(sceneNumber: number, fields: Partial<Omit<Scene, 'sceneNumber' | 'shots' | 'transition'>>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateScene: no storyAnalysis');
+    const existing = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    if (existing) {
+      Object.assign(existing, fields);
+    }
+    this.touch();
+  }
+
+  /** Update top-level analysis fields (artStyle, title) for pacing artifact. */
+  updateAnalysisMeta(fields: Partial<Pick<StoryAnalysis, 'artStyle' | 'title'>>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateAnalysisMeta: no storyAnalysis');
+    Object.assign(analysis, fields);
+    this.touch();
+  }
+
+  /** Update one shot's duration by scene number and shot-in-scene index. */
+  updateShotDuration(sceneNumber: number, shotInScene: number, duration: number): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateShotDuration: no storyAnalysis');
+    const scene = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    if (!scene) throw new Error(`updateShotDuration: scene ${sceneNumber} not found`);
+    const shot = scene.shots.find(s => s.shotInScene === shotInScene);
+    if (shot) {
+      shot.durationSeconds = duration;
+    }
+    this.touch();
+  }
+
+  /** Set a single generated output path by key. */
+  setGeneratedOutput(key: string, path: string): void {
+    this.state.generatedOutputs[key] = path;
+    this.touch();
+  }
+
+  /** Full replace of asset library (rebuilt from generatedOutputs). */
+  setAssetLibrary(lib: AssetLibrary): void {
+    this.state.assetLibrary = lib;
+    this.touch();
+  }
+
+  /** Set one manual duration entry. */
+  setManualDuration(key: number, value: boolean): void {
+    if (!this.state.manualDurations) this.state.manualDurations = {};
+    this.state.manualDurations[key] = value;
+    this.touch();
   }
 
   // --- Persistence ---
