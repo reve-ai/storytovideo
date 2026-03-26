@@ -222,7 +222,6 @@ export class RunManager extends EventEmitter {
       proc.on("item:started", (data) => this.emit("item:started", data));
       proc.on("item:completed", (data) => {
         this.emit("item:completed", data);
-        this.checkRunCompletion(runId);
       });
       proc.on("item:failed", (data) => this.emit("item:failed", data));
       proc.on("item:cancelled", (data) => this.emit("item:cancelled", data));
@@ -329,41 +328,7 @@ export class RunManager extends EventEmitter {
     return newItem;
   }
 
-  // -- Auto-completion check ------------------------------------------------
-
-  private checkRunCompletion(runId: string): void {
-    const qm = this.queueManagers.get(runId);
-    if (!qm) return;
-
-    const run = this.runs.get(runId);
-    if (!run || run.status !== "running") return;
-
-    const items = qm.getState().workItems;
-    // Filter out superseded and cancelled items — they don't count
-    const activeItems = items.filter(
-      (i) => i.status !== "superseded" && i.status !== "cancelled",
-    );
-
-    // All active items must be completed
-    const allDone = activeItems.length > 0 && activeItems.every((i) => i.status === "completed");
-    if (!allDone) return;
-
-    // Stop processors and mark run completed
-    const procs = this.processors.get(runId);
-    if (procs) {
-      void Promise.allSettled(procs.map((p) => p.stop()));
-    }
-    this.markRunCompleted(runId);
-  }
-
-  // -- Run completion / failure hooks (called by processors) ----------------
-
-  markRunCompleted(runId: string): void {
-    this.patchRun(runId, {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-    });
-  }
+  // -- Run failure hook (called by processors) ------------------------------
 
   markRunFailed(runId: string, error: string): void {
     this.patchRun(runId, {
@@ -401,8 +366,8 @@ export class RunManager extends EventEmitter {
           const qm = QueueManager.load(stateFile);
           this.queueManagers.set(runId, qm);
 
-          // Mark previously-running or pausing runs as stopped (server restarted)
-          if (record.status === "running" || record.status === "pausing") {
+          // Mark previously-running, pausing, or completed runs as stopped (server restarted)
+          if (record.status === "running" || record.status === "pausing" || record.status === "completed") {
             this.patchRun(runId, { status: "stopped" });
           }
         } catch (err) {
