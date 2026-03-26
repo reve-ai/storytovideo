@@ -341,7 +341,12 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       try {
         const data = JSON.parse(e.data) as {
           type?: string;
-          payload?: { status?: string; reason?: string };
+          payload?: {
+            status?: string;
+            reason?: string;
+            type?: string;
+            itemType?: string;
+          };
         };
         if (
           data.type === "item_started" ||
@@ -351,7 +356,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
           data.type === "item_cancelled" ||
           data.type === "item_retried"
         ) {
-          const itemType = data.payload?.type || (data.payload as Record<string, unknown> | undefined)?.itemType;
+          const itemType = data.payload?.type || data.payload?.itemType;
           if (itemType === "analyze_video") {
             refreshData();
           } else {

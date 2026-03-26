@@ -5,6 +5,19 @@ export const NODE_H = 40;
 export const PAD_X = 40;
 export const PAD_Y = 60;
 
+const PIPELINE_TYPE_ORDER: GraphNode["type"][] = [
+  "story_to_script",
+  "analyze_story",
+  "artifact",
+  "name_run",
+  "plan_shots",
+  "generate_asset",
+  "generate_frame",
+  "generate_video",
+  "analyze_video",
+  "assemble",
+];
+
 export const STATUS_COLORS: Record<string, string> = {
   pending: "#6b7280",
   in_progress: "#4f8ff7",
@@ -13,6 +26,30 @@ export const STATUS_COLORS: Record<string, string> = {
   cancelled: "#6b7280",
   superseded: "#fb923c",
 };
+
+function splitLayerByType(layer: string[], nodesById: Map<string, GraphNode>): string[][] {
+  const grouped = new Map<string, string[]>();
+
+  for (const id of layer) {
+    const type = nodesById.get(id)?.type ?? "unknown";
+    const bucket = grouped.get(type);
+    if (bucket) {
+      bucket.push(id);
+    } else {
+      grouped.set(type, [id]);
+    }
+  }
+
+  const orderedLayers = PIPELINE_TYPE_ORDER
+    .map((type) => grouped.get(type))
+    .filter((group): group is string[] => Boolean(group));
+
+  const unknownLayers = [...grouped.entries()]
+    .filter(([type]) => !PIPELINE_TYPE_ORDER.includes(type as GraphNode["type"]))
+    .map(([, group]) => group);
+
+  return [...orderedLayers, ...unknownLayers];
+}
 
 /**
  * Topological layering: assigns nodes to layers so that all predecessors
@@ -24,6 +61,7 @@ export function computeLayers(
 ): string[][] {
   const assigned = new Set<string>();
   const layers: string[][] = [];
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   let remaining = nodes.map((n) => n.id);
 
   while (remaining.length > 0) {
@@ -39,7 +77,7 @@ export function computeLayers(
       remaining = remaining.slice(1);
       continue;
     }
-    layers.push(layer);
+    layers.push(...splitLayerByType(layer, nodesById));
     for (const id of layer) assigned.add(id);
     remaining = remaining.filter((id) => !assigned.has(id));
   }
