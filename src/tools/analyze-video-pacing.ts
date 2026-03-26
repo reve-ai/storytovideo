@@ -3,6 +3,7 @@ import { FileState } from "@google/genai";
 import type { Part } from "@google/genai";
 import * as fs from "fs";
 import * as path from "path";
+import { rateLimiters } from "../queue/rate-limiter-registry.js";
 
 // --- Structured video analysis (used by analyze_video work items) ---
 
@@ -11,8 +12,8 @@ export interface VideoRecommendation {
   commentary: string;        // explains what the AI changed and why
   suggestedInputs?: {
     actionPrompt?: string;
+    dialogue?: string;
     startFramePrompt?: string;
-    endFramePrompt?: string;
     durationSeconds?: number;
     cameraDirection?: string;
   };
@@ -100,7 +101,7 @@ Evaluate:
 For each recommendation, provide a structured object with:
 - "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
 - "commentary": explain what you're changing and why
-- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, startFramePrompt, endFramePrompt, durationSeconds, cameraDirection.
+- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
 
 IMPORTANT: When suggesting changes to actionPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
 
@@ -121,19 +122,32 @@ Return JSON:
 }`,
   });
 
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ role: "user", parts }],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+  const limiter = rateLimiters.get('gemini');
+  await limiter.acquire();
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts }],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+    });
 
-  const text = response.text ?? "";
-  const result = JSON.parse(text) as VideoClipAnalysis;
-  result.matchScore = Math.max(0, Math.min(100, Math.round(result.matchScore)));
-  return result;
+    const text = response.text ?? "";
+    const result = JSON.parse(text) as VideoClipAnalysis;
+    result.matchScore = Math.max(0, Math.min(100, Math.round(result.matchScore)));
+    return result;
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+      const retryMs = 5000;
+      console.warn(`[analyzeVideoClip] 429 rate limited — backing off all gemini workers for ${retryMs}ms`);
+      limiter.backoff(retryMs);
+    }
+    throw error;
+  } finally {
+    limiter.release();
+  }
 }
 
 
@@ -194,20 +208,23 @@ export async function analyzeVideoPacing(
     ? `\n\nHere is the shot plan with intended durations:\n${JSON.stringify(shotPlan, null, 2)}`
     : "";
 
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            fileData: {
-              fileUri: `https://generativelanguage.googleapis.com/v1beta/${fileName}`,
-              mimeType: "video/mp4",
+  const limiter = rateLimiters.get('gemini');
+  await limiter.acquire();
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: {
+                fileUri: `https://generativelanguage.googleapis.com/v1beta/${fileName}`,
+                mimeType: "video/mp4",
+              },
             },
-          },
-          {
-            text: `You are a professional video editor analyzing this video for pacing improvements.
+            {
+              text: `You are a professional video editor analyzing this video for pacing improvements.
 
 The video is composed of multiple shots/scenes concatenated together. Many shots feel too long and could benefit from trimming.
 
@@ -247,25 +264,35 @@ Return your analysis as JSON:${shotContext}
   ]
 }
 \`\`\``,
-          },
-        ],
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
       },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+    });
 
-  const text = response.text ?? "";
-  console.log("[pacing] Raw response:", text);
+    const text = response.text ?? "";
+    console.log("[pacing] Raw response:", text);
 
-  try {
-    const result = JSON.parse(text) as TrimRecommendation;
-    return result;
-  } catch {
-    console.error("[pacing] Failed to parse response as JSON");
-    return text as any;
+    try {
+      const result = JSON.parse(text) as TrimRecommendation;
+      return result;
+    } catch {
+      console.error("[pacing] Failed to parse response as JSON");
+      return text as any;
+    }
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+      const retryMs = 5000;
+      console.warn(`[analyzeVideoPacing] 429 rate limited — backing off all gemini workers for ${retryMs}ms`);
+      limiter.backoff(retryMs);
+    }
+    throw error;
+  } finally {
+    limiter.release();
   }
 }
 
@@ -295,20 +322,23 @@ export async function analyzeClipPacing(
 
   console.log(`[pacing] Analyzing clip: ${clipPath} (${(videoData.length / 1024 / 1024).toFixed(1)}MB)`);
 
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            inlineData: {
-              mimeType: "video/mp4",
-              data: b64,
+  const limiter = rateLimiters.get('gemini');
+  await limiter.acquire();
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "video/mp4",
+                data: b64,
+              },
             },
-          },
-          {
-            text: `Analyze this video clip (shot ${shotNumber}, ${originalDuration}s) for pacing.
+            {
+              text: `Analyze this video clip (shot ${shotNumber}, ${originalDuration}s) for pacing.
 
 This clip is one shot from a larger video. Evaluate whether it could be shorter.
 
@@ -319,8 +349,8 @@ Look for:
 - Unnecessary pauses or holds
 
 ${dialogue && dialogue.trim().length > 0
-  ? `This shot has dialogue: "${dialogue}". Dialogue requires ~2.5 words/second. Count the words and ensure recommendedDuration is never shorter than wordCount/2.5 + 0.5s.`
-  : `This shot has no dialogue.`}
+    ? `This shot has dialogue: "${dialogue}". Dialogue requires ~2.5 words/second. Count the words and ensure recommendedDuration is never shorter than wordCount/2.5 + 0.5s.`
+    : `This shot has no dialogue.`}
 
 Return JSON:
 \`\`\`json
@@ -337,20 +367,30 @@ Return JSON:
   "actionCompletesEarly": <boolean>
 }
 \`\`\``,
-          },
-        ],
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
       },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+    });
 
-  const text = response.text ?? "";
-  const result = JSON.parse(text) as ClipAnalysis;
-  result.recommendedDuration = Math.max(2, Math.ceil(result.recommendedDuration));
-  return result;
+    const text = response.text ?? "";
+    const result = JSON.parse(text) as ClipAnalysis;
+    result.recommendedDuration = Math.max(2, Math.ceil(result.recommendedDuration));
+    return result;
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+      const retryMs = 5000;
+      console.warn(`[analyzeClipPacing] 429 rate limited — backing off all gemini workers for ${retryMs}ms`);
+      limiter.backoff(retryMs);
+    }
+    throw error;
+  } finally {
+    limiter.release();
+  }
 }
 
 export async function getClipDuration(clipPath: string): Promise<number> {

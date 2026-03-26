@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
+import VideoThumbnail from "../components/VideoThumbnail";
 
 function ReviewAllButton({ runId }: { runId: string }) {
   const [loading, setLoading] = useState(false);
@@ -27,8 +28,11 @@ function ReviewAllButton({ runId }: { runId: string }) {
   );
 }
 
-const byShotNumber = (a: WorkItem, b: WorkItem) =>
-  (a.inputs.shotNumber as number) - (b.inputs.shotNumber as number);
+const byShotNumber = (a: WorkItem, b: WorkItem) => {
+  const aNum = typeof a.inputs.shotNumber === "number" ? a.inputs.shotNumber : Infinity;
+  const bNum = typeof b.inputs.shotNumber === "number" ? b.inputs.shotNumber : Infinity;
+  return aNum - bNum;
+};
 
 export default function AnalyzeView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
@@ -65,6 +69,16 @@ export default function AnalyzeView() {
 
   return (
     <div className="analyze-view">
+      {completed.map((item) => (
+        <AnalyzeCard
+          key={item.id}
+          item={item}
+          runId={activeRunId}
+          aspectRatio={aspectRatio}
+          onAccept={acceptItem}
+          onReject={rejectItem}
+        />
+      ))}
       {inProgress.map((item) => (
         <AnalyzeStatusCard
           key={item.id}
@@ -83,16 +97,6 @@ export default function AnalyzeView() {
           status="queued"
         />
       ))}
-      {completed.map((item) => (
-        <AnalyzeCard
-          key={item.id}
-          item={item}
-          runId={activeRunId}
-          aspectRatio={aspectRatio}
-          onAccept={acceptItem}
-          onReject={rejectItem}
-        />
-      ))}
     </div>
   );
 }
@@ -109,13 +113,14 @@ function AnalyzeStatusCard({
   aspectRatio: string;
   status: "analyzing" | "queued";
 }) {
-  const shotNumber = item.inputs.shotNumber as number;
+  const shotNumber = typeof item.inputs.shotNumber === "number" ? item.inputs.shotNumber : null;
   const shot = item.inputs.shot as Record<string, unknown> | undefined;
   const videoPath = item.inputs.videoPath as string | undefined;
   const startFramePath = item.inputs.startFramePath as string | undefined;
 
   const composition = shot?.composition as string | undefined;
   const durationSeconds = shot?.durationSeconds as number | undefined;
+  const shotLabel = shotNumber != null ? `Shot ${shotNumber}` : `Item ${item.id.slice(0, 8)}`;
 
   const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
   const frameSrc = startFramePath ? `/api/runs/${runId}/media/${startFramePath}` : null;
@@ -124,16 +129,21 @@ function AnalyzeStatusCard({
     <div className="analyze-card" style={{ opacity: status === "queued" ? 0.7 : 1 }}>
       <div className="analyze-card-media">
         {videoSrc ? (
-          <video src={videoSrc} controls className="analyze-video" style={{ aspectRatio }} />
+          <VideoThumbnail
+            videoSrc={videoSrc}
+            thumbnailSrc={frameSrc ?? undefined}
+            aspectRatio={aspectRatio}
+            className="analyze-video"
+          />
         ) : frameSrc ? (
-          <img src={frameSrc} alt={`Shot ${shotNumber}`} style={{ aspectRatio }} />
+          <img src={frameSrc} alt={shotLabel} style={{ aspectRatio }} />
         ) : (
-          <div className="analyze-placeholder" style={{ aspectRatio }}>No media</div>
+          <div className="analyze-placeholder" style={{ aspectRatio, minHeight: 120 }}>No media</div>
         )}
       </div>
       <div className="analyze-card-body">
         <div className="analyze-card-header">
-          <span className="story-shot-number">Shot {shotNumber}</span>
+          <span className="story-shot-number">{shotLabel}</span>
           {composition && <span className="story-shot-comp">{composition}</span>}
           {durationSeconds != null && <span className="story-shot-duration">{durationSeconds}s</span>}
         </div>
@@ -165,8 +175,8 @@ interface AnalyzeCardProps {
 interface EditFormValues {
   durationSeconds: number;
   actionPrompt: string;
+  dialogue: string;
   startFramePrompt: string;
-  endFramePrompt: string;
   cameraDirection: string;
 }
 
@@ -184,23 +194,24 @@ function buildSuggestedInputs(outputs: Record<string, unknown>): Record<string, 
   return merged;
 }
 
-function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCardProps) {
+const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCardProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const shotNumber = item.inputs.shotNumber as number;
+  const shotNumber = typeof item.inputs.shotNumber === "number" ? item.inputs.shotNumber : null;
   const shot = item.inputs.shot as Record<string, unknown> | undefined;
   const videoPath = item.inputs.videoPath as string | undefined;
   const startFramePath = item.inputs.startFramePath as string | undefined;
+  const shotLabel = shotNumber != null ? `Shot ${shotNumber}` : `Item ${item.id.slice(0, 8)}`;
 
-  const analysis = item.outputs as Record<string, unknown>;
+  const analysis = (item.outputs ?? {}) as Record<string, unknown>;
   const matchScore = analysis.matchScore as number | undefined;
   const issues = (analysis.issues ?? []) as string[];
   const recommendations = (analysis.recommendations ?? []) as Array<
-    string | { type?: string; suggestedInputs?: Record<string, unknown> }
+    string | { type?: string; commentary?: string; suggestedInputs?: Record<string, unknown> }
   >;
   const recommendationStrings = recommendations.map((r) =>
-    typeof r === "string" ? r : (r as Record<string, unknown>).type as string ?? JSON.stringify(r),
+    typeof r === "string" ? r : (r as { commentary?: string; type?: string }).commentary ?? (r as { type?: string }).type ?? JSON.stringify(r),
   );
 
   const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
@@ -215,8 +226,8 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
   const originalValues: EditFormValues = useMemo(() => ({
     durationSeconds: (shot?.durationSeconds as number) ?? 8,
     actionPrompt: (shot?.actionPrompt as string) ?? "",
+    dialogue: (shot?.dialogue as string) ?? "",
     startFramePrompt: (shot?.startFramePrompt as string) ?? "",
-    endFramePrompt: (shot?.endFramePrompt as string) ?? "",
     cameraDirection: (shot?.cameraDirection as string) ?? "",
   }), [shot]);
 
@@ -225,8 +236,8 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
   const suggestedValues: EditFormValues = useMemo(() => ({
     durationSeconds: (suggestedInputs.durationSeconds as number) ?? originalValues.durationSeconds,
     actionPrompt: (suggestedInputs.actionPrompt as string) ?? originalValues.actionPrompt,
+    dialogue: (suggestedInputs.dialogue as string) ?? originalValues.dialogue,
     startFramePrompt: (suggestedInputs.startFramePrompt as string) ?? originalValues.startFramePrompt,
-    endFramePrompt: (suggestedInputs.endFramePrompt as string) ?? originalValues.endFramePrompt,
     cameraDirection: (suggestedInputs.cameraDirection as string) ?? originalValues.cameraDirection,
   }), [suggestedInputs, originalValues]);
 
@@ -263,8 +274,8 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
       shot: editedShot,
       durationSeconds: formValues.durationSeconds,
       actionPrompt: formValues.actionPrompt,
+      dialogue: formValues.dialogue,
       startFramePrompt: formValues.startFramePrompt,
-      endFramePrompt: formValues.endFramePrompt,
       cameraDirection: formValues.cameraDirection,
     });
     setBusy(false);
@@ -292,16 +303,16 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
     <div className="analyze-card">
       <div className="analyze-card-media">
         {videoSrc ? (
-          <video
-            src={videoSrc}
-            controls
+          <VideoThumbnail
+            videoSrc={videoSrc}
+            thumbnailSrc={frameSrc ?? undefined}
+            aspectRatio={aspectRatio}
             className="analyze-video"
-            style={{ aspectRatio }}
           />
         ) : frameSrc ? (
-          <img src={frameSrc} alt={`Shot ${shotNumber}`} style={{ aspectRatio }} />
+          <img src={frameSrc} alt={shotLabel} style={{ aspectRatio }} />
         ) : (
-          <div className="analyze-placeholder" style={{ aspectRatio }}>
+          <div className="analyze-placeholder" style={{ aspectRatio, minHeight: 120 }}>
             No media
           </div>
         )}
@@ -309,7 +320,7 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
 
       <div className="analyze-card-body">
         <div className="analyze-card-header">
-          <span className="story-shot-number">Shot {shotNumber}</span>
+          <span className="story-shot-number">{shotLabel}</span>
           {composition && <span className="story-shot-comp">{composition}</span>}
           {durationSeconds != null && <span className="story-shot-duration">{durationSeconds}s</span>}
           {matchScore != null && (
@@ -352,14 +363,14 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
         <div className="analyze-actions">
           {!editing && (
             <>
-              <button className="analyze-btn accept" onClick={handleAccept} disabled={busy}>
-                ✓ Accept
+              <button className="analyze-btn reject" onClick={handleAccept} disabled={busy}>
+                Make Change
               </button>
               <button className="analyze-btn edit" onClick={enterEditMode} disabled={busy}>
-                ✎ Edit & Accept
+                Edit Change
               </button>
-              <button className="analyze-btn reject" onClick={handleReject} disabled={busy}>
-                ✗ Reject
+              <button className="analyze-btn accept" onClick={handleReject} disabled={busy}>
+                Ok
               </button>
             </>
           )}
@@ -377,7 +388,14 @@ function AnalyzeCard({ item, runId, aspectRatio, onAccept, onReject }: AnalyzeCa
       </div>
     </div>
   );
-}
+}, (prev, next) => {
+  // Only re-render if the item data actually changed
+  return prev.item.id === next.item.id
+    && prev.item.status === next.item.status
+    && prev.item.version === next.item.version
+    && prev.runId === next.runId
+    && prev.aspectRatio === next.aspectRatio;
+});
 
 /* ------------------------------------------------------------------ */
 /*  Inline edit form                                                   */
@@ -394,13 +412,13 @@ function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormPro
   return (
     <div className="analyze-edit-form">
       <EditField
-        label="Duration (seconds)"
-        fieldKey="durationSeconds"
-        type="number"
-        value={formValues.durationSeconds}
-        original={originalValues.durationSeconds}
-        onChange={(v) => onUpdate("durationSeconds", Number(v))}
-        onReset={() => onReset("durationSeconds")}
+        label="Start frame prompt"
+        fieldKey="startFramePrompt"
+        type="textarea"
+        value={formValues.startFramePrompt}
+        original={originalValues.startFramePrompt}
+        onChange={(v) => onUpdate("startFramePrompt", v as string)}
+        onReset={() => onReset("startFramePrompt")}
       />
       <EditField
         label="Action prompt"
@@ -412,22 +430,22 @@ function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormPro
         onReset={() => onReset("actionPrompt")}
       />
       <EditField
-        label="Start frame prompt"
-        fieldKey="startFramePrompt"
+        label="Dialogue"
+        fieldKey="dialogue"
         type="textarea"
-        value={formValues.startFramePrompt}
-        original={originalValues.startFramePrompt}
-        onChange={(v) => onUpdate("startFramePrompt", v as string)}
-        onReset={() => onReset("startFramePrompt")}
+        value={formValues.dialogue}
+        original={originalValues.dialogue}
+        onChange={(v) => onUpdate("dialogue", v as string)}
+        onReset={() => onReset("dialogue")}
       />
       <EditField
-        label="End frame prompt"
-        fieldKey="endFramePrompt"
-        type="textarea"
-        value={formValues.endFramePrompt}
-        original={originalValues.endFramePrompt}
-        onChange={(v) => onUpdate("endFramePrompt", v as string)}
-        onReset={() => onReset("endFramePrompt")}
+        label="Duration (seconds)"
+        fieldKey="durationSeconds"
+        type="number"
+        value={formValues.durationSeconds}
+        original={originalValues.durationSeconds}
+        onChange={(v) => onUpdate("durationSeconds", Number(v))}
+        onReset={() => onReset("durationSeconds")}
       />
       <EditField
         label="Camera direction"
@@ -438,6 +456,7 @@ function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormPro
         onChange={(v) => onUpdate("cameraDirection", v as string)}
         onReset={() => onReset("cameraDirection")}
       />
+
     </div>
   );
 }

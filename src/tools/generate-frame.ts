@@ -11,9 +11,7 @@ type GeneratedSingleFrameResult = {
 };
 
 /**
- * Generates start/end keyframe images for shots using the Reve API.
- * For first_last_frame shots: generates both start and end frames.
- * For extension shots: returns immediately (no frames needed).
+ * Generates start keyframe image for a shot using the Reve/Grok API.
  */
 export async function generateFrame(params: {
   shot: Shot;
@@ -21,17 +19,14 @@ export async function generateFrame(params: {
   assetLibrary: AssetLibrary;
   outputDir: string;
   dryRun?: boolean;
-  previousEndFramePath?: string;
   videoBackend?: "veo" | "comfy" | "grok";
   aspectRatio?: string;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
-  endPath?: string;
   startReferences?: FrameReference[];
-  endReferences?: FrameReference[];
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, previousEndFramePath, videoBackend, aspectRatio } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, videoBackend, aspectRatio } = params;
 
   // Create frames directory if it doesn't exist
   const framesDir = path.join(outputDir, "frames");
@@ -40,95 +35,22 @@ export async function generateFrame(params: {
   }
 
   const startPath = path.join(framesDir, `shot_${shot.shotNumber}_start.png`);
-  const endPath = path.join(framesDir, `shot_${shot.shotNumber}_end.png`);
 
   if (dryRun) {
     // Return placeholder paths without calling API
     return {
       shotNumber: shot.shotNumber,
       startPath,
-      endPath: videoBackend === "grok" ? undefined : endPath,
       startReferences: [],
-      endReferences: videoBackend === "grok" ? undefined : [],
     };
   }
-
-  // Hard continuity: copy previous shot's end frame as this shot's start frame
-  if (shot.continuousFromPrevious && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
-    console.log(`[generateFrame] Shot ${shot.shotNumber}: copying previous end frame for continuity`);
-    fs.copyFileSync(previousEndFramePath, startPath);
-    const startReferences: FrameReference[] = [{
-      type: "continuity",
-      name: "Previous shot end frame",
-      path: previousEndFramePath,
-    }];
-
-    // Skip end frame for Grok backend (only uses start frames)
-    if (videoBackend === "grok") {
-      return {
-        shotNumber: shot.shotNumber,
-        startPath,
-        startReferences,
-      };
-    }
-
-    // Generate only the end frame
-    const endFrameResult = await generateSingleFrame({
-      shot,
-      artStyle,
-      assetLibrary,
-      isEndFrame: true,
-      previousStartFramePath: startPath,
-      outputPath: endPath,
-      videoBackend,
-      aspectRatio,
-    });
-
-    return {
-      shotNumber: shot.shotNumber,
-      startPath,
-      endPath: endFrameResult.path,
-      startReferences,
-      endReferences: endFrameResult.referencesUsed,
-    };
-  }
-
-  // Non-continuous path: generate both frames from prompts
-  const continuityRefPath = previousEndFramePath && fs.existsSync(previousEndFramePath)
-    ? previousEndFramePath
-    : undefined;
 
   try {
-    // Generate start frame
     const startFrameResult = await generateSingleFrame({
       shot,
       artStyle,
       assetLibrary,
-      isEndFrame: false,
-      previousStartFramePath: undefined,
-      previousEndFramePath: continuityRefPath,
       outputPath: startPath,
-      videoBackend,
-      aspectRatio,
-    });
-
-    // Skip end frame for Grok backend (only uses start frames)
-    if (videoBackend === "grok") {
-      return {
-        shotNumber: shot.shotNumber,
-        startPath: startFrameResult.path,
-        startReferences: startFrameResult.referencesUsed,
-      };
-    }
-
-    // Generate end frame (with start frame as additional input for continuity)
-    const endFrameResult = await generateSingleFrame({
-      shot,
-      artStyle,
-      assetLibrary,
-      isEndFrame: true,
-      previousStartFramePath: startFrameResult.path,
-      outputPath: endPath,
       videoBackend,
       aspectRatio,
     });
@@ -136,27 +58,22 @@ export async function generateFrame(params: {
     return {
       shotNumber: shot.shotNumber,
       startPath: startFrameResult.path,
-      endPath: endFrameResult.path,
       startReferences: startFrameResult.referencesUsed,
-      endReferences: endFrameResult.referencesUsed,
     };
   } catch (error) {
     throw new Error(
-      `Failed to generate frames for shot ${shot.shotNumber}: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to generate frame for shot ${shot.shotNumber}: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 }
 
 /**
- * Generates a single frame (start or end) with reference images using the Reve API.
+ * Generates a single start frame with reference images using the Reve/Grok API.
  */
 async function generateSingleFrame(params: {
   shot: Shot;
   artStyle: string;
   assetLibrary: AssetLibrary;
-  isEndFrame: boolean;
-  previousStartFramePath?: string;
-  previousEndFramePath?: string;
   outputPath: string;
   videoBackend?: "veo" | "comfy" | "grok";
   aspectRatio?: string;
@@ -165,16 +82,13 @@ async function generateSingleFrame(params: {
     shot,
     artStyle,
     assetLibrary,
-    isEndFrame,
-    previousStartFramePath,
-    previousEndFramePath,
     outputPath,
     videoBackend,
     aspectRatio,
   } = params;
 
   // Build the prompt
-  const framePrompt = isEndFrame ? shot.endFramePrompt : shot.startFramePrompt;
+  const framePrompt = shot.startFramePrompt;
   const prompt = buildFramePrompt({
     artStyle,
     composition: shot.composition,
@@ -185,26 +99,17 @@ async function generateSingleFrame(params: {
     cameraDirection: shot.cameraDirection,
   });
 
-  console.log(`[generateFrame] Shot ${shot.shotNumber} (${isEndFrame ? 'end' : 'start'}): Building references...`);
+  console.log(`[generateFrame] Shot ${shot.shotNumber} (start): Building references...`);
   console.log(`[generateFrame]   assetLibrary.characterImages:`, JSON.stringify(assetLibrary.characterImages));
   console.log(`[generateFrame]   assetLibrary.locationImages:`, JSON.stringify(assetLibrary.locationImages));
   console.log(`[generateFrame]   shot.charactersPresent:`, shot.charactersPresent);
   console.log(`[generateFrame]   shot.location:`, shot.location);
 
   // Collect reference image file paths.
-  // Order: location > character > object > continuity (previous end frame as low-priority style ref).
+  // Order: location > character > object.
   const characterRefPaths = new Map<string, string>(); // path -> character name
   const objectRefPaths = new Map<string, string>(); // path -> object name
   const referenceImagePaths: string[] = [];
-
-  // Determine continuity reference path (previous end frame for start frames,
-  // or this shot's start frame for end frames)
-  let continuityRefPath: string | undefined;
-  if (!isEndFrame && previousEndFramePath && fs.existsSync(previousEndFramePath)) {
-    continuityRefPath = previousEndFramePath;
-  } else if (isEndFrame && previousStartFramePath && fs.existsSync(previousStartFramePath)) {
-    continuityRefPath = previousStartFramePath;
-  }
 
   // Add location reference image if available
   const locationRef = assetLibrary.locationImages[shot.location];
@@ -238,11 +143,6 @@ async function generateSingleFrame(params: {
     }
   }
 
-  // Add continuity ref LAST (low-priority style reference)
-  if (continuityRefPath) {
-    referenceImagePaths.push(continuityRefPath);
-  }
-
   // Limit reference images: Grok supports up to 5, Reve up to 6
   const maxRefs = videoBackend === "grok" ? 5 : 6;
   const limitedReferencePaths = referenceImagePaths.slice(0, maxRefs);
@@ -258,7 +158,7 @@ async function generateSingleFrame(params: {
     }
     return {
       type: "continuity",
-      name: isEndFrame ? `Shot ${shot.shotNumber} start frame` : "Previous shot end frame",
+      name: "Previous shot frame",
       path: refPath,
     };
   });
@@ -362,7 +262,7 @@ function buildFramePrompt(params: {
  */
 export const generateFrameTool = {
   description:
-    "Generate start and end keyframe images for a shot using the Reve API.",
+    "Generate start keyframe image for a shot using the Reve/Grok API.",
   parameters: z.object({
     shot: z.object({
       shotNumber: z.number(),
@@ -372,7 +272,6 @@ export const generateFrameTool = {
       shotType: z.literal("first_last_frame"),
       composition: z.string(),
       startFramePrompt: z.string(),
-      endFramePrompt: z.string(),
       actionPrompt: z.string(),
       dialogue: z.string(),
       speaker: z.string().optional(),
@@ -381,7 +280,6 @@ export const generateFrameTool = {
       charactersPresent: z.array(z.string()),
       objectsPresent: z.array(z.string()).optional(),
       location: z.string(),
-      continuousFromPrevious: z.boolean(),
     }).describe("The shot to generate keyframes for"),
     artStyle: z.string().describe("The visual art style for the entire video"),
     assetLibrary: z.object({
@@ -394,10 +292,6 @@ export const generateFrameTool = {
       .boolean()
       .optional()
       .describe("If true, return placeholder paths without calling API"),
-    previousEndFramePath: z
-      .string()
-      .optional()
-      .describe("Path to the previous shot's end frame image for cross-shot visual continuity"),
   }),
 };
 

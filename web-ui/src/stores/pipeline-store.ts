@@ -111,6 +111,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   fetchQueues: async (runId: string) => {
     try {
       const res = await fetch(`/api/runs/${runId}/queues`);
+      if (!res.ok) return;
       const data: { runId: string; queues: QueueSnapshot[] } =
         await res.json();
       const queues = { ...get().queues };
@@ -155,8 +156,28 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   fetchAnalyzeItems: async (runId: string) => {
     try {
       const res = await fetch(`/api/runs/${runId}/analyze`);
+      if (!res.ok) return;
       const data: { runId: string; items: WorkItem[] } = await res.json();
-      set({ analyzeItems: data.items });
+      const newItems = data.items;
+      const oldItems = get().analyzeItems;
+
+      // Build a map of old items by ID for quick lookup
+      const oldMap = new Map(oldItems.map(i => [i.id, i]));
+
+      // Merge: reuse old object references when data hasn't changed
+      const merged = newItems.map(newItem => {
+        const oldItem = oldMap.get(newItem.id);
+        if (oldItem && oldItem.status === newItem.status && oldItem.version === newItem.version) {
+          return oldItem; // Same reference — React.memo will skip re-render
+        }
+        return newItem;
+      });
+
+      // Only update state if something actually changed
+      const changed = merged.length !== oldItems.length || merged.some((item, i) => item !== oldItems[i]);
+      if (changed) {
+        set({ analyzeItems: merged });
+      }
     } catch (e) {
       console.error("fetchAnalyzeItems:", e);
     }
@@ -236,19 +257,35 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       set({ sseStatus: "disconnected" });
     };
 
-    const refreshData = () => {
+    /** Refresh queues + graph only (does NOT touch analyzeItems). */
+    const refreshCoreData = () => {
       const activeRunId = useRunStore.getState().activeRunId;
       if (!activeRunId) return;
       get().fetchQueues(activeRunId);
       get().fetchGraph(activeRunId);
+    };
+
+    /** Refresh everything including analyzeItems. */
+    const refreshData = () => {
+      const activeRunId = useRunStore.getState().activeRunId;
+      if (!activeRunId) return;
+      refreshCoreData();
       get().fetchAnalyzeItems(activeRunId);
     };
 
-    const handleItemEvent = () => {
-      refreshData();
+    /** Check whether an SSE event payload is about an analyze_video item. */
+    const isAnalyzeEvent = (e: MessageEvent): boolean => {
+      try {
+        const data = JSON.parse(e.data) as { payload?: { type?: string; itemType?: string } };
+        const itemType = data.payload?.type || data.payload?.itemType;
+        return itemType === "analyze_video";
+      } catch {
+        return false;
+      }
     };
 
-    // Item lifecycle events
+    // Item lifecycle events — only refresh analyzeItems when the event
+    // is about an analyze_video item; otherwise just refresh queues/graph.
     for (const evt of [
       "item_started",
       "item_completed",
@@ -257,7 +294,13 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       "item_redo",
       "item_cancelled",
     ]) {
-      es.addEventListener(evt, handleItemEvent);
+      es.addEventListener(evt, (e: MessageEvent) => {
+        if (isAnalyzeEvent(e)) {
+          refreshData();
+        } else {
+          refreshCoreData();
+        }
+      });
     }
 
     // Run status events
@@ -277,7 +320,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         /* ignore parse errors */
       }
       useRunStore.getState().loadRuns();
-      refreshData();
+      refreshCoreData();
     });
 
     // Pipeline paused event
@@ -290,7 +333,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       } catch { /* ignore */ }
       useUIStore.getState().showToast(reason, "warning");
       useRunStore.getState().loadRuns();
-      refreshData();
+      refreshCoreData();
     });
 
     // Generic message fallback
@@ -308,7 +351,12 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
           data.type === "item_cancelled" ||
           data.type === "item_retried"
         ) {
-          refreshData();
+          const itemType = data.payload?.type || (data.payload as Record<string, unknown> | undefined)?.itemType;
+          if (itemType === "analyze_video") {
+            refreshData();
+          } else {
+            refreshCoreData();
+          }
         } else if (data.type === "run_status") {
           if (data.payload?.status) {
             useRunStore
@@ -318,13 +366,13 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
               );
           }
           useRunStore.getState().loadRuns();
-          refreshData();
+          refreshCoreData();
         } else if (data.type === "pipeline_paused") {
           useRunStore.getState().setRunStatus("stopped");
           const reason = data.payload?.reason || "Pipeline paused";
           useUIStore.getState().showToast(reason, "warning");
           useRunStore.getState().loadRuns();
-          refreshData();
+          refreshCoreData();
         }
       } catch {
         /* ignore parse errors */

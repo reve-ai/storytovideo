@@ -4,8 +4,9 @@ import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 
-import type { QueueName, Priority, WorkItem, RunState } from './types.js';
+import type { QueueName, WorkItem, RunState } from './types.js';
 import { QueueManager } from './queue-manager.js';
+import { rateLimiters } from './rate-limiter-registry.js';
 import { analyzeStory } from '../tools/analyze-story.js';
 import { storyToScript } from '../tools/story-to-script.js';
 import { planShotsForScene } from '../tools/plan-shots.js';
@@ -26,7 +27,6 @@ const perSceneShotSchema = z.object({
   shotType: z.literal('first_last_frame'),
   composition: z.string(),
   startFramePrompt: z.string(),
-  endFramePrompt: z.string(),
   actionPrompt: z.string(),
   dialogue: z.string(),
   speaker: z.string(),
@@ -35,7 +35,6 @@ const perSceneShotSchema = z.object({
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
-  continuousFromPrevious: z.boolean(),
 });
 
 const sceneShotsSchema = z.object({
@@ -62,14 +61,14 @@ export interface ProcessorEvents {
 
 export class QueueProcessor extends EventEmitter {
   private running = false;
-  private normalLanePromise: Promise<void> | null = null;
-  private highLanePromise: Promise<void> | null = null;
+  private workerPromises: Promise<void>[] = [];
   private activeAbortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly queueName: QueueName,
     private readonly queueManager: QueueManager,
     private readonly runId: string,
+    private readonly concurrency: number = 2,
   ) {
     super();
   }
@@ -104,15 +103,16 @@ export class QueueProcessor extends EventEmitter {
     // Rebuild asset library from any already-completed assets in generatedOutputs
     const state = this.queueManager.getState();
     this.rebuildAssetLibrary(state);
-    this.normalLanePromise = this.runLane('normal');
-    this.highLanePromise = this.runLane('high');
+    this.workerPromises = [];
+    for (let i = 0; i < this.concurrency; i++) {
+      this.workerPromises.push(this.runWorker(i));
+    }
   }
 
   async stop(): Promise<void> {
     this.running = false;
-    await Promise.allSettled([this.normalLanePromise, this.highLanePromise]);
-    this.normalLanePromise = null;
-    this.highLanePromise = null;
+    await Promise.allSettled(this.workerPromises);
+    this.workerPromises = [];
   }
 
   isRunning(): boolean {
@@ -126,9 +126,12 @@ export class QueueProcessor extends EventEmitter {
     return true;
   }
 
-  private async runLane(priority: Priority): Promise<void> {
+  private async runWorker(_workerId: number): Promise<void> {
     while (this.running) {
-      const item = this.queueManager.getNextReady(this.queueName, priority);
+      // Try high priority first, then normal
+      const item =
+        this.queueManager.getNextReady(this.queueName, 'high') ??
+        this.queueManager.getNextReady(this.queueName, 'normal');
       if (!item) {
         // No work available — wait before polling again
         await sleep(500);
@@ -303,15 +306,27 @@ export class QueueProcessor extends EventEmitter {
   private async handleNameRun(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
-    const { text } = await generateText({
-      model: anthropic('claude-sonnet-4-20250514'),
-      prompt: `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`,
-      maxTokens: 30,
-    } as any);
-    const name = text.trim();
-    const state = this.queueManager.getState();
-    state.runName = name;
-    return { name };
+    const limiter = rateLimiters.get('anthropic');
+    await limiter.acquire();
+    try {
+      const { text } = await generateText({
+        model: anthropic('claude-sonnet-4-20250514'),
+        prompt: `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`,
+        maxTokens: 30,
+      } as any);
+      const name = text.trim();
+      const state = this.queueManager.getState();
+      state.runName = name;
+      return { name };
+    } catch (error: any) {
+      if (error?.status === 429 || error?.message?.includes('429')) {
+        console.warn('[handleNameRun] 429 rate limited — backing off all anthropic workers for 5s');
+        limiter.backoff(5000);
+      }
+      throw error;
+    } finally {
+      limiter.release();
+    }
   }
 
   private async handlePlanShots(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -334,7 +349,11 @@ export class QueueProcessor extends EventEmitter {
 - Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
 - Long (8-15s): slow reveals, extended action, lingering moments`;
 
-    const { object } = await (generateObject as any)({
+    const limiter = rateLimiters.get('anthropic');
+    await limiter.acquire();
+    let planResult;
+    try {
+    planResult = await (generateObject as any)({
       model: anthropic('claude-opus-4-6'),
       schema: sceneShotsSchema,
       prompt: `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
@@ -360,11 +379,6 @@ COMPOSITION TYPES (what the camera sees and what happens):
 - insert_cutaway: Close detail of an object or prop. Action: hand picks up object, screen displays change, liquid pours, etc.
 - low_angle: Dramatic upward angle on a subject. Action: character looms, speaks powerfully, stands up.
 - high_angle: Dramatic downward angle on a subject. Action: character looks small, vulnerable, or surveyed from above.
-
-CONTINUITY (continuousFromPrevious):
-- When true: the previous shot's start frame is used as a style/continuity reference for this shot.
-- Set true ONLY when: same location, same characters, same visual style, and the shots are meant to feel like continuous coverage of the same moment.
-- Set false when: it's the first shot of a scene, the subject changes, the location changes, there's a time skip, or the camera setup is very different.
 
 DIALOGUE PACING:
 - ~2.5 words/second in film
@@ -403,7 +417,17 @@ ${JSON.stringify(scene, null, 2)}
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}`,
     });
+    } catch (error: any) {
+      if (error?.status === 429 || error?.message?.includes('429')) {
+        console.warn('[handlePlanShots] 429 rate limited — backing off all anthropic workers for 5s');
+        limiter.backoff(5000);
+      }
+      throw error;
+    } finally {
+      limiter.release();
+    }
 
+    const { object } = planResult;
     const updatedAnalysis = planShotsForScene(
       sceneNumber,
       object.transition,
@@ -452,9 +476,6 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     const shot = item.inputs.shot as Shot;
-    const previousEndFramePath = item.inputs.previousEndFramePath
-      ? this.absolutePath(item.inputs.previousEndFramePath as string)
-      : undefined;
 
     const aspectRatio = state.options?.aspectRatio;
     const result = await generateFrame({
@@ -462,7 +483,6 @@ ${JSON.stringify(analysis, null, 2)}`,
       artStyle: state.storyAnalysis.artStyle,
       assetLibrary: state.assetLibrary,
       outputDir: this.resolvedOutputDir(),
-      previousEndFramePath,
       videoBackend: 'grok',
       aspectRatio,
     });
@@ -470,14 +490,10 @@ ${JSON.stringify(analysis, null, 2)}`,
     if (result.startPath) {
       state.generatedOutputs[`frame:shot:${shot.shotNumber}:start`] = this.relativePath(result.startPath);
     }
-    if (result.endPath) {
-      state.generatedOutputs[`frame:shot:${shot.shotNumber}:end`] = this.relativePath(result.endPath);
-    }
 
     return {
       shotNumber: result.shotNumber,
       startPath: result.startPath ? this.relativePath(result.startPath) : result.startPath,
-      endPath: result.endPath ? this.relativePath(result.endPath) : result.endPath,
     };
   }
 
@@ -485,9 +501,6 @@ ${JSON.stringify(analysis, null, 2)}`,
     const state = this.queueManager.getState();
     const shot = item.inputs.shot as Shot;
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
-    const endFramePath = item.inputs.endFramePath
-      ? this.absolutePath(item.inputs.endFramePath as string)
-      : undefined;
     const aspectRatio = state.options?.aspectRatio;
 
     const result = await generateVideo({
@@ -495,11 +508,12 @@ ${JSON.stringify(analysis, null, 2)}`,
       shotType: 'first_last_frame',
       actionPrompt: shot.actionPrompt,
       dialogue: shot.dialogue,
+      speaker: shot.speaker,
+      charactersPresent: shot.charactersPresent,
       soundEffects: shot.soundEffects,
       cameraDirection: shot.cameraDirection,
       durationSeconds: shot.durationSeconds,
       startFramePath,
-      endFramePath: endFramePath ?? startFramePath,
       outputDir: join(this.resolvedOutputDir(), 'videos'),
       videoBackend: 'grok',
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
@@ -825,16 +839,10 @@ ${JSON.stringify(analysis, null, 2)}`,
     // Collect asset item IDs that frames depend on
     const assetItemIds = this.getAssetItemIds(analysis);
 
-    let previousFrameItemId: string | null = null;
-
     for (const shot of shots) {
-      // Frame depends on: plan_shots completion + all relevant assets + previous frame (continuity)
       const frameDeps = [planItem.id, ...assetItemIds];
-      if (previousFrameItemId && shot.continuousFromPrevious) {
-        frameDeps.push(previousFrameItemId);
-      }
 
-      const frameItem = this.queueManager.addItem({
+      this.queueManager.addItem({
         type: 'generate_frame',
         queue: 'image',
         itemKey: `frame:shot:${shot.shotNumber}`,
@@ -842,8 +850,6 @@ ${JSON.stringify(analysis, null, 2)}`,
         inputs: { shot },
         priority: planItem.priority,
       });
-
-      previousFrameItemId = frameItem.id;
     }
   }
 
@@ -853,6 +859,12 @@ ${JSON.stringify(analysis, null, 2)}`,
     const shot = frameItem.inputs.shot as Shot;
 
     if (!startPath) return; // No frame generated (shouldn't happen)
+
+    // Check if a generate_video item already exists for this shot (e.g. from cascade redo)
+    const existingVideo = this.queueManager.getItemsByKey(`video:shot:${shotNumber}`);
+    if (existingVideo.some(i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(frameItem.id))) {
+      return; // Already seeded by cascade, skip duplicate
+    }
 
     this.queueManager.addItem({
       type: 'generate_video',
@@ -1014,6 +1026,29 @@ ${JSON.stringify(analysis, null, 2)}`,
 // ProcessorGroup — manages all three queue processors for a run
 // ---------------------------------------------------------------------------
 
+/** Env var names for per-queue concurrency configuration. */
+const CONCURRENCY_ENV_VARS: Record<QueueName, string> = {
+  llm: 'QUEUE_CONCURRENCY_LLM',
+  image: 'QUEUE_CONCURRENCY_IMAGE',
+  video: 'QUEUE_CONCURRENCY_VIDEO',
+};
+
+/** Default concurrency values per queue. */
+const CONCURRENCY_DEFAULTS: Record<QueueName, number> = {
+  llm: 4,
+  image: 4,
+  video: 3,
+};
+
+export function getQueueConcurrency(queue: QueueName): number {
+  const envVal = process.env[CONCURRENCY_ENV_VARS[queue]];
+  if (envVal !== undefined) {
+    const parsed = parseInt(envVal, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return CONCURRENCY_DEFAULTS[queue];
+}
+
 export class ProcessorGroup extends EventEmitter {
   private processors: QueueProcessor[];
 
@@ -1021,7 +1056,8 @@ export class ProcessorGroup extends EventEmitter {
     super();
     const queues: QueueName[] = ['llm', 'image', 'video'];
     this.processors = queues.map(q => {
-      const proc = new QueueProcessor(q, queueManager, runId);
+      const concurrency = getQueueConcurrency(q);
+      const proc = new QueueProcessor(q, queueManager, runId, concurrency);
       // Forward events
       proc.on('item:started', (data) => this.emit('item:started', data));
       proc.on('item:completed', (data) => this.emit('item:completed', data));

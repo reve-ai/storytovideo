@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { getGoogleClient } from "../google-client";
 import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
 import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
+import { rateLimiters } from "../queue/rate-limiter-registry.js";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -39,9 +40,7 @@ export class RaiCelebrityError extends Error {
   }
 }
 
-// Cooldown tracking for Veo API calls to avoid rate-limit-like 400 errors
-let lastVeoCallTimestamp = 0;
-const VEO_COOLDOWN_MS = 30_000; // 30 seconds between Veo API calls
+
 
 /**
  * Strip character names from text to avoid triggering Veo's RAI celebrity filter.
@@ -66,11 +65,14 @@ type GenerateVideoParams = {
   shotType: "first_last_frame";
   actionPrompt: string;
   dialogue: string;
+  /** Who is speaking: character name, "narrator", "voiceover", or empty. */
+  speaker?: string;
+  /** Characters present in the shot, used to describe the speaker visually. */
+  charactersPresent?: string[];
   soundEffects: string;
   cameraDirection: string;
   durationSeconds: number;
   startFramePath: string;
-  endFramePath: string;
   outputDir: string;
   dryRun?: boolean;
   abortSignal?: AbortSignal;
@@ -91,6 +93,37 @@ type GenerateVideoParams = {
 
 /** Shared return type for all video backends. */
 type GenerateVideoResult = { shotNumber: number; path: string; duration: number; promptSent?: string };
+
+/**
+ * Build a dialogue description for the video prompt.
+ * Uses the speaker field to attribute dialogue to the correct character.
+ * Character names are replaced with visual descriptions since names get stripped.
+ */
+function buildDialoguePrompt(dialogue: string, speaker?: string, charactersPresent?: string[]): string {
+  if (!dialogue) return "";
+  const s = (speaker ?? "").trim().toLowerCase();
+  if (!s || s === "narrator" || s === "voiceover") {
+    return `${s === "voiceover" ? "Voiceover" : "Narrator"} says: "${dialogue}"`;
+  }
+  // Speaker is a character name — describe them visually based on position in the cast
+  let label: string;
+  if (charactersPresent && charactersPresent.length > 0) {
+    const idx = charactersPresent.findIndex(c => c.toLowerCase() === s);
+    if (charactersPresent.length === 1) {
+      label = "the person";
+    } else if (idx === 0) {
+      label = "the first person";
+    } else if (idx === 1) {
+      label = "the second person";
+    } else {
+      label = "one of the people";
+    }
+  } else {
+    label = "the person";
+  }
+  return `${label[0].toUpperCase() + label.slice(1)} speaks: "${dialogue}"`;
+}
+
 
 /**
  * Generates video clips for shots.
@@ -135,7 +168,6 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
     cameraDirection,
     durationSeconds,
     startFramePath,
-    endFramePath,
     outputDir,
     dryRun = false,
     abortSignal,
@@ -149,7 +181,8 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 	// Build video prompt from components
 	const promptParts: string[] = [];
 	if (actionPrompt) promptParts.push(actionPrompt);
-	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
+	if (dialoguePart) promptParts.push(dialoguePart);
 	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
 	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
 	const videoPrompt = promptParts.join(". ");
@@ -171,23 +204,18 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // First+last frame interpolation
-        if (!startFramePath || !endFramePath) {
-          throw new Error("first_last_frame requires both startFramePath and endFramePath");
+        if (!startFramePath) {
+          throw new Error("first_last_frame requires startFramePath");
         }
 
-        // Load images as base64
+        // Load start image as base64 (used for both start and end frame)
         const startImageBuffer = readFileSync(startFramePath);
         const startImage = {
           imageBytes: startImageBuffer.toString("base64"),
           mimeType: "image/png",
         };
 
-        const endImageBuffer = readFileSync(endFramePath);
-        const endImage = {
-          imageBytes: endImageBuffer.toString("base64"),
-          mimeType: "image/png",
-        };
+        const endImage = startImage; // Use same frame for both
 
         // Build config
         // Veo 3.1 interpolation only supports 8s duration.
@@ -199,14 +227,10 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
         console.log(`[generateVideo] Config: durationSeconds=${config.durationSeconds}, aspectRatio=${config.aspectRatio}`);
 
-        // Enforce cooldown between consecutive Veo API calls
-        const elapsed = Date.now() - lastVeoCallTimestamp;
-        if (elapsed < VEO_COOLDOWN_MS) {
-          const waitMs = VEO_COOLDOWN_MS - elapsed;
-          console.log(`[generateVideo] Shot ${shotNumber}: Waiting ${Math.ceil(waitMs / 1000)}s cooldown before Veo API call...`);
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
-        }
-        lastVeoCallTimestamp = Date.now();
+        const limiter = rateLimiters.get('veo');
+        await limiter.acquire();
+        let veoReleased = false;
+        try {
 
         let operation = await client.models.generateVideos({
           model: "veo-3.1-generate-preview",
@@ -262,6 +286,13 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
 
         console.log(`[generateVideo] Shot ${shotNumber} saved to ${outputPath}`);
 	        return { shotNumber, path: outputPath, duration: 8, promptSent: videoPrompt };
+
+        } finally {
+          if (!veoReleased) {
+            veoReleased = true;
+            limiter.release();
+          }
+        }
       } catch (error: any) {
         lastError = error;
         // Don't retry if cancelled due to pipeline interruption
@@ -270,8 +301,8 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         }
         // Check if it's a 429 rate limit error
         if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
-          console.warn(`[generateVideo] Shot ${shotNumber}: Rate limited (429). Waiting 60s before retry ${attempt}/${maxRetries}...`);
-          await new Promise((resolve) => setTimeout(resolve, 60000));
+          console.warn(`[generateVideo] Shot ${shotNumber}: Rate limited (429) — backing off all veo workers for 60s`);
+          rateLimiters.get('veo').backoff(60000);
           continue;
         }
         // Non-retryable error: don't retry
@@ -304,7 +335,6 @@ export const generateVideoTool = {
     cameraDirection: z.string().describe("Camera movement and angle"),
     durationSeconds: z.number().describe("Video duration in seconds (0.5-10). Veo always uses 8; ComfyUI supports arbitrary."),
     startFramePath: z.string().describe("Path to start frame image"),
-    endFramePath: z.string().describe("Path to end frame image"),
     outputDir: z.string().describe("Output directory for video file"),
     dryRun: z.boolean().optional().describe("Return placeholder without calling API"),
   }),
@@ -324,7 +354,6 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
     cameraDirection,
     durationSeconds,
     startFramePath,
-    endFramePath,
     outputDir,
     dryRun = false,
     abortSignal,
@@ -339,7 +368,8 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
 	// Build video prompt from components
 	const promptParts: string[] = [];
 	if (actionPrompt) promptParts.push(actionPrompt);
-	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
+	if (dialoguePart) promptParts.push(dialoguePart);
 	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
 	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
 	const videoPrompt = promptParts.join(". ");
@@ -397,12 +427,11 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        // First+last frame interpolation
-        if (!startFramePath || !endFramePath) {
-          throw new Error("first_last_frame requires both startFramePath and endFramePath");
+        if (!startFramePath) {
+          throw new Error("first_last_frame requires startFramePath");
         }
 
-        // Resize frames to match ComfyUI workflow dimensions, then upload
+        // Resize frame to match ComfyUI workflow dimensions, then upload
         const comfyWidth = 640;
         const comfyHeight = 640;
         const tmpFiles: string[] = [];
@@ -413,11 +442,8 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
         const startAssetId = await uploadAsset(resizedStart);
         console.log(`[generateVideo] Start frame uploaded: ${startAssetId}`);
 
-        console.log(`[generateVideo] Resizing and uploading end frame for shot ${shotNumber}`);
-        const resizedEnd = await resizeForComfy(endFramePath, comfyWidth, comfyHeight);
-        tmpFiles.push(resizedEnd);
-        const endAssetId = await uploadAsset(resizedEnd);
-        console.log(`[generateVideo] End frame uploaded: ${endAssetId}`);
+        // Use start frame as end frame too
+        const endAssetId = startAssetId;
 
         // Clean up temp resized files
         for (const tmp of tmpFiles) {
@@ -531,7 +557,8 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
 	// Build video prompt from components
 	const promptParts: string[] = [];
 	if (actionPrompt) promptParts.push(actionPrompt);
-	if (dialogue) promptParts.push(`Character says: "${dialogue}"`);
+	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
+	if (dialoguePart) promptParts.push(dialoguePart);
 	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
 	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
 	const videoPrompt = promptParts.join(". ");

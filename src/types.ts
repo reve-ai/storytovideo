@@ -23,7 +23,7 @@ export interface Shot {
   shotType: "first_last_frame";
   composition: string;         // "wide_establishing" | "over_the_shoulder" | "two_shot" | "close_up" | "medium_shot" | "tracking" | "pov" | "insert_cutaway" | "low_angle" | "high_angle"
   startFramePrompt: string;
-  endFramePrompt: string;      // only for first_last_frame
+  endFramePrompt?: string;      // deprecated — kept optional for backward compat with saved data
   actionPrompt: string;
   dialogue: string;            // quoted speech (empty if none)
   speaker: string;             // who is speaking (character name, "narrator", "voiceover", etc; empty if no dialogue)
@@ -32,7 +32,7 @@ export interface Shot {
   charactersPresent: string[];
   objectsPresent: string[];
   location: string;
-  continuousFromPrevious: boolean;
+  continuousFromPrevious?: boolean;
   skipped?: boolean;           // if true, excluded from final assembly and generation
 }
 
@@ -81,9 +81,9 @@ export interface FrameReference {
 
 export interface GeneratedFrameSet {
   start?: string;
-  end?: string;
   startReferences?: FrameReference[];
-  endReferences?: FrameReference[];
+  end?: string;                    // deprecated — kept optional for backward compat with saved data
+  endReferences?: FrameReference[]; // deprecated — kept optional for backward compat with saved data
 }
 
 export interface PipelineOptions {
@@ -119,10 +119,10 @@ export interface PipelineState {
   pendingJobs: Record<string, { jobId: string; outputPath: string }>;
   importedAudio?: Record<number, string>;              // shotNumber → audio file path (from import pipeline)
   videoVersions?: Record<number, ArtifactVersion[]>;    // shotNumber -> versions
-  frameVersions?: Record<number, Record<string, ArtifactVersion[]>>; // shotNumber -> { start: versions, end: versions }
+  frameVersions?: Record<number, Record<string, ArtifactVersion[]>>; // shotNumber -> { start: versions }
   selectedVersions?: {
     videos?: Record<number, number>;  // shotNumber -> version number
-    frames?: Record<number, Record<string, number>>; // shotNumber -> { start: version, end: version }
+    frames?: Record<number, Record<string, number>>; // shotNumber -> { start: version }
   };
   assetVersions?: Record<string, ArtifactVersion[]>;  // asset key -> versions
   selectedAssetVersions?: Record<string, number>;      // asset key -> selected version number

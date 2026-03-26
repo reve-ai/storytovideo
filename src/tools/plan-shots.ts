@@ -8,15 +8,12 @@ import type { StoryAnalysis, Shot } from "../types";
 export const CINEMATIC_RULES = `
 FIXED CAMERA RULE (MOST IMPORTANT):
 A shot is what a single, stationary camera sees. The camera does not move, pan, or change its target during a shot.
-- The start frame and end frame are what this SAME fixed camera sees at the beginning and end of the shot.
-- If the start frame is pointed at Person A, the end frame is ALSO pointed at Person A. You CANNOT switch to Person B.
-- If the start frame shows a wide view of a room, the end frame shows the SAME wide view of the SAME room.
-- The ONLY things that can change between start and end: facial expressions, small gestures, body language, a person entering/exiting the frame edges.
+- The start frame describes what this camera sees at the beginning of the shot.
+- If the start frame is pointed at Person A, the shot stays on Person A. You CANNOT switch to Person B.
+- If the start frame shows a wide view of a room, the shot shows the SAME wide view of the SAME room.
 - If you need to show a different person or a different angle: that is a DIFFERENT SHOT. Use a cut.
-- WRONG: Start frame = "close-up of Alice speaking" → End frame = "close-up of Bob reacting" (this is TWO different shots!)
-- RIGHT: Start frame = "close-up of Alice speaking" → End frame = "close-up of Alice finishing her sentence with a slight smile"
 - To switch focus to a different person, END the current shot and START a new shot on that person. This is how real films work — cut to the new subject.
-- Example: Shot 3 = close-up of Alice speaking (start & end both on Alice). Shot 4 = close-up of Bob reacting (start & end both on Bob). Two shots, one cut.
+- Example: Shot 3 = close-up of Alice speaking. Shot 4 = close-up of Bob reacting. Two shots, one cut.
 
 NO CUTS WITHIN A SHOT:
 A single shot NEVER contains a cut, transition, or camera angle change. Phrases like "Cut to...", "We then see...", "Switch to...", or "The camera moves to show..." within a shot's action prompt are WRONG.
@@ -25,31 +22,27 @@ A single shot NEVER contains a cut, transition, or camera angle change. Phrases 
 - Bad: "He picks up the glass. Cut to a medium angle showing him drinking." → This is TWO shots.
 - Good: Shot 1: "He picks up the glass and lifts it." Shot 2: "Medium angle — he drinks in measured sips."
 
-FRAME INTERPOLATION CONSTRAINTS:
-Each shot generates a START frame and an END frame. A video model then interpolates between them.
-- The start and end frames MUST show the SAME scene from the SAME camera angle and composition.
-- Only small, interpolatable changes between frames: character movement within frame, entering/leaving frame, gestures, facial expressions.
-- Characters visible in the start frame must remain visible in the end frame (unless specifically exiting the frame).
-- New characters may enter the frame between start and end.
+START FRAME CONSTRAINTS:
+Each shot has a START FRAME (an image) and an ACTION PROMPT (what happens). A video model generates the clip from the start frame guided by the action.
+- The start frame describes the visual setup: composition, characters, setting, lighting, camera angle.
+- The action prompt describes what happens during the shot.
 - If you need a different camera angle or different character focus, that is a NEW SHOT (cut to it).
-- Radically different start and end frames produce bad video — keep changes subtle.
 
-COMPOSITION TYPES (start/end frame differences):
-- wide_establishing: Static wide shot. Start: empty scene or characters entering. End: characters in position. Small motion only. The SAME wide view throughout — do not change the camera position or angle.
-- over_the_shoulder: Camera locked behind ONE character's shoulder for the ENTIRE shot. The person being looked AT stays in frame throughout. Start/end show the SAME framing. Subject speaks or reacts — only expression and small gestures change.
-- two_shot: Both characters in frame throughout. Start/end differ only in body language, gestures, expressions. The SAME two characters remain in frame for the entire shot.
-- close_up: Tight on ONE face for the ENTIRE shot. Start and end show the SAME person's face — only expression changes. NEVER switch to a different person's face.
-- medium_shot: Waist-up of ONE character for the ENTIRE shot. Character gestures or shifts weight between start and end. The SAME person stays in frame throughout.
-- tracking: Camera follows ONE subject. Start: subject at position A. End: subject at position B. Same background/environment visible throughout. The SAME person is tracked the entire time.
-- pov: What ONE character sees. Start/end show the same view with small changes (hand reaches for object, door opens, etc.).
-- insert_cutaway: Close detail shot. Start/end show the same object with a small change (hand picks it up, liquid pours, etc.).
-- low_angle: Fixed dramatic low angle on ONE subject. Same framing rules as medium_shot — only gestures/expressions change. The SAME subject throughout.
-- high_angle: Fixed dramatic high angle on ONE subject. Same framing rules as medium_shot — only gestures/expressions change. The SAME subject throughout.
+COMPOSITION TYPES:
+- wide_establishing: Wide view of the setting. Characters in context, spatial relationships.
+- over_the_shoulder: Camera behind ONE character's shoulder, focused on the person they're facing.
+- two_shot: Both characters framed together.
+- close_up: Tight on ONE face. NEVER switch to a different person's face within a shot.
+- medium_shot: Waist-up of ONE character.
+- tracking: Camera follows ONE subject through space.
+- pov: First-person view of what a character sees.
+- insert_cutaway: Close detail of an object or prop.
+- low_angle: Dramatic upward angle on ONE subject.
+- high_angle: Dramatic downward angle on ONE subject.
 
 COMMON MISTAKES TO AVOID:
-- Do NOT write a close_up that starts on Character A and ends on Character B — that is two shots.
+- Do NOT write a close_up that switches from Character A to Character B — that is two shots.
 - Do NOT write an over_the_shoulder that changes which character's shoulder we're behind — that is two shots.
-- Do NOT write a start frame showing a room from one angle and end frame showing it from another angle — that is two shots.
 - If dialogue passes from A to B during a shot, keep the CAMERA on whoever the shot is framed on. The other character's dialogue happens off-screen or in the next shot.
 - Want to show B's reaction to what A said? Great — make that the NEXT shot (a new close_up on B). Don't try to cram both into one shot.
 
@@ -89,26 +82,6 @@ SCENE TRANSITIONS:
 - "fade_black" for dramatic mood shifts, time jumps, or emotional beats — quick fade out to black then fade in
 - Keep transitions SHORT (0.5-0.75 second) — they shouldn't distract
 
-CROSS-SHOT CONTINUITY:
-- When continuousFromPrevious is true, the system COPIES the previous shot's end frame as this shot's start frame for perfect visual continuity, and only generates the end frame. This means continuousFromPrevious=true must ONLY be used when the camera hasn't moved at all.
-- Set continuousFromPrevious: true ONLY when ALL of these are true:
-  1. Same composition type (e.g., both are wide_establishing, or both are insert_cutaway)
-  2. Same primary subject (e.g., both focused on the same person or same group)
-  3. Same camera angle and framing
-  4. The shot is literally "the same camera, a few seconds later"
-- Set continuousFromPrevious: false when ANY of these are true:
-  - It's the first shot of a scene (always false)
-  - Different composition type from the previous shot (e.g., wide_establishing → medium_shot)
-  - Different primary subject (e.g., close_up of Person A → close_up of Person B)
-  - Different camera angle or framing
-  - There's a time skip from the previous shot
-  - The location changes from the previous shot
-- Examples:
-  - wide_establishing of room → medium_shot of door = FALSE (different composition)
-  - close_up of Alice → close_up of Bob = FALSE (different subject!)
-  - medium_shot of consultants → close_up of Guy = FALSE (different composition, different subject)
-  - insert_cutaway of laptop screen → insert_cutaway of same laptop screen = TRUE (same everything)
-  - close_up of Alice speaking → close_up of Alice finishing sentence = TRUE (same everything)
 `;
 
 // ---------------------------------------------------------------------------
@@ -121,7 +94,6 @@ const perSceneShotSchema = z.object({
   shotType: z.literal("first_last_frame"),
   composition: z.string(),
   startFramePrompt: z.string(),
-  endFramePrompt: z.string(),
   actionPrompt: z.string(),
   dialogue: z.string(),
   speaker: z.string().describe("Who is speaking the dialogue (character name, 'narrator', 'voiceover', etc). Empty if no dialogue"),
@@ -130,7 +102,6 @@ const perSceneShotSchema = z.object({
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
-  continuousFromPrevious: z.boolean(),
 });
 
 // ---------------------------------------------------------------------------
