@@ -3,7 +3,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve, relative, isAbsolute } from "path";
 import { EventEmitter } from "events";
 import { QueueManager } from "./queue-manager.js";
-import { QueueProcessor } from "./processors.js";
+import { QueueProcessor, getQueueConcurrency } from "./processors.js";
 import type { WorkItem, QueueName } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -216,7 +216,8 @@ export class RunManager extends EventEmitter {
     const procs: QueueProcessor[] = [];
 
     for (const queue of queues) {
-      const proc = new QueueProcessor(queue, qm, runId);
+      const concurrency = getQueueConcurrency(queue);
+      const proc = new QueueProcessor(queue, qm, runId, concurrency);
       // Forward processor events so the server can relay them via SSE
       proc.on("item:started", (data) => this.emit("item:started", data));
       proc.on("item:completed", (data) => {
