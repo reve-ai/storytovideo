@@ -835,7 +835,6 @@ ${JSON.stringify(analysis, null, 2)}`,
   }
 
   private seedAfterGenerateFrame(frameItem: WorkItem, outputs: Record<string, unknown>): void {
-    const shotNumber = outputs.shotNumber as number;
     const startPath = outputs.startPath as string | undefined;
     const shot = frameItem.inputs.shot as Shot;
 

@@ -795,12 +795,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
         for (const shot of allShots) {
           // Find the latest completed, non-superseded generate_video item for this shot
-          const videoItems = qm.getItemsByKey(`video:shot:${shot.shotNumber}`);
+          const videoItems = qm.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
           const completedVideo = videoItems.find(i => i.status === 'completed' && !i.supersededBy);
           if (!completedVideo) continue;
 
           // Check if an active analyze_video already exists that depends on this video
-          const existingAnalyze = qm.getItemsByKey(`analyze_video:shot:${shot.shotNumber}`);
+          const existingAnalyze = qm.getItemsByKey(`analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
           if (existingAnalyze.some(i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(completedVideo.id))) continue;
 
           // Build reference image paths from generated outputs
@@ -821,7 +821,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           const newItem = qm.addItem({
             type: 'analyze_video',
             queue: 'llm',
-            itemKey: `analyze_video:shot:${shot.shotNumber}`,
+            itemKey: `analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
             dependencies: [completedVideo.id],
             inputs: {
               shotNumber: shot.shotNumber,

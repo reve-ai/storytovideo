@@ -35,7 +35,7 @@ export interface WorkItem {
   status: WorkItemStatus;
   priority: Priority;
   version: number;                      // starts at 1, increments on redo
-  itemKey: string;                      // stable identifier, e.g. "frame:shot:5", shared across versions
+  itemKey: string;                      // stable identifier, e.g. "frame:scene:1:shot:3", shared across versions
   dependencies: string[];               // IDs of work items that must complete first
   inputs: Record<string, unknown>;      // data needed to execute
   outputs: Record<string, unknown>;     // results after completion
