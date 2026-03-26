@@ -43,9 +43,9 @@ export default function QueueColumn({ name, snapshot }: QueueColumnProps) {
 
   const groups: StatusGroup[] = [
     { label: "In Progress", status: "in_progress", items: snapshot.inProgress || [] },
-    { label: "Pending", status: "pending", items: snapshot.pending || [] },
-    { label: "Completed", status: "completed", items: snapshot.completed || [] },
+    { label: "Completed", status: "completed", items: (snapshot.completed || []).slice().sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')) },
     { label: "Failed", status: "failed", items: snapshot.failed || [] },
+    { label: "Pending", status: "pending", items: (snapshot.pending || []).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)) },
     { label: "Superseded", status: "superseded", items: snapshot.superseded || [] },
     { label: "Cancelled", status: "cancelled", items: snapshot.cancelled || [] },
   ];
