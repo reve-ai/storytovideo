@@ -439,6 +439,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       referenceImagePath: item.inputs.referenceImagePath as string | undefined,
       videoBackend: 'grok',
       aspectRatio,
+      version: item.version,
     });
 
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
@@ -466,6 +467,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       outputDir: this.resolvedOutputDir(),
       videoBackend: 'grok',
       aspectRatio,
+      version: item.version,
     });
 
     if (result.startPath) {
@@ -502,6 +504,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
       aspectRatio,
       abortSignal: signal,
+      version: item.version,
     });
 
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));

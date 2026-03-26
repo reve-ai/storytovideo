@@ -19,6 +19,7 @@ export async function generateAsset(params: {
   referenceImagePath?: string;
   videoBackend?: "veo" | "comfy" | "grok";
   aspectRatio?: string;
+  version?: number;
 }): Promise<{ key: string; path: string }> {
   const {
     characterName,
@@ -29,6 +30,7 @@ export async function generateAsset(params: {
     outputDir,
     dryRun = false,
     referenceImagePath,
+    version = 1,
   } = params;
 
   // Determine asset type and key
@@ -103,7 +105,7 @@ export async function generateAsset(params: {
       fs.mkdirSync(assetDir, { recursive: true });
 
       // Save image
-      const filename = `${assetName.toLowerCase()}_${angleType}.png`;
+      const filename = `${assetName.toLowerCase()}_${angleType}_v${version}.png`;
       const filePath = path.join(assetDir, filename);
 
       let resultPath: string;

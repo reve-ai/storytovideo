@@ -25,12 +25,13 @@ export async function generateFrame(params: {
   dryRun?: boolean;
   videoBackend?: "veo" | "comfy" | "grok";
   aspectRatio?: string;
+  version?: number;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
   startReferences?: FrameReference[];
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, videoBackend, aspectRatio } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, videoBackend, aspectRatio, version = 1 } = params;
   const shotContext = formatShotContext(shot);
 
   // Create frames directory if it doesn't exist
@@ -39,7 +40,7 @@ export async function generateFrame(params: {
     fs.mkdirSync(framesDir, { recursive: true });
   }
 
-  const startPath = path.join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_start.png`);
+  const startPath = path.join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`);
 
   if (dryRun) {
     // Return placeholder paths without calling API

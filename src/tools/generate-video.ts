@@ -91,13 +91,15 @@ type GenerateVideoParams = {
     set: (key: string, value: { jobId: string; outputPath: string }) => Promise<void>;
     delete: (key: string) => Promise<void>;
   };
+  /** Version number for output filename (default 1). */
+  version?: number;
 };
 
 /** Shared return type for all video backends. */
 type GenerateVideoResult = { shotNumber: number; path: string; duration: number; promptSent?: string };
 
-function buildSceneShotFilename(sceneNumber: number, shotInScene: number): string {
-  return `scene_${String(sceneNumber).padStart(2, "0")}_shot_${String(shotInScene).padStart(2, "0")}`;
+function buildSceneShotFilename(sceneNumber: number, shotInScene: number, version: number = 1): string {
+  return `scene_${String(sceneNumber).padStart(2, "0")}_shot_${String(shotInScene).padStart(2, "0")}_v${version}`;
 }
 
 function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sceneNumber" | "shotInScene">): string {
@@ -183,13 +185,14 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
     outputDir,
     dryRun = false,
     abortSignal,
+    version = 1,
   } = params;
 
   // Ensure output directory exists
   await mkdir(outputDir, { recursive: true });
 
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
-  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene)}.mp4`);
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
 	// Build video prompt from components
 	const promptParts: string[] = [];
@@ -375,13 +378,14 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
     dryRun = false,
     abortSignal,
     pendingJobStore,
+    version = 1,
   } = params;
 
   // Ensure output directory exists
   await mkdir(outputDir, { recursive: true });
 
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
-  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene)}.mp4`);
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
 	// Build video prompt from components
 	const promptParts: string[] = [];
@@ -400,7 +404,7 @@ async function generateVideoComfy(params: GenerateVideoParams): Promise<Generate
   }
 
   // Check for a pending job from a previous run
-  const jobKey = `video-${buildSceneShotFilename(sceneNumber, shotInScene)}`;
+  const jobKey = `video-${buildSceneShotFilename(sceneNumber, shotInScene, version)}`;
   if (pendingJobStore) {
     const pending = pendingJobStore.get(jobKey);
     if (pending) {
@@ -567,13 +571,14 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
     outputDir,
     dryRun = false,
     abortSignal,
+    version = 1,
   } = params;
 
   // Ensure output directory exists
   await mkdir(outputDir, { recursive: true });
 
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
-  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene)}.mp4`);
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
 	// Build video prompt from components
 	const promptParts: string[] = [];
