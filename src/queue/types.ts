@@ -69,7 +69,7 @@ export interface RunState {
   generatedOutputs: Record<string, string>;
 
   // Shots whose duration was manually set by the user (skip pacing analysis)
-  manualDurations?: Record<number, boolean>;
+  manualDurations?: Record<string, boolean>;
 
   // Run options (aspect ratio, etc.)
   options?: { aspectRatio?: string; needsConversion?: boolean; dryRun?: boolean };

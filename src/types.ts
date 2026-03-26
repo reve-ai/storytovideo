@@ -127,6 +127,6 @@ export interface PipelineState {
   assetVersions?: Record<string, ArtifactVersion[]>;  // asset key -> versions
   selectedAssetVersions?: Record<string, number>;      // asset key -> selected version number
   convertedScript?: string;                        // visual script generated from raw story by storyToScript
-  manualDurations?: Record<number, boolean>;       // shotNumber -> true if user manually set duration
+  manualDurations?: Record<string, boolean>;       // scene-scoped shot key -> true if user manually set duration
   lastSavedAt: string;                             // ISO timestamp of last state save
 }

@@ -659,15 +659,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         // If a durationOverride is provided, update the shot duration in storyAnalysis and mark as manual
         if (durationOverride !== undefined && originalItem.type === 'generate_video') {
           const shot = (targetInputs?.shot ?? originalItem.inputs.shot) as Record<string, unknown> | undefined;
-          const shotNumber = shot?.shotNumber as number | undefined;
-          if (shotNumber !== undefined) {
+          if (shot) {
             const sceneNumber = shot?.sceneNumber as number | undefined;
             const shotInScene = shot?.shotInScene as number | undefined;
             if (sceneNumber !== undefined && shotInScene !== undefined) {
               qm.updateShotDuration(sceneNumber, shotInScene, durationOverride);
+              qm.setManualDuration(`scene:${sceneNumber}:shot:${shotInScene}`, true);
             }
-
-            qm.setManualDuration(shotNumber, true);
 
             const baseShot = (targetInputs?.shot ?? originalItem.inputs.shot) as Record<string, unknown> | undefined;
             const updatedShot = baseShot ? { ...baseShot, durationSeconds: durationOverride } : { durationSeconds: durationOverride };

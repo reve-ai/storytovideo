@@ -106,6 +106,80 @@ function testAnalyzeMutationsAreGuarded(): void {
   console.log('  ✓ analyze-item deletion and review decisions are guarded');
 }
 
+function testRedoDoesNotCascadeOutputDerivedItemsFromFrame(): void {
+  const qm = makeQueueManager();
+  const frame = qm.addItem({
+    type: 'generate_frame',
+    queue: 'image',
+    itemKey: 'frame:scene:1:shot:1',
+    inputs: { prompt: 'frame prompt' },
+  });
+  const video = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    dependencies: [frame.id],
+    inputs: { shot: { sceneNumber: 1, shotInScene: 1 }, startFramePath: 'frames/original.png' },
+  });
+  const analyze = qm.addItem({
+    type: 'analyze_video',
+    queue: 'llm',
+    itemKey: 'analyze_video:scene:1:shot:1',
+    dependencies: [video.id],
+    inputs: { videoPath: 'videos/original.mp4' },
+  });
+
+  qm.redoItem(frame.id);
+
+  const videoItems = qm.getItemsByKey('video:scene:1:shot:1');
+  assert.equal(videoItems.length, 1);
+  assert.equal(videoItems[0].id, video.id);
+  assert.equal(videoItems[0].status, 'superseded');
+
+  const analyzeItems = qm.getItemsByKey('analyze_video:scene:1:shot:1');
+  assert.equal(analyzeItems.length, 1);
+  assert.equal(analyzeItems[0].id, analyze.id);
+  assert.equal(analyzeItems[0].status, 'superseded');
+  assert.equal(
+    videoItems.some(item => item.status !== 'superseded' && item.status !== 'cancelled'),
+    false
+  );
+  assert.equal(
+    analyzeItems.some(item => item.status !== 'superseded' && item.status !== 'cancelled'),
+    false
+  );
+  console.log('  ✓ frame redo supersedes stale video and analyze items without cascading replacements');
+}
+
+function testRedoDoesNotCascadeAnalyzeVideo(): void {
+  const qm = makeQueueManager();
+  const video = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    inputs: { shot: { sceneNumber: 1, shotInScene: 1 }, startFramePath: 'frames/original.png' },
+  });
+  const analyze = qm.addItem({
+    type: 'analyze_video',
+    queue: 'llm',
+    itemKey: 'analyze_video:scene:1:shot:1',
+    dependencies: [video.id],
+    inputs: { videoPath: 'videos/original.mp4' },
+  });
+
+  qm.redoItem(video.id);
+
+  const analyzeItems = qm.getItemsByKey('analyze_video:scene:1:shot:1');
+  assert.equal(analyzeItems.length, 1);
+  assert.equal(analyzeItems[0].id, analyze.id);
+  assert.equal(analyzeItems[0].status, 'superseded');
+  assert.equal(
+    analyzeItems.some(item => item.status !== 'superseded' && item.status !== 'cancelled'),
+    false
+  );
+  console.log('  ✓ redo supersedes analyze_video without cascading a stale replacement');
+}
+
 async function testConcurrentResumeIsSerialized(): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'run-manager-'));
   process.env.STORYTOVIDEO_RUN_DB_DIR = join(root, 'db');
@@ -150,6 +224,8 @@ async function main(): Promise<void> {
   testRedoRejectsInProgress();
   testPendingOnlyMutations();
   testAnalyzeMutationsAreGuarded();
+  testRedoDoesNotCascadeOutputDerivedItemsFromFrame();
+  testRedoDoesNotCascadeAnalyzeVideo();
   await testConcurrentResumeIsSerialized();
   console.log('\nAll tests passed ✓');
 }
