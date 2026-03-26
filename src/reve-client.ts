@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { rateLimiters } from "./queue/rate-limiter-registry.js";
 
 const API_BASE_URL = "https://api.reve.com/v1";
 const MAX_RETRIES = 3;
@@ -36,58 +37,64 @@ async function requestWithRetry(
   body: Record<string, unknown>
 ): Promise<ArrayBuffer> {
   const apiKey = getApiKey();
+  const limiter = rateLimiters.get('reve');
   let attempt = 0;
 
   while (attempt < MAX_RETRIES) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Accept": "image/png",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (response.ok) {
-      return response.arrayBuffer();
-    }
-
-    // Try to parse error body for rate-limit / budget errors
-    let errorData: RateLimitError | null = null;
+    await limiter.acquire();
     try {
-      errorData = (await response.json()) as RateLimitError;
-    } catch {
-      // non-JSON error body — fall through to generic throw
-    }
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "Accept": "image/png",
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (errorData?.error_code === "PARTNER_API_BUDGET_EXHAUSTED") {
-      const params = errorData.params;
-      let msg = "Reve API budget exhausted.";
-      if (params?.requested_amount !== undefined && params?.available_amount !== undefined) {
-        msg += ` Requested: ${params.requested_amount}, Available: ${params.available_amount}`;
+      if (response.ok) {
+        return response.arrayBuffer();
       }
-      throw new Error(msg);
-    }
 
-    if (
-      errorData?.error_code === "PARTNER_API_TOKEN_RATE_LIMIT_EXCEEDED" &&
-      attempt < MAX_RETRIES - 1
-    ) {
-      const retryAfter = errorData.params?.retry_after;
-      let waitMs = 5000;
-      if (retryAfter) {
-        waitMs = Math.max(0, new Date(retryAfter).getTime() - Date.now()) + 1000;
+      // Try to parse error body for rate-limit / budget errors
+      let errorData: RateLimitError | null = null;
+      try {
+        errorData = (await response.json()) as RateLimitError;
+      } catch {
+        // non-JSON error body — fall through to generic throw
       }
-      console.log(`[reve] Rate limited, waiting ${Math.ceil(waitMs / 1000)}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      attempt++;
-      continue;
-    }
 
-    throw new Error(
-      `Reve API error ${response.status}: ${errorData ? JSON.stringify(errorData) : response.statusText}`
-    );
+      if (errorData?.error_code === "PARTNER_API_BUDGET_EXHAUSTED") {
+        const params = errorData.params;
+        let msg = "Reve API budget exhausted.";
+        if (params?.requested_amount !== undefined && params?.available_amount !== undefined) {
+          msg += ` Requested: ${params.requested_amount}, Available: ${params.available_amount}`;
+        }
+        throw new Error(msg);
+      }
+
+      if (
+        errorData?.error_code === "PARTNER_API_TOKEN_RATE_LIMIT_EXCEEDED" &&
+        attempt < MAX_RETRIES - 1
+      ) {
+        const retryAfter = errorData.params?.retry_after;
+        let waitMs = 5000;
+        if (retryAfter) {
+          waitMs = Math.max(0, new Date(retryAfter).getTime() - Date.now()) + 1000;
+        }
+        console.warn(`[reve] 429 rate limited — backing off all reve workers for ${waitMs}ms`);
+        limiter.backoff(waitMs);
+        attempt++;
+        continue;
+      }
+
+      throw new Error(
+        `Reve API error ${response.status}: ${errorData ? JSON.stringify(errorData) : response.statusText}`
+      );
+    } finally {
+      limiter.release();
+    }
   }
 
   throw new Error("Reve API: max retries exceeded");

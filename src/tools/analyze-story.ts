@@ -2,6 +2,7 @@ import { generateObject } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { StoryAnalysis } from "../types";
+import { rateLimiters } from "../queue/rate-limiter-registry.js";
 
 // Zod schema for story analysis (without shots)
 const sceneSchema = z.object({
@@ -56,6 +57,8 @@ Unless the story explicitly specifies an art style, default to "photorealistic" 
 Story:
 ${storyText}`;
 
+  const limiter = rateLimiters.get('anthropic');
+  await limiter.acquire();
   try {
     const { object } = await generateObject({
       model: anthropic("claude-opus-4-6"),
@@ -76,9 +79,16 @@ ${storyText}`;
       result.scenes = result.scenes.map((s: any) => ({ ...s, shots: [] }));
     }
     return result as StoryAnalysis;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429')) {
+      const retryMs = 5000;
+      console.warn(`[analyzeStory] 429 rate limited — backing off all anthropic workers for ${retryMs}ms`);
+      limiter.backoff(retryMs);
+    }
     console.error("Error in analyzeStory:", error);
     throw error;
+  } finally {
+    limiter.release();
   }
 }
 

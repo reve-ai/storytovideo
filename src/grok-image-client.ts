@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import sharp from "sharp";
+import { rateLimiters } from "./queue/rate-limiter-registry.js";
 
 const API_BASE_URL = "https://api.x.ai/v1";
 const MAX_RETRIES = 3;
@@ -68,38 +69,44 @@ async function requestWithRetry(
   body: Record<string, unknown>
 ): Promise<{ data: Array<{ b64_json: string }> }> {
   const apiKey = getApiKey();
+  const limiter = rateLimiters.get('grok-image');
   let attempt = 0;
 
   while (attempt < MAX_RETRIES) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    await limiter.acquire();
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (response.ok) {
-      return response.json() as Promise<{ data: Array<{ b64_json: string }> }>;
-    }
-
-    // Check for rate limiting (429)
-    if (response.status === 429 && attempt < MAX_RETRIES - 1) {
-      const retryAfter = response.headers.get("retry-after");
-      let waitMs = 5000;
-      if (retryAfter) {
-        const seconds = parseInt(retryAfter, 10);
-        waitMs = (isNaN(seconds) ? 5 : seconds) * 1000 + 1000;
+      if (response.ok) {
+        return response.json() as Promise<{ data: Array<{ b64_json: string }> }>;
       }
-      console.log(`[grok-image] Rate limited, waiting ${Math.ceil(waitMs / 1000)}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-      attempt++;
-      continue;
-    }
 
-    const errorText = await response.text();
-    throw new Error(`Grok image API error ${response.status}: ${errorText}`);
+      // Check for rate limiting (429)
+      if (response.status === 429 && attempt < MAX_RETRIES - 1) {
+        const retryAfter = response.headers.get("retry-after");
+        let waitMs = 5000;
+        if (retryAfter) {
+          const seconds = parseInt(retryAfter, 10);
+          waitMs = (isNaN(seconds) ? 5 : seconds) * 1000 + 1000;
+        }
+        console.warn(`[grok-image] 429 rate limited — backing off all grok-image workers for ${waitMs}ms`);
+        limiter.backoff(waitMs);
+        attempt++;
+        continue;
+      }
+
+      const errorText = await response.text();
+      throw new Error(`Grok image API error ${response.status}: ${errorText}`);
+    } finally {
+      limiter.release();
+    }
   }
 
   throw new Error("Grok image API: max retries exceeded");

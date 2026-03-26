@@ -1,15 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { mkdir } from "fs/promises";
+import { rateLimiters } from "./queue/rate-limiter-registry.js";
 
 const API_BASE = "https://api.x.ai/v1";
 const MODEL = "grok-imagine-video";
 const MAX_RETRIES = 5;
 const POLL_INTERVAL_MS = 10_000;
-
-// Rate-limit tracking: 1 RPS / 60 RPM
-let lastCallTimestamp = 0;
-const MIN_CALL_INTERVAL_MS = 1_000;
 
 function getApiKey(): string {
   const key = process.env.XAI_API_KEY;
@@ -20,16 +17,6 @@ function getApiKey(): string {
 function ensureDir(filePath: string): void {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
-async function enforceRateLimit(): Promise<void> {
-  const elapsed = Date.now() - lastCallTimestamp;
-  if (elapsed < MIN_CALL_INTERVAL_MS) {
-    const waitMs = MIN_CALL_INTERVAL_MS - elapsed;
-    console.log(`[grok] Rate limit: waiting ${waitMs}ms`);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-  }
-  lastCallTimestamp = Date.now();
 }
 
 export type GrokVideoOptions = {
@@ -62,25 +49,37 @@ async function apiRequest<T>(
   body?: Record<string, unknown>,
   abortSignal?: AbortSignal,
 ): Promise<T> {
-  await enforceRateLimit();
-  const url = `${API_BASE}${endpoint}`;
-  const response = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${getApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: abortSignal,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText);
-    throw Object.assign(
-      new Error(`Grok API error ${response.status}: ${text}`),
-      { status: response.status },
-    );
+  const limiter = rateLimiters.get('grok-video');
+  await limiter.acquire();
+  try {
+    const url = `${API_BASE}${endpoint}`;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${getApiKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: abortSignal,
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => response.statusText);
+      const err = Object.assign(
+        new Error(`Grok API error ${response.status}: ${text}`),
+        { status: response.status },
+      );
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("retry-after");
+        const retryMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : 5000;
+        console.warn(`[grok] 429 rate limited — backing off all grok-video workers for ${retryMs}ms`);
+        limiter.backoff(retryMs);
+      }
+      throw err;
+    }
+    return (await response.json()) as T;
+  } finally {
+    limiter.release();
   }
-  return (await response.json()) as T;
 }
 
 async function submitGeneration(

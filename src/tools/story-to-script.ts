@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import { rateLimiters } from "../queue/rate-limiter-registry.js";
 
 /**
  * Converts a raw story into a fleshed-out visual script using Claude Opus 4.6.
@@ -27,6 +28,8 @@ Convert the following story into a visual prose script:
 
 ${storyText}`;
 
+  const limiter = rateLimiters.get('anthropic');
+  await limiter.acquire();
   try {
     const { text } = await generateText({
       model: anthropic("claude-opus-4-6"),
@@ -38,9 +41,16 @@ ${storyText}`;
     } as any);
 
     return text;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 429 || error?.message?.includes('429')) {
+      const retryMs = 5000;
+      console.warn(`[storyToScript] 429 rate limited — backing off all anthropic workers for ${retryMs}ms`);
+      limiter.backoff(retryMs);
+    }
     console.error("Error in storyToScript:", error);
     throw error;
+  } finally {
+    limiter.release();
   }
 }
 
