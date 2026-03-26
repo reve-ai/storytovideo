@@ -222,6 +222,7 @@ export class RunManager extends EventEmitter {
       proc.on("item:started", (data) => this.emit("item:started", data));
       proc.on("item:completed", (data) => {
         this.emit("item:completed", data);
+        this.checkRunCompletion(runId);
       });
       proc.on("item:failed", (data) => this.emit("item:failed", data));
       proc.on("item:cancelled", (data) => this.emit("item:cancelled", data));
@@ -235,6 +236,32 @@ export class RunManager extends EventEmitter {
     }
 
     this.processors.set(runId, procs);
+  }
+
+  // -- Auto-stop when all work is done --------------------------------------
+
+  private checkRunCompletion(runId: string): void {
+    const qm = this.queueManagers.get(runId);
+    if (!qm) return;
+
+    const run = this.runs.get(runId);
+    if (!run || run.status !== "running") return;
+
+    const items = qm.getState().workItems;
+    const activeItems = items.filter(
+      (i) => i.status !== "superseded" && i.status !== "cancelled",
+    );
+
+    const allDone = activeItems.length > 0 && activeItems.every((i) => i.status === "completed");
+    if (!allDone) return;
+
+    // All work is done — stop processors but don't mark as "completed"
+    // (user can always resume to redo items)
+    const procs = this.processors.get(runId);
+    if (procs) {
+      void Promise.allSettled(procs.map((p) => p.stop()));
+    }
+    this.patchRun(runId, { status: "stopped" });
   }
 
   // -- Stop / Resume --------------------------------------------------------
