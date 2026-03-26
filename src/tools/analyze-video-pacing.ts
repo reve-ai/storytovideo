@@ -446,25 +446,27 @@ const isCli =
   process.argv[1]?.endsWith("analyze-video-pacing.js");
 
 if (isCli) {
-  await import("dotenv/config");
-  const target = process.argv[2] || "output/runs/3eeda4d3-7ca2-4a8c-8f29-638139b390e2/videos";
+  (async () => {
+    await import("dotenv/config");
+    const target = process.argv[2] || "output/runs/3eeda4d3-7ca2-4a8c-8f29-638139b390e2/videos";
 
-  if (!fs.existsSync(target)) {
-    console.error(`Target not found: ${target}`);
-    process.exit(1);
-  }
+    if (!fs.existsSync(target)) {
+      console.error(`Target not found: ${target}`);
+      process.exit(1);
+    }
 
-  if (fs.statSync(target).isDirectory()) {
-    // Analyze all clips in directory
-    const results = await analyzeAllClips(target);
-    console.log("\n=== CLIP ANALYSIS ===");
-    console.log(JSON.stringify(results, null, 2));
-  } else {
-    // Single file - use original full video analysis
-    console.log(`[pacing] Analyzing full video: ${target}`);
-    const result = await analyzeVideoPacing(target);
-    console.log("\n=== TRIM RECOMMENDATIONS ===");
-    console.log(JSON.stringify(result, null, 2));
-  }
+    if (fs.statSync(target).isDirectory()) {
+      // Analyze all clips in directory
+      const results = await analyzeAllClips(target);
+      console.log("\n=== CLIP ANALYSIS ===");
+      console.log(JSON.stringify(results, null, 2));
+    } else {
+      // Single file - use original full video analysis
+      console.log(`[pacing] Analyzing full video: ${target}`);
+      const result = await analyzeVideoPacing(target);
+      console.log("\n=== TRIM RECOMMENDATIONS ===");
+      console.log(JSON.stringify(result, null, 2));
+    }
+  })();
 }
 
