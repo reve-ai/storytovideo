@@ -144,10 +144,10 @@ export class QueueProcessor extends EventEmitter {
 
         this.activeAbortControllers.delete(item.id);
         if (this.queueManager.markCompleted(item.id, outputs)) {
-          this.emit('item:completed', { runId: this.runId, item: { ...item, status: 'completed', outputs } });
-
           // Seed downstream work items after completion
           this.seedDownstream(item, outputs);
+
+          this.emit('item:completed', { runId: this.runId, item: { ...item, status: 'completed', outputs } });
         }
 
         this.queueManager.save();
