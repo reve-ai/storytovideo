@@ -347,6 +347,13 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
+      // Don't cascade analyze_video — it will be re-seeded by seedAfterGenerateVideo
+      // with correct paths from the new video's outputs.
+      if (dep.type === 'analyze_video') {
+        dep.status = 'superseded';
+        continue;
+      }
+
       // If the old item was a frame and this dependent is also a frame (continuity link),
       // just update the dependency pointer — don't supersede/regenerate
       const oldItem = this.findItem(oldItemId);
@@ -535,7 +542,7 @@ export class QueueManager {
   }
 
   /** Set one manual duration entry. */
-  setManualDuration(key: number, value: boolean): void {
+  setManualDuration(key: string | number, value: boolean): void {
     if (!this.state.manualDurations) this.state.manualDurations = {};
     this.state.manualDurations[key] = value;
     this.touch();
