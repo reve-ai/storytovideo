@@ -93,6 +93,12 @@ async function generateSingleFrame(params: {
     aspectRatio,
   } = params;
 
+  const normalizedSpeaker = (shot.speaker ?? "").trim().toLowerCase();
+  const hasCharacterDialogue = Boolean(shot.dialogue.trim())
+    && shot.charactersPresent.length > 1
+    && normalizedSpeaker !== "narrator"
+    && normalizedSpeaker !== "voiceover";
+
   // Build the prompt
   const framePrompt = shot.startFramePrompt;
   const prompt = buildFramePrompt({
@@ -103,6 +109,7 @@ async function generateSingleFrame(params: {
     objectsPresent: shot.objectsPresent,
     framePrompt,
     cameraDirection: shot.cameraDirection,
+    hasCharacterDialogue,
   });
 
   const shotContext = formatShotContext(shot);
@@ -250,8 +257,18 @@ function buildFramePrompt(params: {
   objectsPresent?: string[];
   framePrompt: string;
   cameraDirection: string;
+  hasCharacterDialogue: boolean;
 }): string {
-  const { artStyle, composition, locationDescription, charactersPresent, objectsPresent, framePrompt, cameraDirection } = params;
+  const {
+    artStyle,
+    composition,
+    locationDescription,
+    charactersPresent,
+    objectsPresent,
+    framePrompt,
+    cameraDirection,
+    hasCharacterDialogue,
+  } = params;
 
   const parts = [
     `Style: ${artStyle}.`,
@@ -259,6 +276,7 @@ function buildFramePrompt(params: {
     `Location: ${locationDescription}.`,
     charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
     (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
+    hasCharacterDialogue ? "Characters face each other, not the camera." : "",
     framePrompt,
   ].filter(Boolean);
 

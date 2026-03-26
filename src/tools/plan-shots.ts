@@ -40,6 +40,11 @@ COMPOSITION TYPES:
 - low_angle: Dramatic upward angle on ONE subject.
 - high_angle: Dramatic downward angle on ONE subject.
 
+DIALOGUE GAZE:
+- Characters speaking to each other should look at the person they are addressing, not at the camera.
+- Only have a character look directly at the camera if the story explicitly calls for breaking the fourth wall.
+- In over_the_shoulder and two_shot compositions, describe the eye line and eye contact between characters.
+
 COMMON MISTAKES TO AVOID:
 - Do NOT write a close_up that switches from Character A to Character B — that is two shots.
 - Do NOT write an over_the_shoulder that changes which character's shoulder we're behind — that is two shots.

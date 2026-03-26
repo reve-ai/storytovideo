@@ -113,27 +113,44 @@ function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sce
  */
 function buildDialoguePrompt(dialogue: string, speaker?: string, charactersPresent?: string[]): string {
   if (!dialogue) return "";
-  const s = (speaker ?? "").trim().toLowerCase();
-  if (!s || s === "narrator" || s === "voiceover") {
-    return `${s === "voiceover" ? "Voiceover" : "Narrator"} says: "${dialogue}"`;
+  const normalizedSpeaker = (speaker ?? "").trim().toLowerCase();
+  if (normalizedSpeaker === "narrator" || normalizedSpeaker === "voiceover") {
+    return `${normalizedSpeaker === "voiceover" ? "Voiceover" : "Narrator"} says: "${dialogue}"`;
   }
-  // Speaker is a character name — describe them visually based on position in the cast
-  let label: string;
+
+  const describePerson = (index: number, total: number): string => {
+    if (total <= 1) return "the person";
+    if (index === 0) return "the first person";
+    if (index === 1) return "the second person";
+    if (index === 2) return "the third person";
+    return "one of the people";
+  };
+
+  let speakerLabel = "the person";
+  let listenerLabel = "another person";
+
   if (charactersPresent && charactersPresent.length > 0) {
-    const idx = charactersPresent.findIndex(c => c.toLowerCase() === s);
-    if (charactersPresent.length === 1) {
-      label = "the person";
-    } else if (idx === 0) {
-      label = "the first person";
-    } else if (idx === 1) {
-      label = "the second person";
-    } else {
-      label = "one of the people";
+    const speakerIndex = charactersPresent.findIndex(c => c.trim().toLowerCase() === normalizedSpeaker);
+    speakerLabel = speakerIndex >= 0
+      ? describePerson(speakerIndex, charactersPresent.length)
+      : charactersPresent.length > 1
+        ? "one of the people"
+        : "the person";
+
+    if (charactersPresent.length > 1) {
+      const listenerIndex = speakerIndex === 0 ? 1 : 0;
+      listenerLabel = speakerIndex >= 0
+        ? describePerson(listenerIndex, charactersPresent.length)
+        : "another person";
     }
-  } else {
-    label = "the person";
   }
-  return `${label[0].toUpperCase() + label.slice(1)} speaks: "${dialogue}"`;
+
+  const subject = `${speakerLabel[0].toUpperCase()}${speakerLabel.slice(1)}`;
+  if (charactersPresent && charactersPresent.length > 1) {
+    return `${subject} looks at ${listenerLabel} and says: "${dialogue}"`;
+  }
+
+  return `${subject} says: "${dialogue}"`;
 }
 
 
