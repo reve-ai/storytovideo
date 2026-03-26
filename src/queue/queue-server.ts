@@ -593,14 +593,17 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           if (qm) {
             const item = qm.getItem(itemId);
             if (item) {
-              // Update the item's outputs with the new path
-              (item.outputs as Record<string, unknown>)[field] = relativePath;
-              // Redo the item so downstream items cascade
-              const newItem = runManager.redoItem(runId, itemId, { ...item.inputs, [field]: relativePath });
-              if (newItem) {
-                qm.save();
-                await runManager.resumeRun(runId);
-                emitEvent(runId, "item_redo", { oldItemId: itemId, newItem });
+              try {
+                const newItem = runManager.redoItem(runId, itemId, { ...item.inputs, [field]: relativePath });
+                if (newItem) {
+                  qm.save();
+                  await runManager.resumeRun(runId);
+                  emitEvent(runId, "item_redo", { oldItemId: itemId, newItem });
+                }
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                sendJson(res, 409, { error: msg });
+                return;
               }
             }
           }
@@ -615,86 +618,73 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const itemId = decodeURIComponent(pathParts[4]);
         console.log(`[queue-server] Redo request: runId=${runId}, itemId=${itemId}`);
         const body = await readJsonBody(req) as Record<string, unknown>;
-        const newInputs = body.inputs as Record<string, unknown> | undefined;
+        const newInputs = body.inputs ? { ...(body.inputs as Record<string, unknown>) } : undefined;
         const durationOverride = body.durationOverride as number | undefined;
-
-        // If a durationOverride is provided, update the shot duration in storyAnalysis and mark as manual
-        if (durationOverride !== undefined) {
-          const qm = runManager.getQueueManager(runId);
-          if (qm) {
-            const oldItem = qm.getItem(itemId);
-            if (oldItem && oldItem.type === 'generate_video') {
-              const shot = (newInputs?.shot ?? oldItem.inputs.shot) as Record<string, unknown> | undefined;
-              const shotNumber = shot?.shotNumber as number | undefined;
-              if (shotNumber !== undefined) {
-                // Update shot duration in storyAnalysis via scoped helper
-                const sceneNumber = shot?.sceneNumber as number | undefined;
-                const shotInScene = shot?.shotInScene as number | undefined;
-                if (sceneNumber !== undefined && shotInScene !== undefined) {
-                  qm.updateShotDuration(sceneNumber, shotInScene, durationOverride);
-                }
-
-                // Mark as manual duration (skip pacing analysis)
-                qm.setManualDuration(shotNumber, true);
-
-                // Update the shot in inputs with the new duration
-                if (!newInputs) {
-                  const updatedShot = { ...oldItem.inputs.shot as Record<string, unknown>, durationSeconds: durationOverride };
-                  const updatedInputs = { ...oldItem.inputs, shot: updatedShot };
-                  const newItem = runManager.redoItem(runId, itemId, updatedInputs);
-                  if (!newItem) { sendJson(res, 404, { error: `Item not found: ${itemId}` }); return; }
-                  qm.save();
-                  // Auto-resume processors if run is stopped/completed
-                  await runManager.resumeRun(runId);
-                  emitEvent(runId, "item_redo", { oldItemId: itemId, newItem });
-                  sendJson(res, 200, { newItem });
-                  return;
-                } else if (newInputs.shot) {
-                  (newInputs.shot as Record<string, unknown>).durationSeconds = durationOverride;
-                }
-              }
-            }
-          }
-        }
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const originalItem = qm.getItem(itemId);
+        if (!originalItem) { sendJson(res, 404, { error: `Item not found: ${itemId}` }); return; }
 
         // If this is a generate_video item and frame-related fields changed,
         // redo the upstream generate_frame item instead (cascade will recreate the video)
         let targetItemId = itemId;
         let targetInputs = newInputs;
-        if (newInputs) {
-          const qm = runManager.getQueueManager(runId);
-          if (qm) {
-            const oldItem = qm.getItem(itemId);
-            if (oldItem && oldItem.type === 'generate_video') {
-              const newShot = newInputs.shot as Record<string, unknown> | undefined;
-              const oldShot = oldItem.inputs.shot as Record<string, unknown> | undefined;
-              const frameKeys = ['startFramePrompt', 'endFramePrompt'];
-              const frameFieldChanged = newShot && oldShot && frameKeys.some(key =>
-                key in newShot && newShot[key] !== oldShot[key]
-              );
-              if (frameFieldChanged) {
-                // Find the upstream generate_frame dependency
-                const frameItemId = oldItem.dependencies.find(depId => {
-                  const dep = qm.getItem(depId);
-                  return dep && dep.type === 'generate_frame';
-                });
-                if (frameItemId) {
-                  const frameItem = qm.getItem(frameItemId);
-                  targetItemId = frameItemId;
-                  // Merge the new shot fields into the frame item's inputs
-                  targetInputs = { ...frameItem?.inputs, ...newInputs };
-                }
-              }
+        if (newInputs && originalItem.type === 'generate_video') {
+          const newShot = newInputs.shot as Record<string, unknown> | undefined;
+          const oldShot = originalItem.inputs.shot as Record<string, unknown> | undefined;
+          const frameKeys = ['startFramePrompt', 'endFramePrompt'];
+          const frameFieldChanged = newShot && oldShot && frameKeys.some(key =>
+            key in newShot && newShot[key] !== oldShot[key]
+          );
+          if (frameFieldChanged) {
+            const frameItemId = originalItem.dependencies.find(depId => {
+              const dep = qm.getItem(depId);
+              return dep && dep.type === 'generate_frame';
+            });
+            if (frameItemId) {
+              const frameItem = qm.getItem(frameItemId);
+              targetItemId = frameItemId;
+              targetInputs = { ...frameItem?.inputs, ...newInputs };
             }
           }
         }
 
-        const newItem = runManager.redoItem(runId, targetItemId, targetInputs);
-        if (!newItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
-        // Auto-resume processors if run is stopped/completed
-        await runManager.resumeRun(runId);
-        emitEvent(runId, "item_redo", { oldItemId: targetItemId, newItem });
-        sendJson(res, 200, { newItem });
+        const targetItem = qm.getItem(targetItemId);
+        if (!targetItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
+        if (targetItem.status === 'in_progress') {
+          sendJson(res, 409, { error: `Cannot redo item ${targetItemId}: status is 'in_progress'` });
+          return;
+        }
+
+        // If a durationOverride is provided, update the shot duration in storyAnalysis and mark as manual
+        if (durationOverride !== undefined && originalItem.type === 'generate_video') {
+          const shot = (targetInputs?.shot ?? originalItem.inputs.shot) as Record<string, unknown> | undefined;
+          const shotNumber = shot?.shotNumber as number | undefined;
+          if (shotNumber !== undefined) {
+            const sceneNumber = shot?.sceneNumber as number | undefined;
+            const shotInScene = shot?.shotInScene as number | undefined;
+            if (sceneNumber !== undefined && shotInScene !== undefined) {
+              qm.updateShotDuration(sceneNumber, shotInScene, durationOverride);
+            }
+
+            qm.setManualDuration(shotNumber, true);
+
+            const baseShot = (targetInputs?.shot ?? originalItem.inputs.shot) as Record<string, unknown> | undefined;
+            const updatedShot = baseShot ? { ...baseShot, durationSeconds: durationOverride } : { durationSeconds: durationOverride };
+            targetInputs = { ...(targetInputs ?? originalItem.inputs), shot: updatedShot };
+          }
+        }
+        try {
+          const newItem = runManager.redoItem(runId, targetItemId, targetInputs);
+          if (!newItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
+          // Auto-resume processors if run is stopped/completed
+          await runManager.resumeRun(runId);
+          emitEvent(runId, "item_redo", { oldItemId: targetItemId, newItem });
+          sendJson(res, 200, { newItem });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
         return;
       }
 
@@ -722,14 +712,18 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
         const item = qm.getItem(itemId);
         if (!item) { sendJson(res, 404, { error: `Item not found: ${itemId}` }); return; }
-        if (item.status !== "pending") {
-          sendJson(res, 409, { error: "Can only edit pending items" });
-          return;
-        }
         const body = await readJsonBody(req) as Record<string, unknown>;
         if (body.inputs && typeof body.inputs === "object") {
-          Object.assign(item.inputs, body.inputs);
-          qm.save();
+          try {
+            const updated = qm.updateItemInputs(itemId, body.inputs as Record<string, unknown>);
+            qm.save();
+            sendJson(res, 200, { item: updated });
+            return;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            sendJson(res, 409, { error: msg });
+            return;
+          }
         }
         sendJson(res, 200, { item });
         return;
@@ -759,9 +753,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           sendJson(res, 400, { error: 'priority must be "normal" or "high"' });
           return;
         }
-        item.priority = priority;
-        qm.save();
-        sendJson(res, 200, { item });
+        try {
+          const updated = qm.setItemPriority(itemId, priority);
+          qm.save();
+          sendJson(res, 200, { item: updated });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
         return;
       }
 
@@ -850,12 +849,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       if (method === "POST" && action === "analyze" && pathParts.length === 5 && pathParts[4] === "delete-all") {
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
-        const state = qm.getState();
-        const before = state.workItems.length;
-        state.workItems = state.workItems.filter(i => i.type !== 'analyze_video');
-        const deleted = before - state.workItems.length;
-        qm.save();
-        sendJson(res, 200, { deleted });
+        try {
+          const deleted = qm.deleteAnalyzeItems();
+          qm.save();
+          sendJson(res, 200, { deleted });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
         return;
       }
 
@@ -907,38 +908,41 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const frameKeys = ['startFramePrompt', 'endFramePrompt'];
         const redoFrame = frameKeys.some(key => key in suggestedInputs);
 
-        // Mark as accepted
-        qm.setReviewStatus(itemId, 'accepted');
+        try {
+          qm.setReviewStatus(itemId, 'accepted');
 
-        // Redo the appropriate upstream item
-        let targetItemId = videoItemId;
-        if (redoFrame) {
-          // Find the frame item that the video depends on
-          const videoItem = qm.getItem(videoItemId);
-          const frameItemId = videoItem?.dependencies.find(depId => {
-            const dep = qm.getItem(depId);
-            return dep && dep.type === 'generate_frame';
-          });
-          if (frameItemId) {
-            targetItemId = frameItemId;
+          // Redo the appropriate upstream item
+          let targetItemId = videoItemId;
+          if (redoFrame) {
+            const videoItem = qm.getItem(videoItemId);
+            const frameItemId = videoItem?.dependencies.find(depId => {
+              const dep = qm.getItem(depId);
+              return dep && dep.type === 'generate_frame';
+            });
+            if (frameItemId) {
+              targetItemId = frameItemId;
+            }
           }
+
+          const targetItem = qm.getItem(targetItemId);
+          const mergedInputs = Object.keys(suggestedInputs).length > 0
+            ? { ...targetItem?.inputs, ...suggestedInputs }
+            : undefined;
+
+          const newItem = runManager.redoItem(runId, targetItemId, mergedInputs);
+          if (!newItem) {
+            sendJson(res, 500, { error: `Failed to redo item: ${targetItemId}` });
+            return;
+          }
+
+          qm.save();
+          await runManager.resumeRun(runId);
+          emitEvent(runId, "analyze_accepted", { analyzeItemId: itemId, redoItemId: targetItemId, newItem });
+          sendJson(res, 200, { accepted: itemId, newItem });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
         }
-
-        const targetItem = qm.getItem(targetItemId);
-        const mergedInputs = Object.keys(suggestedInputs).length > 0
-          ? { ...targetItem?.inputs, ...suggestedInputs }
-          : undefined;
-
-        const newItem = runManager.redoItem(runId, targetItemId, mergedInputs);
-        if (!newItem) {
-          sendJson(res, 500, { error: `Failed to redo item: ${targetItemId}` });
-          return;
-        }
-
-        qm.save();
-        await runManager.resumeRun(runId);
-        emitEvent(runId, "analyze_accepted", { analyzeItemId: itemId, redoItemId: targetItemId, newItem });
-        sendJson(res, 200, { accepted: itemId, newItem });
         return;
       }
 
@@ -953,10 +957,15 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
 
-        qm.setReviewStatus(itemId, 'rejected');
-        qm.save();
-        emitEvent(runId, "analyze_rejected", { analyzeItemId: itemId });
-        sendJson(res, 200, { rejected: itemId });
+        try {
+          qm.setReviewStatus(itemId, 'rejected');
+          qm.save();
+          emitEvent(runId, "analyze_rejected", { analyzeItemId: itemId });
+          sendJson(res, 200, { rejected: itemId });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
         return;
       }
 

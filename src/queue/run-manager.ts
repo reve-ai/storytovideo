@@ -64,6 +64,7 @@ export class RunManager extends EventEmitter {
   private readonly runs = new Map<string, QueueRunRecord>();
   private readonly queueManagers = new Map<string, QueueManager>();
   private readonly processors = new Map<string, QueueProcessor[]>();
+  private readonly runLocks = new Map<string, Promise<void>>();
 
   constructor() {
     super();
@@ -238,6 +239,25 @@ export class RunManager extends EventEmitter {
     this.processors.set(runId, procs);
   }
 
+  private async withRunLock<T>(runId: string, fn: () => Promise<T>): Promise<T> {
+    while (this.runLocks.has(runId)) {
+      await this.runLocks.get(runId);
+    }
+
+    let release!: () => void;
+    const lock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.runLocks.set(runId, lock);
+
+    try {
+      return await fn();
+    } finally {
+      this.runLocks.delete(runId);
+      release();
+    }
+  }
+
   // -- Auto-stop when all work is done --------------------------------------
 
   private checkRunCompletion(runId: string): void {
@@ -267,6 +287,10 @@ export class RunManager extends EventEmitter {
   // -- Stop / Resume --------------------------------------------------------
 
   async stopRun(runId: string): Promise<boolean> {
+    return this.withRunLock(runId, () => this.stopRunLocked(runId));
+  }
+
+  private async stopRunLocked(runId: string): Promise<boolean> {
     const procs = this.processors.get(runId);
     if (!procs) return false;
 
@@ -298,27 +322,29 @@ export class RunManager extends EventEmitter {
   }
 
   async resumeRun(runId: string): Promise<boolean> {
-    const record = this.runs.get(runId);
-    if (!record) return false;
-    if (record.status !== "stopped" && record.status !== "pausing" && record.status !== "completed") return false;
+    return this.withRunLock(runId, async () => {
+      const record = this.runs.get(runId);
+      if (!record) return false;
+      if (record.status !== "stopped" && record.status !== "pausing" && record.status !== "completed") return false;
 
-    let qm = this.queueManagers.get(runId);
-    if (!qm) {
-      // Reload from disk — resolve relative outputDir to absolute for fs access
-      const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
-      qm = QueueManager.load(stateFile);
-      this.queueManagers.set(runId, qm);
-    }
+      let qm = this.queueManagers.get(runId);
+      if (!qm) {
+        // Reload from disk — resolve relative outputDir to absolute for fs access
+        const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
+        qm = QueueManager.load(stateFile);
+        this.queueManagers.set(runId, qm);
+      }
 
-    // Stop any existing processors
-    const existing = this.processors.get(runId);
-    if (existing) {
-      await Promise.allSettled(existing.map(p => p.stop()));
-    }
+      // Stop any existing processors
+      const existing = this.processors.get(runId);
+      if (existing) {
+        await Promise.allSettled(existing.map(p => p.stop()));
+      }
 
-    this.startProcessors(runId, qm);
-    this.patchRun(runId, { status: "running", startedAt: new Date().toISOString() });
-    return true;
+      this.startProcessors(runId, qm);
+      this.patchRun(runId, { status: "running", startedAt: new Date().toISOString() });
+      return true;
+    });
   }
 
   // -- Cancel item -----------------------------------------------------------
@@ -371,14 +397,15 @@ export class RunManager extends EventEmitter {
   // -- Delete ---------------------------------------------------------------
 
   async deleteRun(runId: string): Promise<boolean> {
-    // Stop processors first
-    await this.stopRun(runId);
-    this.processors.delete(runId);
-    this.queueManagers.delete(runId);
+    return this.withRunLock(runId, async () => {
+      await this.stopRunLocked(runId);
+      this.processors.delete(runId);
+      this.queueManagers.delete(runId);
 
-    const existed = this.runs.delete(runId);
-    if (existed) this.persistRuns();
-    return existed;
+      const existed = this.runs.delete(runId);
+      if (existed) this.persistRuns();
+      return existed;
+    });
   }
 
   // -- Load existing runs on startup ----------------------------------------

@@ -127,10 +127,7 @@ export class QueueProcessor extends EventEmitter {
 
   private async runWorker(_workerId: number): Promise<void> {
     while (this.running) {
-      // Try high priority first, then normal
-      const item =
-        this.queueManager.getNextReady(this.queueName, 'high') ??
-        this.queueManager.getNextReady(this.queueName, 'normal');
+      const item = this.queueManager.claimNextReady(this.queueName);
       if (!item) {
         // No work available — wait before polling again
         await sleep(500);
@@ -141,17 +138,17 @@ export class QueueProcessor extends EventEmitter {
       this.activeAbortControllers.set(item.id, abortController);
 
       try {
-        this.queueManager.markInProgress(item.id);
         this.emit('item:started', { runId: this.runId, item });
 
         const outputs = await this.executeItem(item, abortController.signal);
 
         this.activeAbortControllers.delete(item.id);
-        this.queueManager.markCompleted(item.id, outputs);
-        this.emit('item:completed', { runId: this.runId, item: { ...item, status: 'completed', outputs } });
+        if (this.queueManager.markCompleted(item.id, outputs)) {
+          this.emit('item:completed', { runId: this.runId, item: { ...item, status: 'completed', outputs } });
 
-        // Seed downstream work items after completion
-        this.seedDownstream(item, outputs);
+          // Seed downstream work items after completion
+          this.seedDownstream(item, outputs);
+        }
 
         this.queueManager.save();
       } catch (err) {
@@ -159,8 +156,9 @@ export class QueueProcessor extends EventEmitter {
 
         // If aborted, mark as cancelled (not failed) and don't retry
         if (abortController.signal.aborted) {
-          this.queueManager.cancelItem(item.id);
-          this.emit('item:cancelled', { runId: this.runId, item: { ...item, status: 'cancelled' }, error: 'Cancelled by user' });
+          if (this.queueManager.cancelItem(item.id)) {
+            this.emit('item:cancelled', { runId: this.runId, item: { ...item, status: 'cancelled' }, error: 'Cancelled by user' });
+          }
           this.queueManager.save();
           continue;
         }
@@ -171,18 +169,20 @@ export class QueueProcessor extends EventEmitter {
 
         if (currentRetryCount < MAX_RETRIES) {
           // Re-queue for retry
-          this.queueManager.requeueForRetry(item.id);
-          this.emit('item:failed', {
-            runId: this.runId,
-            item: { ...item, status: 'pending', retryCount: currentRetryCount + 1 },
-            error: `Retry ${currentRetryCount + 1}/${MAX_RETRIES}: ${errorMsg}`,
-          });
+          if (this.queueManager.requeueForRetry(item.id)) {
+            this.emit('item:failed', {
+              runId: this.runId,
+              item: { ...item, status: 'pending', retryCount: currentRetryCount + 1 },
+              error: `Retry ${currentRetryCount + 1}/${MAX_RETRIES}: ${errorMsg}`,
+            });
+          }
           this.queueManager.save();
         } else {
           // Max retries exceeded — mark as permanently failed and pause pipeline
-          this.queueManager.markFailed(item.id, errorMsg);
-          this.emit('item:failed', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
-          this.emit('pipeline:pause', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
+          if (this.queueManager.markFailed(item.id, errorMsg)) {
+            this.emit('item:failed', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
+            this.emit('pipeline:pause', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
+          }
           this.queueManager.save();
         }
       }

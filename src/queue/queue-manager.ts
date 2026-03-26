@@ -134,6 +134,18 @@ export class QueueManager {
     return this.state.workItems.filter(item => item.itemKey === itemKey);
   }
 
+  claimNextReady(queue: QueueName): WorkItem | null {
+    for (const priority of ['high', 'normal'] as const) {
+      const item = this.findNextReady(queue, priority);
+      if (!item) continue;
+      item.status = 'in_progress';
+      item.startedAt = new Date().toISOString();
+      this.touch();
+      return item;
+    }
+    return null;
+  }
+
   // --- Add items ---
 
   addItem(opts: AddItemOptions): WorkItem {
@@ -168,39 +180,47 @@ export class QueueManager {
 
   // --- Status transitions ---
 
-  markInProgress(id: string): void {
+  markInProgress(id: string): boolean {
     const item = this.requireItem(id);
+    if (item.status !== 'pending') return false;
     item.status = 'in_progress';
     item.startedAt = new Date().toISOString();
     this.touch();
+    return true;
   }
 
-  markCompleted(id: string, outputs?: Record<string, unknown>): void {
+  markCompleted(id: string, outputs?: Record<string, unknown>): boolean {
     const item = this.requireItem(id);
+    if (item.status !== 'in_progress') return false;
     item.status = 'completed';
     item.completedAt = new Date().toISOString();
     if (outputs) {
       item.outputs = outputs;
     }
     this.touch();
+    return true;
   }
 
-  markFailed(id: string, error: string): void {
+  markFailed(id: string, error: string): boolean {
     const item = this.requireItem(id);
+    if (item.status !== 'in_progress') return false;
     item.status = 'failed';
     item.error = error;
     item.completedAt = new Date().toISOString();
     this.touch();
+    return true;
   }
 
-  requeueForRetry(id: string): void {
+  requeueForRetry(id: string): boolean {
     const item = this.requireItem(id);
+    if (item.status !== 'in_progress') return false;
     item.status = 'pending';
     item.retryCount = (item.retryCount ?? 0) + 1;
     item.error = null;
     item.startedAt = null;
     item.completedAt = null;
     this.touch();
+    return true;
   }
 
   /** Manual retry — resets a failed item to pending so it gets picked up again.
@@ -220,35 +240,63 @@ export class QueueManager {
     return item;
   }
 
-  cancelItem(id: string): void {
+  cancelItem(id: string): boolean {
     const item = this.requireItem(id);
-    if (item.status === 'completed') return;
+    if (item.status === 'completed' || item.status === 'superseded' || item.status === 'cancelled') return false;
     item.status = 'cancelled';
     this.touch();
+    return true;
   }
 
   setReviewStatus(id: string, reviewStatus: 'accepted' | 'rejected'): WorkItem {
     const item = this.requireItem(id);
+    if (item.reviewStatus) {
+      throw new Error(`Review status already set for item ${id}: ${item.reviewStatus}`);
+    }
     item.reviewStatus = reviewStatus;
     this.touch();
     return item;
   }
 
+  updateItemInputs(id: string, fields: Record<string, unknown>): WorkItem {
+    const item = this.requireItem(id);
+    if (item.status !== 'pending') {
+      throw new Error(`Cannot edit item ${id}: status is '${item.status}', expected 'pending'`);
+    }
+    item.inputs = { ...item.inputs, ...fields };
+    this.touch();
+    return item;
+  }
+
+  setItemPriority(id: string, priority: Priority): WorkItem {
+    const item = this.requireItem(id);
+    if (item.status !== 'pending') {
+      throw new Error(`Cannot reprioritize item ${id}: status is '${item.status}', expected 'pending'`);
+    }
+    item.priority = priority;
+    this.touch();
+    return item;
+  }
+
+  deleteAnalyzeItems(): number {
+    const activeAnalyze = this.state.workItems.find(
+      item => item.type === 'analyze_video' && item.status === 'in_progress'
+    );
+    if (activeAnalyze) {
+      throw new Error(`Cannot delete analyze items while ${activeAnalyze.id} is in progress`);
+    }
+
+    const before = this.state.workItems.length;
+    this.state.workItems = this.state.workItems.filter(item => item.type !== 'analyze_video');
+    const deleted = before - this.state.workItems.length;
+    if (deleted > 0) this.touch();
+    return deleted;
+  }
+
   // --- Queue picking ---
 
   getNextReady(queue: QueueName, priority: Priority): WorkItem | null {
-    const candidates = this.state.workItems.filter(item =>
-      item.queue === queue &&
-      item.priority === priority &&
-      item.status === 'pending' &&
-      this.areDependenciesMet(item)
-    );
-
-    if (candidates.length === 0) return null;
-
-    // Return the earliest-created ready item
-    candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    return candidates[0];
+    return this.findNextReady(queue, priority);
   }
 
   private areDependenciesMet(item: WorkItem): boolean {
@@ -262,6 +310,9 @@ export class QueueManager {
 
   redoItem(itemId: string, newInputs?: Record<string, unknown>): WorkItem {
     const old = this.requireItem(itemId);
+    if (old.status === 'in_progress') {
+      throw new Error(`Cannot redo item ${itemId}: status is 'in_progress'`);
+    }
 
     // Create new version of this item
     const newItem = this.addItem({
@@ -507,6 +558,20 @@ export class QueueManager {
       throw new Error(`Work item not found: ${id}`);
     }
     return item;
+  }
+
+  private findNextReady(queue: QueueName, priority: Priority): WorkItem | null {
+    const candidates = this.state.workItems.filter(item =>
+      item.queue === queue &&
+      item.priority === priority &&
+      item.status === 'pending' &&
+      this.areDependenciesMet(item)
+    );
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return candidates[0];
   }
 
   private touch(): void {
