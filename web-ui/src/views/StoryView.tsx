@@ -61,7 +61,7 @@ export default function StoryView() {
           location: null,
         });
       const scene = sceneMap.get(sceneNum)!;
-      const shotNum = shot?.shotNumber as number | undefined;
+      const shotNum = shot?.shotInScene as number | undefined;
       if (shotNum != null) {
         const existing = scene.frames.get(shotNum);
         if (!existing || item.version > existing.version)
@@ -82,7 +82,7 @@ export default function StoryView() {
           location: null,
         });
       const scene = sceneMap.get(sceneNum)!;
-      const shotNum = shot?.shotNumber as number | undefined;
+      const shotNum = shot?.shotInScene as number | undefined;
       if (shotNum != null) {
         const existing = scene.videos.get(shotNum);
         if (!existing || item.version > existing.version)

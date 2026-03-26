@@ -28,10 +28,15 @@ function ReviewAllButton({ runId }: { runId: string }) {
   );
 }
 
-const byShotNumber = (a: WorkItem, b: WorkItem) => {
-  const aNum = typeof a.inputs.shotNumber === "number" ? a.inputs.shotNumber : Infinity;
-  const bNum = typeof b.inputs.shotNumber === "number" ? b.inputs.shotNumber : Infinity;
-  return aNum - bNum;
+const bySceneThenShot = (a: WorkItem, b: WorkItem) => {
+  const aShot = a.inputs.shot as Record<string, unknown> | undefined;
+  const bShot = b.inputs.shot as Record<string, unknown> | undefined;
+  const aScene = typeof aShot?.sceneNumber === "number" ? aShot.sceneNumber : Infinity;
+  const bScene = typeof bShot?.sceneNumber === "number" ? bShot.sceneNumber : Infinity;
+  if (aScene !== bScene) return aScene - bScene;
+  const aShotIn = typeof aShot?.shotInScene === "number" ? aShot.shotInScene : Infinity;
+  const bShotIn = typeof bShot?.shotInScene === "number" ? bShot.shotInScene : Infinity;
+  return aShotIn - bShotIn;
 };
 
 export default function AnalyzeView() {
@@ -44,11 +49,11 @@ export default function AnalyzeView() {
   const run = runs.find((r) => r.id === activeRunId);
   const aspectRatio = (run?.options?.aspectRatio || "16:9").replace(":", "/");
 
-  const inProgress = analyzeItems.filter((i) => i.status === "in_progress").sort(byShotNumber);
-  const pending = analyzeItems.filter((i) => i.status === "pending").sort(byShotNumber);
+  const inProgress = analyzeItems.filter((i) => i.status === "in_progress").sort(bySceneThenShot);
+  const pending = analyzeItems.filter((i) => i.status === "pending").sort(bySceneThenShot);
   const completed = analyzeItems
     .filter((i) => i.status === "completed")
-    .sort(byShotNumber);
+    .sort(bySceneThenShot);
 
   if (!activeRunId) {
     return (
@@ -113,14 +118,15 @@ function AnalyzeStatusCard({
   aspectRatio: string;
   status: "analyzing" | "queued";
 }) {
-  const shotNumber = typeof item.inputs.shotNumber === "number" ? item.inputs.shotNumber : null;
   const shot = item.inputs.shot as Record<string, unknown> | undefined;
+  const sceneNumber = typeof shot?.sceneNumber === "number" ? shot.sceneNumber : null;
+  const shotInScene = typeof shot?.shotInScene === "number" ? shot.shotInScene : null;
   const videoPath = item.inputs.videoPath as string | undefined;
   const startFramePath = item.inputs.startFramePath as string | undefined;
 
   const composition = shot?.composition as string | undefined;
   const durationSeconds = shot?.durationSeconds as number | undefined;
-  const shotLabel = shotNumber != null ? `Shot ${shotNumber}` : `Item ${item.id.slice(0, 8)}`;
+  const shotLabel = sceneNumber != null && shotInScene != null ? `S${sceneNumber}.${shotInScene}` : `Item ${item.id.slice(0, 8)}`;
 
   const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
   const frameSrc = startFramePath ? `/api/runs/${runId}/media/${startFramePath}` : null;
@@ -198,11 +204,12 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const shotNumber = typeof item.inputs.shotNumber === "number" ? item.inputs.shotNumber : null;
   const shot = item.inputs.shot as Record<string, unknown> | undefined;
+  const sceneNumber = typeof shot?.sceneNumber === "number" ? shot.sceneNumber : null;
+  const shotInScene = typeof shot?.shotInScene === "number" ? shot.shotInScene : null;
   const videoPath = item.inputs.videoPath as string | undefined;
   const startFramePath = item.inputs.startFramePath as string | undefined;
-  const shotLabel = shotNumber != null ? `Shot ${shotNumber}` : `Item ${item.id.slice(0, 8)}`;
+  const shotLabel = sceneNumber != null && shotInScene != null ? `S${sceneNumber}.${shotInScene}` : `Item ${item.id.slice(0, 8)}`;
 
   const analysis = (item.outputs ?? {}) as Record<string, unknown>;
   const matchScore = analysis.matchScore as number | undefined;

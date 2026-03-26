@@ -90,7 +90,7 @@ export default function ShotCard({
           style={{ aspectRatio }}
           onClick={videoSrc ? handlePlay : undefined}
         >
-          <img src={frameSrc} alt={`Shot ${shotNum}`} />
+          <img src={frameSrc} alt={`S${String(shot.sceneNumber ?? "?")}.${shotNum}`} />
           {videoSrc && <div className="play-overlay">▶</div>}
           {frameItem && (
             <ImageUpload itemId={frameItem.id} field="startPath" />
@@ -110,7 +110,7 @@ export default function ShotCard({
       {/* Info area */}
       <div className="story-shot-info">
         <div className="story-shot-meta">
-          <span className="story-shot-number">Shot {shotNum}</span>
+          <span className="story-shot-number">S{String(shot.sceneNumber ?? "?")}.{shotNum}</span>
           {composition && (
             <span className="story-shot-comp">{composition}</span>
           )}
