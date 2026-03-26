@@ -813,6 +813,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/analyze/delete-all — remove all analyze_video work items entirely
+      if (method === "POST" && action === "analyze" && pathParts.length === 5 && pathParts[4] === "delete-all") {
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        const state = qm.getState();
+        const before = state.workItems.length;
+        state.workItems = state.workItems.filter(i => i.type !== 'analyze_video');
+        const deleted = before - state.workItems.length;
+        qm.save();
+        sendJson(res, 200, { deleted });
+        return;
+      }
+
+
       // POST /api/runs/:id/analyze/:itemId/accept — accept recommendation
       if (method === "POST" && action === "analyze" && pathParts.length >= 6 && pathParts[5] === "accept") {
         const itemId = decodeURIComponent(pathParts[4]);
