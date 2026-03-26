@@ -393,7 +393,7 @@ export class RunManager extends EventEmitter {
   loadExistingRuns(): void {
     // Re-attach QueueManagers for persisted runs that have state on disk
     for (const [runId, record] of this.runs) {
-      if (record.status === "running" || record.status === "stopped" || record.status === "pausing") {
+      if (record.status === "running" || record.status === "stopped" || record.status === "pausing" || record.status === "completed") {
         try {
           const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
           if (!existsSync(stateFile)) continue;
