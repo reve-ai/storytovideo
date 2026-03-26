@@ -36,7 +36,6 @@ const shotSchema = z.object({
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
-  continuousFromPrevious: z.boolean(),
 });
 
 const sceneSchema = z.object({
@@ -213,7 +212,6 @@ INSTRUCTIONS:
    - cameraDirection: camera movement description
    - charactersPresent: array of fictional character names present
    - location: matching a location name from your locations list
-   - continuousFromPrevious: true if this shot flows directly from the previous one without a cut
 
 5. **Title**: Infer a compelling title for the overall story/video.
 
