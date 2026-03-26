@@ -310,10 +310,36 @@ function DetailOutputs({
     }
   }
 
+  const promptSent =
+    item.type === "generate_video"
+      ? (item.outputs as Record<string, unknown>)?.promptSent
+      : null;
+
   return (
     <div className="detail-section">
       <h3>Outputs</h3>
       {mediaEl}
+      {typeof promptSent === "string" && promptSent && (
+        <div style={{ marginBottom: "0.75rem" }}>
+          <h4 style={{ margin: "0.5rem 0 0.25rem", fontSize: "0.85rem", color: "var(--muted)" }}>
+            Prompt Sent
+          </h4>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontFamily: "monospace",
+              fontSize: "0.8rem",
+              background: "var(--surface-2, #1a1a2e)",
+              padding: "0.75rem",
+              borderRadius: 6,
+              border: "1px solid var(--border, #333)",
+            }}
+          >
+            {String(promptSent)}
+          </pre>
+        </div>
+      )}
       <pre>{JSON.stringify(item.outputs, null, 2)}</pre>
     </div>
   );
