@@ -428,19 +428,23 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     const { object } = planResult;
-    const updatedAnalysis = planShotsForScene(
+    const processedShots = planShotsForScene(
       sceneNumber,
-      object.transition,
       object.shots,
       analysis,
     );
-    state.storyAnalysis = updatedAnalysis;
 
-    const plannedScene = updatedAnalysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    // Mutate the scene in-place instead of cloning the whole analysis
+    const scene2 = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    if (scene2) {
+      scene2.shots = processedShots;
+      scene2.transition = object.transition;
+    }
+
     return {
       sceneNumber,
-      shotCount: plannedScene?.shots?.length ?? 0,
-      shots: plannedScene?.shots ?? [],
+      shotCount: processedShots.length,
+      shots: processedShots,
     };
   }
 

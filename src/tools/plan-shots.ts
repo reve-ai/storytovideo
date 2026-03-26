@@ -118,34 +118,30 @@ export const planShotsForSceneTool = {
 };
 
 // ---------------------------------------------------------------------------
-// Core function — merges planned shots into the analysis for one scene
+// Core function — processes planned shots for one scene (no cloning)
 // ---------------------------------------------------------------------------
 
 /**
- * Merges planned shots for a single scene into the story analysis.
- * Auto-assigns global `shotNumber` and `sceneNumber` on each shot.
+ * Processes raw planned shots for a single scene: assigns global `shotNumber`
+ * and `sceneNumber`, enforces minimum duration, and defaults optional fields.
+ *
+ * Returns the processed shots array. The caller is responsible for merging
+ * these into the analysis (e.g. via `qm.updateSceneShots()`).
  */
 export function planShotsForScene(
   sceneNumber: number,
-  transition: "cut" | "fade_black",
   shots: z.infer<typeof planShotsForSceneTool.parameters>["shots"],
   analysis: StoryAnalysis,
-): StoryAnalysis {
-  // Deep-clone so we don't mutate the original
-  const updatedAnalysis = JSON.parse(JSON.stringify(analysis)) as StoryAnalysis;
-
-  // Find the target scene
-  const sceneIndex = updatedAnalysis.scenes.findIndex(s => s.sceneNumber === sceneNumber);
-  if (sceneIndex < 0) {
+): Shot[] {
+  // Verify the scene exists
+  const sceneExists = analysis.scenes.some(s => s.sceneNumber === sceneNumber);
+  if (!sceneExists) {
     throw new Error(`Scene ${sceneNumber} not found in analysis`);
   }
 
-  // Set the scene transition
-  updatedAnalysis.scenes[sceneIndex].transition = transition;
-
-  // Count existing shots across ALL scenes to determine the next global shotNumber
+  // Count existing shots across ALL other scenes to determine the next global shotNumber
   let nextShotNumber = 1;
-  for (const scene of updatedAnalysis.scenes) {
+  for (const scene of analysis.scenes) {
     if (scene.sceneNumber === sceneNumber) continue; // skip the scene we're about to fill
     nextShotNumber += (scene.shots?.length ?? 0);
   }
@@ -160,8 +156,6 @@ export function planShotsForScene(
     objectsPresent: shot.objectsPresent ?? [],
   }));
 
-  updatedAnalysis.scenes[sceneIndex].shots = processedShots;
-
-  return updatedAnalysis;
+  return processedShots;
 }
 
