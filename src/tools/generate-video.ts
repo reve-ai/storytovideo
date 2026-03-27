@@ -21,17 +21,27 @@ export class RaiCelebrityError extends Error {
 
 /**
  * Strip character names from text to avoid triggering Veo's RAI celebrity filter.
- * Replaces whole-word occurrences of each name with "the character".
+ * Replaces whole-word occurrences of each name with a distinct ordinal label
+ * based on position in the names array (e.g. "the first person", "the second person").
+ * If there is only one character, uses "the person" with no ordinal.
  */
 export function stripCharacterNames(text: string, names: string[]): string {
+  const ordinals = ["first", "second", "third", "fourth", "fifth"];
+  const validNames = names.filter((n) => !!n);
   let result = text;
-  for (const name of names) {
-    if (!name) continue;
+  for (let i = 0; i < validNames.length; i++) {
+    const name = validNames[i];
     // Escape regex special characters in the name
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // Replace whole-word occurrences (case-insensitive)
     const re = new RegExp(`\\b${escaped}\\b`, "gi");
-    result = result.replace(re, "the character");
+    const label =
+      validNames.length === 1
+        ? "the person"
+        : i < ordinals.length
+          ? `the ${ordinals[i]} person`
+          : `person ${i + 1}`;
+    result = result.replace(re, label);
   }
   return result;
 }
