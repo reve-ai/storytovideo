@@ -676,11 +676,6 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
 
-        if (targetItem.status === 'in_progress') {
-          sendJson(res, 409, { error: `Cannot redo item ${targetItem.id}: status is 'in_progress'` });
-          return;
-        }
-
         const shot = targetItem.inputs.shot as Record<string, unknown> | undefined;
         const sceneNumber = shot?.sceneNumber as number | undefined;
         const shotInScene = shot?.shotInScene as number | undefined;

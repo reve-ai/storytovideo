@@ -336,9 +336,6 @@ export class QueueManager {
 
   redoItem(itemId: string, newInputs?: Record<string, unknown>): WorkItem {
     const old = this.requireItem(itemId);
-    if (old.status === 'in_progress') {
-      throw new Error(`Cannot redo item ${itemId}: status is 'in_progress'`);
-    }
 
     // Create new version of this item
     const newItem = this.addItem({
