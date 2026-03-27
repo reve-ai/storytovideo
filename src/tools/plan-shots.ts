@@ -29,10 +29,10 @@ Each shot has a START FRAME (an image) and an ACTION PROMPT (what happens). A vi
 - If you need a different camera angle or different character focus, that is a NEW SHOT (cut to it).
 
 CONTINUITY FLAG (continuousFromPrevious):
-- Only set continuousFromPrevious=true when this shot is literally the SAME camera a moment later: same composition, same subject, same camera angle, same framing.
-- Use it for true visual continuity only — the next shot should feel like the same camera kept rolling for another beat.
+- Default to continuousFromPrevious=true whenever the camera stays on the same subject from the same angle. When true, the start frame is extracted from the end of the previous video clip, giving seamless visual continuity. When false, a fresh start frame is generated.
+- Only set continuousFromPrevious=false for an actual CUT: new camera angle, new subject, new location, or a different composition type.
 - The first shot of every scene MUST set continuousFromPrevious=false.
-- If the subject changes, the camera angle changes, or the composition changes, set continuousFromPrevious=false.
+- Examples: same medium shot of a person doing two consecutive actions = true. Switching from medium shot to close-up = false. Same close-up on a face, continuing to talk = true. Cutting from one character to another = false.
 
 COMPOSITION TYPES:
 - wide_establishing: Wide view of the setting. Characters in context, spatial relationships.
