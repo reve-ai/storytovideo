@@ -559,6 +559,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       aspectRatio,
       abortSignal: signal,
       version: item.version,
+      priority: item.priority,
     });
 
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));

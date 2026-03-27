@@ -24,6 +24,7 @@ export type LtxVideoOptions = {
   width?: number;
   height?: number;
   mode?: "full" | "distilled";
+  priority?: "normal" | "high";
   seed?: number;
   frameRate?: number;
   outputPath: string;
@@ -84,6 +85,7 @@ async function submitGeneration(
       if (options.duration !== undefined) form.append("seconds", String(options.duration));
       if (options.width !== undefined) form.append("width", String(options.width));
       if (options.height !== undefined) form.append("height", String(options.height));
+      if (options.priority) form.append("priority", options.priority);
       if (options.seed !== undefined) form.append("seed", String(options.seed));
       if (options.frameRate !== undefined) form.append("frame_rate", String(options.frameRate));
 
@@ -106,6 +108,7 @@ async function submitGeneration(
     if (options.duration !== undefined) body.seconds = options.duration;
     if (options.width !== undefined) body.width = options.width;
     if (options.height !== undefined) body.height = options.height;
+    if (options.priority) body.priority = options.priority;
     if (options.seed !== undefined) body.seed = options.seed;
     if (options.frameRate !== undefined) body.frame_rate = options.frameRate;
 

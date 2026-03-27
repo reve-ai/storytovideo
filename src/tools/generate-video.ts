@@ -65,6 +65,8 @@ type GenerateVideoParams = {
   onProgress?: (message: string) => void;
   /** Version number for output filename (default 1). */
   version?: number;
+  /** Queue priority — forwarded to backends that support it (e.g. LTX). */
+  priority?: "normal" | "high";
 };
 
 /** Shared return type for all video backends. */
@@ -498,6 +500,7 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
       width,
       height,
       mode,
+      priority: params.priority,
       outputPath,
       abortSignal,
     });
