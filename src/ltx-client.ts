@@ -59,6 +59,9 @@ type StatusResponse = {
   started_at?: number;
   completed_at?: number;
   generation_time?: number;
+  progress?: number;         // 0.0–1.0 fraction complete (running jobs)
+  step?: number;             // current diffusion step
+  total_steps?: number;      // total diffusion steps
   params?: string;
   video_url?: string;
   error?: string;
@@ -128,13 +131,32 @@ async function submitGeneration(
   }
 }
 
+/**
+ * Cancel a running or pending LTX job. Best-effort — errors are logged but not thrown.
+ */
+export async function cancelJob(jobId: string): Promise<void> {
+  const apiKey = getApiKey();
+  const response = await fetch(`${API_BASE}/cancel/${jobId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    console.warn(`[ltx] Failed to cancel job ${jobId}: ${response.status} ${text}`);
+  } else {
+    console.log(`[ltx] Cancelled job ${jobId}`);
+  }
+}
+
 async function pollUntilDone(jobId: string, abortSignal?: AbortSignal): Promise<StatusResponse> {
   const apiKey = getApiKey();
   while (true) {
-    if (abortSignal?.aborted) throw new Error("Video generation cancelled due to pipeline interruption");
+    if (abortSignal?.aborted) {
+      await cancelJob(jobId).catch(() => {});
+      throw new Error("Video generation cancelled due to pipeline interruption");
+    }
     const response = await fetch(`${API_BASE}/status/${jobId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: abortSignal,
     });
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
@@ -142,7 +164,10 @@ async function pollUntilDone(jobId: string, abortSignal?: AbortSignal): Promise<
     }
     const resp = (await response.json()) as StatusResponse;
     if (resp.status === "completed" || resp.status === "failed") return resp;
-    console.log(`[ltx] ${jobId}: status=${resp.status}, polling in ${POLL_INTERVAL_MS / 1000}s`);
+    const progressStr = resp.progress !== undefined
+      ? ` ${(resp.progress * 100).toFixed(0)}%` + (resp.step !== undefined ? ` (step ${resp.step}/${resp.total_steps})` : "")
+      : "";
+    console.log(`[ltx] ${jobId}: status=${resp.status}${progressStr}, polling in ${POLL_INTERVAL_MS / 1000}s`);
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 }
