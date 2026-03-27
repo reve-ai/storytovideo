@@ -24,6 +24,9 @@ export type RunStatus =
   | "completed"
   | "failed";
 
+export type ImageBackend = "grok" | "reve" | "nano-banana";
+export type VideoBackend = "grok" | "veo" | "ltx";
+
 export interface RunRecord {
   id: string;
   name?: string;
@@ -38,6 +41,8 @@ export interface RunRecord {
     needsConversion?: boolean;
     aspectRatio?: string;
     dryRun?: boolean;
+    imageBackend?: ImageBackend;
+    videoBackend?: VideoBackend;
   };
 }
 
@@ -57,7 +62,11 @@ interface RunActions {
   setRunStartTime: (time: number) => void;
   createRun: (
     storyText: string,
-    options?: { aspectRatio?: string },
+    options?: {
+      aspectRatio?: string;
+      imageBackend?: ImageBackend;
+      videoBackend?: VideoBackend;
+    },
   ) => Promise<RunRecord>;
   deleteRun: (runId: string) => Promise<void>;
   togglePlayPause: () => Promise<void>;

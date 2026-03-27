@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useRunStore } from "../stores/run-store";
+import { useRunStore, type ImageBackend, type VideoBackend } from "../stores/run-store";
 
 interface CreateRunDialogProps {
   open: boolean;
@@ -12,12 +12,26 @@ const ASPECT_RATIOS = [
   { value: "1:1", label: "1:1 (square)" },
 ] as const;
 
+const IMAGE_BACKENDS = [
+  { value: "grok", label: "Grok" },
+  { value: "reve", label: "Reve" },
+  { value: "nano-banana", label: "Nano Banana" },
+] as const;
+
+const VIDEO_BACKENDS = [
+  { value: "grok", label: "Grok" },
+  { value: "veo", label: "Veo" },
+  { value: "ltx", label: "LTX" },
+] as const;
+
 export default function CreateRunDialog({
   open,
   onClose,
 }: CreateRunDialogProps) {
   const [storyText, setStoryText] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [imageBackend, setImageBackend] = useState<ImageBackend>("grok");
+  const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
   const [submitting, setSubmitting] = useState(false);
   const createRun = useRunStore((s) => s.createRun);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -37,9 +51,11 @@ export default function CreateRunDialog({
 
       setSubmitting(true);
       try {
-        await createRun(text, { aspectRatio });
+        await createRun(text, { aspectRatio, imageBackend, videoBackend });
         setStoryText("");
         setAspectRatio("16:9");
+        setImageBackend("grok");
+        setVideoBackend("grok");
         onClose();
       } catch (err) {
         console.error("Failed to create run:", err);
@@ -47,7 +63,7 @@ export default function CreateRunDialog({
         setSubmitting(false);
       }
     },
-    [storyText, aspectRatio, submitting, createRun, onClose],
+    [storyText, aspectRatio, imageBackend, videoBackend, submitting, createRun, onClose],
   );
 
   if (!open) return null;
@@ -79,6 +95,32 @@ export default function CreateRunDialog({
             onChange={(e) => setAspectRatio(e.target.value)}
           >
             {ASPECT_RATIOS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="image-backend-select">Image generator</label>
+          <select
+            id="image-backend-select"
+            value={imageBackend}
+            onChange={(e) => setImageBackend(e.target.value as ImageBackend)}
+          >
+            {IMAGE_BACKENDS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="video-backend-select">Video generator</label>
+          <select
+            id="video-backend-select"
+            value={videoBackend}
+            onChange={(e) => setVideoBackend(e.target.value as VideoBackend)}
+          >
+            {VIDEO_BACKENDS.map(({ value, label }) => (
               <option key={value} value={value}>
                 {label}
               </option>

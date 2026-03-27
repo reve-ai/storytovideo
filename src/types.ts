@@ -79,6 +79,9 @@ export interface FrameReference {
   path: string;
 }
 
+export type ImageBackend = "grok" | "reve" | "nano-banana";
+export type VideoBackend = "veo" | "grok" | "ltx";
+
 export interface GeneratedFrameSet {
   start?: string;
   startReferences?: FrameReference[];
@@ -95,7 +98,8 @@ export interface PipelineOptions {
   redo?: string;
   resume: boolean;
   verbose: boolean;
-  videoBackend?: "veo" | "comfy" | "grok";
+  imageBackend?: ImageBackend;
+  videoBackend?: VideoBackend;
   aspectRatio?: "16:9" | "9:16" | "1:1";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   onProgress?: (message: string) => void;

@@ -1,35 +1,12 @@
 import { z } from "zod";
 import { mkdir } from "fs/promises";
-import { readFileSync, unlinkSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
-import { execFile as execFileCb } from "child_process";
-import { promisify } from "util";
 import { getGoogleClient } from "../google-client";
-import { uploadAsset, runWorkflow, pollJob, downloadAsset, checkJob } from "../comfy-client";
 import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
+import { generateVideoLtx as ltxGenerateVideo } from "../ltx-client";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
-
-const execFileAsync = promisify(execFileCb);
-
-/**
- * Resize an image to target dimensions using ffmpeg, preserving aspect ratio
- * with padding (letterbox/pillarbox). Returns path to resized temp file.
- */
-async function resizeForComfy(
-  inputPath: string,
-  width: number,
-  height: number,
-): Promise<string> {
-  const tmpPath = inputPath.replace(/(\.\w+)$/, `_comfy_${width}x${height}$1`);
-  await execFileAsync("ffmpeg", [
-    "-y", "-i", inputPath,
-    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:black`,
-    "-q:v", "2",
-    "-strict", "unofficial",
-    tmpPath,
-  ]);
-  return tmpPath;
-}
+import type { VideoBackend } from "../types";
 
 // Custom error for RAI celebrity filter rejections — allows orchestrator to
 // catch this specific failure and regenerate frames before retrying.
@@ -81,16 +58,11 @@ type GenerateVideoParams = {
   /** Character names to strip from prompts before sending to Veo. */
   characterNames?: string[];
   /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
-  videoBackend?: "veo" | "comfy" | "grok";
+  videoBackend?: VideoBackend;
   /** Aspect ratio for the generated video (e.g. "16:9", "9:16"). */
   aspectRatio?: string;
   /** Progress callback for UI updates */
   onProgress?: (message: string) => void;
-  pendingJobStore?: {
-    get: (key: string) => { jobId: string; outputPath: string } | undefined;
-    set: (key: string, value: { jobId: string; outputPath: string }) => Promise<void>;
-    delete: (key: string) => Promise<void>;
-  };
   /** Version number for output filename (default 1). */
   version?: number;
 };
@@ -156,7 +128,7 @@ function buildDialoguePrompt(dialogue: string, speaker?: string, charactersPrese
 
 /**
  * Generates video clips for shots.
- * Dispatches to Veo 3.1 or ComfyUI backend based on VIDEO_BACKEND env var.
+ * Dispatches to Veo 3.1 or Grok backend based on VIDEO_BACKEND env var.
  */
 export async function generateVideo(params: GenerateVideoParams): Promise<GenerateVideoResult> {
   const backend = (params.videoBackend || process.env.VIDEO_BACKEND || "veo").toLowerCase();
@@ -173,14 +145,14 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     };
   }
 
-  if (backend === "comfy") {
-    return generateVideoComfy(sanitized);
-  } else if (backend === "veo") {
+  if (backend === "veo") {
     return generateVideoVeo(sanitized);
   } else if (backend === "grok") {
     return generateVideoGrok(sanitized);
+  } else if (backend === "ltx") {
+    return generateVideoLtxBackend(sanitized);
   } else {
-    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "comfy", or "grok".`);
+    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "grok", or "ltx".`);
   }
 }
 
@@ -368,205 +340,12 @@ export const generateVideoTool = {
     dialogue: z.string().describe("Character dialogue (empty if none)"),
     soundEffects: z.string().describe("Sound effects description"),
     cameraDirection: z.string().describe("Camera movement and angle"),
-    durationSeconds: z.number().describe("Video duration in seconds (0.5-10). Veo always uses 8; ComfyUI supports arbitrary."),
+    durationSeconds: z.number().describe("Video duration in seconds (0.5-15). Veo always uses 8; Grok supports 1-15."),
     startFramePath: z.string().describe("Path to start frame image"),
     outputDir: z.string().describe("Output directory for video file"),
     dryRun: z.boolean().optional().describe("Return placeholder without calling API"),
   }),
 };
-
-/**
- * ComfyUI backend: generates video via ComfyUI frame_to_video workflow.
- * Uses exponential backoff retry (5s, 10s, 20s, 40s, 80s).
- */
-async function generateVideoComfy(params: GenerateVideoParams): Promise<GenerateVideoResult> {
-  const {
-    shotNumber,
-    sceneNumber,
-    shotInScene,
-    shotType,
-    actionPrompt,
-    dialogue,
-    soundEffects,
-    cameraDirection,
-    durationSeconds,
-    startFramePath,
-    outputDir,
-    dryRun = false,
-    abortSignal,
-    pendingJobStore,
-    version = 1,
-  } = params;
-
-  // Ensure output directory exists
-  await mkdir(outputDir, { recursive: true });
-
-  const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
-  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
-
-	// Build video prompt from components
-	const promptParts: string[] = [];
-	if (actionPrompt) promptParts.push(actionPrompt);
-	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
-	if (dialoguePart) promptParts.push(dialoguePart);
-	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-	const videoPrompt = promptParts.join(". ");
-
-  // Dry-run mode: return placeholder
-  if (dryRun) {
-    console.log(`[generateVideo] DRY-RUN: ${shotContext} (${shotType}, ${durationSeconds}s)`);
-	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
-	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
-  }
-
-  // Check for a pending job from a previous run
-  const jobKey = `video-${buildSceneShotFilename(sceneNumber, shotInScene, version)}`;
-  if (pendingJobStore) {
-    const pending = pendingJobStore.get(jobKey);
-    if (pending) {
-      console.log(`[generateVideo] Found pending job ${pending.jobId} for ${shotContext}, checking status...`);
-      const status = await checkJob(pending.jobId);
-      if (status && status.status === "completed" && status.outputAssetIds.length > 0) {
-        console.log(`[generateVideo] Pending job ${pending.jobId} for ${shotContext} already completed, downloading...`);
-        await downloadAsset(status.outputAssetIds[0], outputPath);
-        await pendingJobStore.delete(jobKey);
-        console.log(`[generateVideo] ${shotContext} saved to ${outputPath}`);
-	        return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
-      }
-      if (status && (status.status === "running" || status.status === "queued")) {
-        // Job is still in progress — poll it to completion instead of re-submitting
-        console.log(`[generateVideo] Pending job ${pending.jobId} for ${shotContext} still ${status.status}, resuming poll...`);
-        const progressCb = params.onProgress;
-        const result = await pollJob(pending.jobId, abortSignal, (progress) => {
-          const msg = `[video_generation] ${shotContext}: ${progress}% complete`;
-          console.log(msg);
-          progressCb?.(msg);
-        });
-        if (result.status === "completed" && result.outputAssetIds.length > 0) {
-          await downloadAsset(result.outputAssetIds[0], outputPath);
-          await pendingJobStore.delete(jobKey);
-          console.log(`[generateVideo] ${shotContext} saved to ${outputPath}`);
-	          return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
-        }
-        // If poll ended without success, fall through to re-submit
-      }
-      // Job failed or unreachable — clear and re-submit
-      console.log(`[generateVideo] Pending job ${pending.jobId} not usable (status: ${status?.status ?? "unreachable"}), re-submitting...`);
-      await pendingJobStore.delete(jobKey);
-    }
-  }
-
-  console.log(`[generateVideo] Generating ${shotContext} (${shotType}, ${durationSeconds}s)`);
-	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
-
-  try {
-    const maxRetries = 5;
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        if (!startFramePath) {
-          throw new Error("first_last_frame requires startFramePath");
-        }
-
-        // Resize frame to match ComfyUI workflow dimensions, then upload
-        const comfyWidth = 640;
-        const comfyHeight = 640;
-        const tmpFiles: string[] = [];
-
-        console.log(`[generateVideo] Resizing and uploading start frame for ${shotContext}`);
-        const resizedStart = await resizeForComfy(startFramePath, comfyWidth, comfyHeight);
-        tmpFiles.push(resizedStart);
-        const startAssetId = await uploadAsset(resizedStart);
-        console.log(`[generateVideo] Start frame uploaded: ${startAssetId}`);
-
-        // Use start frame as end frame too
-        const endAssetId = startAssetId;
-
-        // Clean up temp resized files
-        for (const tmp of tmpFiles) {
-          try { unlinkSync(tmp); } catch {}
-        }
-
-        // Convert duration to frame count (fps=16)
-        // ComfyUI requires length to be 4k+1 (e.g., 5, 9, 13, ..., 81, 85)
-        const rawLength = Math.round(16 * durationSeconds);
-        const length = Math.round((rawLength - 1) / 4) * 4 + 1;
-        console.log(`[generateVideo] Duration: ${durationSeconds}s → ${length} frames (fps=16)`);
-
-        // Run the frame_to_video workflow
-        console.log(`[generateVideo] Running frame_to_video workflow for ${shotContext}`);
-        const jobId = await runWorkflow("frame_to_video", {
-          prompt: videoPrompt,
-          start_asset_id: startAssetId,
-          end_asset_id: endAssetId,
-          width: comfyWidth,
-          height: comfyHeight,
-          length,
-          fps: 16,
-        });
-        console.log(`[generateVideo] Workflow started: job ${jobId}`);
-
-        // Store pending job for resume capability
-        if (pendingJobStore) {
-          await pendingJobStore.set(jobKey, { jobId, outputPath });
-        }
-
-        // Poll for job completion
-        console.log(`[generateVideo] Polling for completion (job: ${jobId})`);
-        const progressCb = params.onProgress;
-        const result = await pollJob(jobId, abortSignal, (progress) => {
-          const msg = `[video_generation] ${shotContext}: ${progress}% complete`;
-          console.log(msg);
-          progressCb?.(msg);
-        });
-
-        if (result.status !== "completed") {
-          throw new Error(`Job ${jobId} did not complete successfully: ${result.status}`);
-        }
-
-        if (!result.outputAssetIds || result.outputAssetIds.length === 0) {
-          throw new Error(`No output assets returned for job ${jobId}`);
-        }
-
-        // Download the output video
-        console.log(`[generateVideo] Downloading video for ${shotContext}`);
-        await downloadAsset(result.outputAssetIds[0], outputPath);
-
-        // Clear pending job on success
-        if (pendingJobStore) {
-          await pendingJobStore.delete(jobKey);
-        }
-
-        console.log(`[generateVideo] ${shotContext} saved to ${outputPath}`);
-	        return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
-      } catch (error: any) {
-        lastError = error;
-        // Don't retry if cancelled due to pipeline interruption
-        if (error?.message?.includes('cancelled due to pipeline interruption')) {
-          throw error;
-        }
-        const backoffMs = Math.pow(2, attempt - 1) * 5000; // Exponential backoff: 5s, 10s, 20s, 40s, 80s
-        if (attempt < maxRetries) {
-          console.warn(`[generateVideo] ${shotContext}: Error on attempt ${attempt}/${maxRetries}. Retrying in ${backoffMs}ms...`);
-          console.warn(`[generateVideo] Error details:`, error?.message || error);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
-          continue;
-        }
-        // Last attempt failed
-        throw error;
-      }
-    }
-
-    // All retries exhausted
-    console.error(`[generateVideo] ${shotContext}: All ${maxRetries} retries exhausted`);
-    throw lastError;
-  } catch (error) {
-    console.error(`[generateVideo] Error generating ${shotContext}:`, error);
-    throw error;
-  }
-}
 
 
 /**
@@ -647,6 +426,84 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
 	    return { shotNumber, path: result.path, duration: clampedDuration, promptSent: videoPrompt };
   } catch (error) {
     console.error(`[generateVideo] Error generating ${shotContext} via Grok:`, error);
+    throw error;
+  }
+}
+
+
+/**
+ * LTX Video 2.3 backend: generates video via self-hosted LTX API.
+ * Uses image-to-video when a start frame is available; supports arbitrary durations.
+ * Defaults to distilled mode for faster generation.
+ */
+async function generateVideoLtxBackend(params: GenerateVideoParams): Promise<GenerateVideoResult> {
+  const {
+    shotNumber,
+    sceneNumber,
+    shotInScene,
+    actionPrompt,
+    dialogue,
+    soundEffects,
+    cameraDirection,
+    durationSeconds,
+    startFramePath,
+    outputDir,
+    dryRun = false,
+    abortSignal,
+    version = 1,
+  } = params;
+
+  await mkdir(outputDir, { recursive: true });
+
+  const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
+
+  // Build video prompt from components
+  const promptParts: string[] = [];
+  if (actionPrompt) promptParts.push(actionPrompt);
+  const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
+  if (dialoguePart) promptParts.push(dialoguePart);
+  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
+  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
+  const videoPrompt = promptParts.join(". ");
+
+  if (dryRun) {
+    console.log(`[generateVideo] DRY-RUN: ${shotContext} via LTX (${durationSeconds}s)`);
+    console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+    return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
+  }
+
+  console.log(`[generateVideo] Generating ${shotContext} via LTX (${durationSeconds}s)`);
+  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+
+  // Resolve aspect ratio to pixel dimensions for LTX
+  const aspectRatio = params.aspectRatio || "16:9";
+  let width: number | undefined;
+  let height: number | undefined;
+  if (aspectRatio === "9:16") {
+    width = 512; height = 768;
+  } else if (aspectRatio === "1:1") {
+    width = 768; height = 768;
+  } else {
+    // 16:9 default
+    width = 768; height = 512;
+  }
+
+  try {
+    const result = await ltxGenerateVideo(videoPrompt, {
+      image: startFramePath || undefined,
+      duration: durationSeconds,
+      width,
+      height,
+      mode: "distilled",
+      outputPath,
+      abortSignal,
+    });
+
+    console.log(`[generateVideo] ${shotContext} saved to ${result.path} (LTX adjusted duration: ${result.duration}s)`);
+    return { shotNumber, path: result.path, duration: result.duration, promptSent: videoPrompt };
+  } catch (error) {
+    console.error(`[generateVideo] Error generating ${shotContext} via LTX:`, error);
     throw error;
   }
 }
