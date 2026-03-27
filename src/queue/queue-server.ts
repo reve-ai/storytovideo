@@ -14,6 +14,7 @@ import sharp from "sharp";
 
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import type { QueueName, WorkItem } from "./types.js";
+import type { ImageBackend, VideoBackend } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Media helpers (inlined from deleted server-assets.ts)
@@ -28,6 +29,21 @@ const MIME_TYPES: Record<string, string> = {
   ".mov": "video/quicktime",
   ".json": "application/json; charset=utf-8",
 };
+
+const IMAGE_BACKENDS: readonly ImageBackend[] = ["grok", "reve", "nano-banana"];
+const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo"];
+
+function parseImageBackend(value: unknown): ImageBackend | undefined {
+  return typeof value === "string" && IMAGE_BACKENDS.includes(value as ImageBackend)
+    ? (value as ImageBackend)
+    : undefined;
+}
+
+function parseVideoBackend(value: unknown): VideoBackend | undefined {
+  return typeof value === "string" && VIDEO_BACKENDS.includes(value as VideoBackend)
+    ? (value as VideoBackend)
+    : undefined;
+}
 
 function resolveMediaPathForRun(outputDir: string, encodedSegments: string[]): string | null {
   if (encodedSegments.length === 0) return null;
@@ -493,6 +509,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         needsConversion: Boolean(options.needsConversion),
         aspectRatio: typeof options.aspectRatio === "string" ? options.aspectRatio : undefined,
         dryRun: Boolean(options.dryRun),
+        imageBackend: parseImageBackend(options.imageBackend),
+        videoBackend: parseVideoBackend(options.videoBackend),
       });
       sendJson(res, 201, record);
       return;

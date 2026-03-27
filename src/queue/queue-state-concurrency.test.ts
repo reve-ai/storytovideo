@@ -223,7 +223,36 @@ function testRedoDoesNotCascadeAnalyzeVideo(): void {
   console.log('  ✓ redo supersedes analyze_video without cascading a stale replacement');
 }
 
-function testRedoRecreatesContinuityFramesBehindSupersededVideos(): void {
+function testRedoVideoRemapsKeyBasedContinuityDependency(): void {
+  const qm = makeQueueManager();
+  const shot1 = makeShot(1, 1, false);
+  const shot2 = makeShot(2, 2, true);
+
+  const video1 = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    inputs: { shot: shot1, startFramePath: 'frames/1.png' },
+  });
+  qm.addItem({
+    type: 'generate_frame',
+    queue: 'image',
+    itemKey: 'frame:scene:1:shot:2',
+    dependencies: [video1.itemKey],
+    inputs: { shot: shot2 },
+  });
+
+  const newVideo1 = qm.redoItem(video1.id);
+
+  const frame2Items = qm.getItemsByKey('frame:scene:1:shot:2');
+  const activeFrame2 = frame2Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.equal(frame2Items.length, 2);
+  assert.ok(activeFrame2);
+  assert.deepEqual(activeFrame2.dependencies, [newVideo1.id]);
+  console.log('  ✓ video redo remaps key-based continuity dependencies to the new video id');
+}
+
+function testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete(): void {
   const qm = makeQueueManager();
   const shot1 = makeShot(1, 1, false);
   const shot2 = makeShot(2, 2, true);
@@ -265,24 +294,55 @@ function testRedoRecreatesContinuityFramesBehindSupersededVideos(): void {
     inputs: { shot: shot3 },
   });
 
-  qm.redoItem(frame1.id);
+  const processor = new QueueProcessor('video', qm, 'run-1', 1);
+  const newFrame1 = qm.redoItem(frame1.id);
 
   const frame2Items = qm.getItemsByKey('frame:scene:1:shot:2');
-  const activeFrame2 = frame2Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
-  assert.equal(frame2Items.length, 2);
-  assert.ok(activeFrame2);
-  assert.deepEqual(activeFrame2.dependencies, ['video:scene:1:shot:1']);
+  assert.equal(frame2Items.length, 1);
+  assert.equal(frame2Items[0].status, 'superseded');
 
   const video2Items = qm.getItemsByKey('video:scene:1:shot:2');
   assert.equal(video2Items.length, 1);
   assert.equal(video2Items[0].status, 'superseded');
 
   const frame3Items = qm.getItemsByKey('frame:scene:1:shot:3');
-  const activeFrame3 = frame3Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
-  assert.equal(frame3Items.length, 2);
-  assert.ok(activeFrame3);
-  assert.deepEqual(activeFrame3.dependencies, ['video:scene:1:shot:2']);
-  console.log('  ✓ continuity frames are recreated when an upstream video is superseded');
+  assert.equal(frame3Items.length, 1);
+  assert.equal(frame3Items[0].status, 'superseded');
+
+  (processor as any).seedAfterGenerateFrame(newFrame1, { startPath: 'frames/1-v2.png' });
+
+  const video1Items = qm.getItemsByKey('video:scene:1:shot:1');
+  const activeVideo1 = video1Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.ok(activeVideo1);
+  assert.deepEqual(activeVideo1.dependencies, [newFrame1.id]);
+
+  (processor as any).seedAfterGenerateVideo(activeVideo1, {
+    shotNumber: 1,
+    path: 'videos/1-v2.mp4',
+  });
+
+  const recreatedFrame2 = qm.getItemsByKey('frame:scene:1:shot:2')
+    .find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.ok(recreatedFrame2);
+  assert.deepEqual(recreatedFrame2.dependencies, [activeVideo1.id]);
+
+  (processor as any).seedAfterGenerateFrame(recreatedFrame2, { startPath: 'frames/2-v2.png' });
+
+  const recreatedVideo2 = qm.getItemsByKey('video:scene:1:shot:2')
+    .find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.ok(recreatedVideo2);
+  assert.deepEqual(recreatedVideo2.dependencies, [recreatedFrame2.id]);
+
+  (processor as any).seedAfterGenerateVideo(recreatedVideo2, {
+    shotNumber: 2,
+    path: 'videos/2-v2.mp4',
+  });
+
+  const recreatedFrame3 = qm.getItemsByKey('frame:scene:1:shot:3')
+    .find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.ok(recreatedFrame3);
+  assert.deepEqual(recreatedFrame3.dependencies, [recreatedVideo2.id]);
+  console.log('  ✓ frame redo rebuilds the continuity chain after replacement videos complete');
 }
 
 function testGenerateVideoSeedsMissingContinuityFrame(): void {
@@ -358,7 +418,8 @@ async function main(): Promise<void> {
   testAnalyzeMutationsAreGuarded();
   testRedoDoesNotCascadeOutputDerivedItemsFromFrame();
   testRedoDoesNotCascadeAnalyzeVideo();
-  testRedoRecreatesContinuityFramesBehindSupersededVideos();
+  testRedoVideoRemapsKeyBasedContinuityDependency();
+  testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete();
   testGenerateVideoSeedsMissingContinuityFrame();
   await testConcurrentResumeIsSerialized();
   console.log('\nAll tests passed ✓');

@@ -1,8 +1,20 @@
 import { z } from "zod";
-import { createImage, editImage } from "../reve-client";
+import { createImage, remixImage } from "../reve-client";
 import { createImageGrok, remixImageGrok } from "../grok-image-client";
+import { createImageNanoBanana, remixImageNanoBanana } from "../nano-banana-image-client";
+import type { ImageBackend, VideoBackend } from "../types";
 import * as fs from "fs";
 import * as path from "path";
+
+type LegacyImageBackend = VideoBackend | "comfy";
+
+function resolveImageBackend(imageBackend?: ImageBackend, videoBackend?: LegacyImageBackend): ImageBackend {
+  if (imageBackend) {
+    return imageBackend;
+  }
+
+  return videoBackend === "grok" ? "grok" : "reve";
+}
 
 /**
  * Generates reference images for characters and locations using the Reve API.
@@ -17,7 +29,8 @@ export async function generateAsset(params: {
   outputDir: string;
   dryRun?: boolean;
   referenceImagePath?: string;
-  videoBackend?: "veo" | "comfy" | "grok";
+  imageBackend?: ImageBackend;
+  videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
 }): Promise<{ key: string; path: string }> {
@@ -66,6 +79,7 @@ export async function generateAsset(params: {
   // Build the prompt
   let prompt: string;
   let isEditing = false;
+  const imageBackend = resolveImageBackend(params.imageBackend, params.videoBackend);
 
   // Check if reference image provided
   if (referenceImagePath && fs.existsSync(referenceImagePath)) {
@@ -96,7 +110,7 @@ export async function generateAsset(params: {
     console.log(`[generateAsset] Generating new ${assetType}: ${assetName}`);
   }
 
-  // Call Reve API with retry logic
+  // Call the selected image API with retry logic
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -107,27 +121,51 @@ export async function generateAsset(params: {
       // Save image
       const filename = `${assetName.toLowerCase()}_${angleType}_v${version}.png`;
       const filePath = path.join(assetDir, filename);
-
-      let resultPath: string;
-      const useGrok = params.videoBackend === "grok";
       // Characters and objects use 1:1 (reference images); locations use the run's aspect ratio
       const assetAspectRatio = (assetType === "character" || assetType === "object") ? "1:1" : (params.aspectRatio ?? "16:9");
 
+      let resultPath: string;
       if (isEditing) {
-        if (useGrok) {
-          // Image edit via Grok API (uses remix with single reference image)
-          resultPath = await remixImageGrok(prompt, [referenceImagePath!], { aspectRatio: assetAspectRatio, outputPath: filePath });
-        } else {
-          // Image edit via Reve API
-          resultPath = await editImage(referenceImagePath!, prompt, { outputPath: filePath });
+        switch (imageBackend) {
+          case "grok":
+            resultPath = await remixImageGrok(prompt, [referenceImagePath!], {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
+          case "nano-banana":
+            resultPath = await remixImageNanoBanana(prompt, [referenceImagePath!], {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
+          case "reve":
+            resultPath = await remixImage(prompt, [referenceImagePath!], {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
         }
       } else {
-        if (useGrok) {
-          // Text to image via Grok API
-          resultPath = await createImageGrok(prompt, { aspectRatio: assetAspectRatio, outputPath: filePath });
-        } else {
-          // Text to image via Reve API
-          resultPath = await createImage(prompt, { aspectRatio: assetAspectRatio, outputPath: filePath });
+        switch (imageBackend) {
+          case "grok":
+            resultPath = await createImageGrok(prompt, {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
+          case "nano-banana":
+            resultPath = await createImageNanoBanana(prompt, {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
+          case "reve":
+            resultPath = await createImage(prompt, {
+              aspectRatio: assetAspectRatio,
+              outputPath: filePath,
+            });
+            break;
         }
       }
 
@@ -158,7 +196,7 @@ export async function generateAsset(params: {
  */
 export const generateAssetTool = {
   description:
-    "Generate reference images for characters and locations using the Reve API. When referenceImagePath is provided, edits the reference image to create variations (e.g., different angles) while maintaining exact consistency in appearance, clothing, features, and color palette.",
+    "Generate reference images for characters, locations, and objects using the configured image backend. When referenceImagePath is provided, remix the reference image to create variations while maintaining consistency.",
   parameters: z.object({
     characterName: z.string().optional(),
     locationName: z.string().optional(),

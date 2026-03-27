@@ -5,6 +5,7 @@ import { EventEmitter } from "events";
 import { QueueManager } from "./queue-manager.js";
 import { QueueProcessor, getQueueConcurrency } from "./processors.js";
 import type { WorkItem, QueueName } from "./types.js";
+import type { ImageBackend, VideoBackend } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Path helpers — stored paths are relative to process.cwd()
@@ -45,6 +46,8 @@ export interface RunOptions {
   needsConversion?: boolean;   // if true, seed story_to_script first
   aspectRatio?: string;        // e.g. "16:9"
   dryRun?: boolean;
+  imageBackend?: ImageBackend;
+  videoBackend?: VideoBackend;
 }
 
 // ---------------------------------------------------------------------------

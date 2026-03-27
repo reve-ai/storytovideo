@@ -81,6 +81,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     runStatus === "running" ||
     runStatus === "stopped" ||
     runStatus === "pausing";
+  const activeRun = runs.find((run) => run.id === activeRunId);
 
   return (
     <header className="top-bar">
@@ -103,6 +104,21 @@ export default function TopBar({ onNewRun }: TopBarProps) {
             </NavLink>
           ))}
         </nav>
+        {activeRun && (
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              marginTop: "0.5rem",
+              fontSize: "0.75rem",
+              color: "var(--muted)",
+              flexWrap: "wrap",
+            }}
+          >
+            <span>Image: {activeRun.options.imageBackend ?? "grok"}</span>
+            <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
+          </div>
+        )}
       </div>
       <div className="top-bar-right">
         <select
