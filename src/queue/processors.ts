@@ -437,6 +437,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     signal.throwIfAborted();
     const state = this.queueManager.getState();
     const aspectRatio = state.options?.aspectRatio;
+    const imageBackend = state.options?.imageBackend ?? 'grok';
     const result = await generateAsset({
       characterName: item.inputs.characterName as string | undefined,
       locationName: item.inputs.locationName as string | undefined,
@@ -445,7 +446,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       artStyle: item.inputs.artStyle as string,
       outputDir: join(this.resolvedOutputDir(), 'assets'),
       referenceImagePath: item.inputs.referenceImagePath as string | undefined,
-      videoBackend: 'grok',
+      imageBackend,
       aspectRatio,
       version: item.version,
     });
@@ -511,12 +512,13 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     const aspectRatio = state.options?.aspectRatio;
+    const imageBackend = state.options?.imageBackend ?? 'grok';
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
       assetLibrary: state.assetLibrary,
       outputDir: this.resolvedOutputDir(),
-      videoBackend: 'grok',
+      imageBackend,
       aspectRatio,
       version: item.version,
     });
@@ -536,6 +538,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     const shot = item.inputs.shot as Shot;
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
     const aspectRatio = state.options?.aspectRatio;
+    const videoBackend = state.options?.videoBackend ?? 'grok';
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
@@ -551,7 +554,7 @@ ${JSON.stringify(analysis, null, 2)}`,
       durationSeconds: shot.durationSeconds,
       startFramePath,
       outputDir: join(this.resolvedOutputDir(), 'videos'),
-      videoBackend: 'grok',
+      videoBackend,
       characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
       aspectRatio,
       abortSignal: signal,

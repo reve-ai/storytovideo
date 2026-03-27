@@ -1,4 +1,4 @@
-import type { StoryAnalysis, AssetLibrary } from '../types.js';
+import type { StoryAnalysis, AssetLibrary, ImageBackend, VideoBackend } from '../types.js';
 
 // Work item types matching each pipeline step
 export type WorkItemType =
@@ -36,7 +36,7 @@ export interface WorkItem {
   priority: Priority;
   version: number;                      // starts at 1, increments on redo
   itemKey: string;                      // stable identifier, e.g. "frame:scene:1:shot:3", shared across versions
-  dependencies: string[];               // IDs of work items that must complete first
+  dependencies: string[];               // Work item IDs or stable itemKeys that must complete first
   inputs: Record<string, unknown>;      // data needed to execute
   outputs: Record<string, unknown>;     // results after completion
   retryCount: number;                   // number of times this item has been retried (0 = first attempt)
@@ -72,7 +72,13 @@ export interface RunState {
   manualDurations?: Record<string, boolean>;
 
   // Run options (aspect ratio, etc.)
-  options?: { aspectRatio?: string; needsConversion?: boolean; dryRun?: boolean };
+  options?: {
+    aspectRatio?: string;
+    needsConversion?: boolean;
+    dryRun?: boolean;
+    imageBackend?: ImageBackend;
+    videoBackend?: VideoBackend;
+  };
 }
 
 // Snapshot of a single queue for the UI list view
