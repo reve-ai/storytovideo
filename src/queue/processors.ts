@@ -438,6 +438,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     const state = this.queueManager.getState();
     const aspectRatio = state.options?.aspectRatio;
     const imageBackend = state.options?.imageBackend ?? 'grok';
+    console.log(`[handleGenerateAsset] Using imageBackend=${imageBackend} (${item.itemKey})`);
     const result = await generateAsset({
       characterName: item.inputs.characterName as string | undefined,
       locationName: item.inputs.locationName as string | undefined,
@@ -513,6 +514,7 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     const aspectRatio = state.options?.aspectRatio;
     const imageBackend = state.options?.imageBackend ?? 'grok';
+    console.log(`[handleGenerateFrame] Using imageBackend=${imageBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
@@ -539,6 +541,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
     const aspectRatio = state.options?.aspectRatio;
     const videoBackend = state.options?.videoBackend ?? 'grok';
+    console.log(`[handleGenerateVideo] Using videoBackend=${videoBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,

@@ -31,7 +31,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const IMAGE_BACKENDS: readonly ImageBackend[] = ["grok", "reve", "nano-banana"];
-const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo"];
+const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo", "ltx-full", "ltx-distilled"];
 
 function parseImageBackend(value: unknown): ImageBackend | undefined {
   return typeof value === "string" && IMAGE_BACKENDS.includes(value as ImageBackend)
