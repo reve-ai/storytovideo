@@ -1157,6 +1157,13 @@ export class ProcessorGroup extends EventEmitter {
       proc.on('pipeline:pause', (data) => this.emit('pipeline:pause', data));
       return proc;
     });
+
+    // Wire up supersession callback so in-flight work is aborted when items are superseded
+    queueManager.onItemSuperseded = (itemId: string) => {
+      for (const proc of this.processors) {
+        if (proc.cancelItem(itemId)) break;
+      }
+    };
   }
 
   start(): void {

@@ -27,6 +27,9 @@ export class QueueManager {
   private state: RunState;
   private stateFilePath: string;
 
+  /** Called when an in-progress item is superseded so the processor can abort it. */
+  onItemSuperseded?: (itemId: string) => void;
+
   constructor(runId: string, storyFile: string, outputDir: string, options?: RunState['options']) {
     // Resolve to absolute for fs operations; store the (possibly relative) outputDir as-is in state
     const absOutputDir = isAbsolute(outputDir) ? outputDir : resolve(process.cwd(), outputDir);
@@ -328,7 +331,7 @@ export class QueueManager {
     });
 
     // Mark old as superseded
-    old.status = 'superseded';
+    this.setSuperseded(old);
     old.supersededBy = newItem.id;
 
     // Recursively create new versions of downstream dependents
@@ -353,13 +356,13 @@ export class QueueManager {
       // Don't cascade items whose inputs come from parent outputs. They will be
       // re-seeded later with fresh paths after the upstream item completes.
       if (dep.type === 'generate_video') {
-        dep.status = 'superseded';
+        this.setSuperseded(dep);
         this.cascadeSupersededVideoDependents(dep);
         continue;
       }
 
       if (dep.type === 'analyze_video') {
-        dep.status = 'superseded';
+        this.setSuperseded(dep);
         this.supersedeDependents(dep.id);
         continue;
       }
@@ -386,7 +389,7 @@ export class QueueManager {
       });
 
       // Mark old dependent as superseded
-      dep.status = 'superseded';
+      this.setSuperseded(dep);
       dep.supersededBy = newDep.id;
 
       // Recurse into this dependent's dependents
@@ -405,7 +408,7 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
-      dep.status = 'superseded';
+      this.setSuperseded(dep);
       this.supersedeDependents(dep.id);
     }
   }
@@ -420,8 +423,17 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
-      dep.status = 'superseded';
+      this.setSuperseded(dep);
       this.supersedeDependents(dep.id);
+    }
+  }
+
+  /** Mark an item as superseded. If it was in_progress, notify via callback so the processor can abort. */
+  private setSuperseded(item: WorkItem): void {
+    const wasInProgress = item.status === 'in_progress';
+    item.status = 'superseded';
+    if (wasInProgress && this.onItemSuperseded) {
+      this.onItemSuperseded(item.id);
     }
   }
 

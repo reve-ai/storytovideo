@@ -241,6 +241,13 @@ export class RunManager extends EventEmitter {
     }
 
     this.processors.set(runId, procs);
+
+    // Wire up supersession callback so in-flight work is aborted when items are superseded
+    qm.onItemSuperseded = (itemId: string) => {
+      for (const proc of procs) {
+        if (proc.cancelItem(itemId)) break;
+      }
+    };
   }
 
   private async withRunLock<T>(runId: string, fn: () => Promise<T>): Promise<T> {
