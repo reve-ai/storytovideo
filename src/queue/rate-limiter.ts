@@ -3,6 +3,8 @@ export interface RateLimiterConfig {
   maxRPS: number;
   /** Maximum concurrent in-flight requests */
   maxConcurrent: number;
+  /** Optional name for logging (e.g. provider name) */
+  name?: string;
   /** Window in ms for RPM tracking (default 60000) */
   windowMs?: number;
   /** Maximum backoff cap in ms (default 120000) */
@@ -19,6 +21,7 @@ export interface RateLimiterStatus {
 }
 
 export class RateLimiter {
+  private readonly name: string;
   private readonly maxRPS: number;
   private readonly maxConcurrent: number;
   private readonly maxBackoffMs: number;
@@ -36,12 +39,13 @@ export class RateLimiter {
   private refillTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: RateLimiterConfig) {
+    this.name = config.name ?? 'unknown';
     this.maxRPS = config.maxRPS;
     this.maxConcurrent = config.maxConcurrent;
     this.maxBackoffMs = config.maxBackoffMs ?? 120_000;
     this.adaptiveWindowMs = config.adaptiveWindowMs ?? 30_000;
 
-    this.tokens = config.maxRPS;
+    this.tokens = Math.max(1, config.maxRPS);
     this.lastRefillTime = Date.now();
 
     // Refill tokens periodically
@@ -56,10 +60,13 @@ export class RateLimiter {
    * Blocks until a token is available AND concurrent count is below max.
    */
   async acquire(): Promise<void> {
-    while (!this._canAcquire()) {
-      await new Promise<void>((resolve) => {
-        this.waitQueue.push(resolve);
-      });
+    if (!this._canAcquire()) {
+      console.log(`[rate-limiter] ${this.name}: Waiting for token (current: ${this.tokens.toFixed(3)}, concurrent: ${this.currentConcurrent}/${this.maxConcurrent})`);
+      while (!this._canAcquire()) {
+        await new Promise<void>((resolve) => {
+          this.waitQueue.push(resolve);
+        });
+      }
     }
     this.tokens--;
     this.currentConcurrent++;
@@ -153,7 +160,7 @@ export class RateLimiter {
     const now = Date.now();
     const elapsed = now - this.lastRefillTime;
     const tokensToAdd = (elapsed / 1000) * this.maxRPS;
-    this.tokens = Math.min(this.maxRPS, this.tokens + tokensToAdd);
+    this.tokens = Math.min(Math.max(1, this.maxRPS), this.tokens + tokensToAdd);
     this.lastRefillTime = now;
   }
 

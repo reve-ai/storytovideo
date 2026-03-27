@@ -63,7 +63,7 @@ class RateLimiterRegistry {
       const maxRPS = readEnvNumber(`RATE_LIMIT_${prefix}_RPS`) ?? defaults.maxRPS;
       const maxConcurrent = readEnvNumber(`RATE_LIMIT_${prefix}_CONCURRENT`) ?? defaults.maxConcurrent;
 
-      limiter = new RateLimiter({ maxRPS, maxConcurrent });
+      limiter = new RateLimiter({ maxRPS, maxConcurrent, name: provider });
       this.limiters.set(provider, limiter);
       console.log(`[rate-limiter] Created "${provider}" limiter: ${maxRPS} RPS, ${maxConcurrent} max concurrent`);
     }
