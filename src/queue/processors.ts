@@ -473,43 +473,44 @@ ${JSON.stringify(analysis, null, 2)}`,
     if (shot.continuousFromPrevious && shot.shotInScene > 1) {
       const prevVideoKey = `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`;
       const prevVideoPath = state.generatedOutputs[prevVideoKey];
+      console.log(`[handleGenerateFrame] Looking up previous video: key=${prevVideoKey}, found=${!!prevVideoPath}`);
 
-      if (prevVideoPath) {
-        const framesDir = join(this.resolvedOutputDir(), 'frames');
-        const outputFramePath = join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${item.version}_start.png`);
-
-        try {
-          mkdirSync(framesDir, { recursive: true });
-          console.log(`[handleGenerateFrame] ${shotContext}: extracting last frame from ${prevVideoKey}`);
-          execFileSync('ffmpeg', [
-            '-y',
-            '-sseof',
-            '-0.1',
-            '-i',
-            this.absolutePath(prevVideoPath),
-            '-frames:v',
-            '1',
-            '-update',
-            '1',
-            outputFramePath,
-          ], { stdio: 'pipe' });
-
-          const relativeStartPath = this.relativePath(outputFramePath);
-          this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, relativeStartPath);
-
-          return {
-            shotNumber: shot.shotNumber,
-            startPath: relativeStartPath,
-          };
-        } catch (error) {
-          const details = error instanceof Error
-            ? error.message
-            : String(error);
-          console.warn(`[handleGenerateFrame] ${shotContext}: failed to extract last frame from ${prevVideoKey}; falling back to normal generation. ${details}`);
-        }
-      } else {
-        console.log(`[handleGenerateFrame] ${shotContext}: previous video ${prevVideoKey} not available; falling back to normal frame generation`);
+      if (!prevVideoPath) {
+        throw new Error(`Continuity extraction failed: previous video not found in generatedOutputs (key=${prevVideoKey})`);
       }
+
+      const framesDir = join(this.resolvedOutputDir(), 'frames');
+      const outputFramePath = join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${item.version}_start.png`);
+
+      mkdirSync(framesDir, { recursive: true });
+      console.log(`[handleGenerateFrame] ${shotContext}: extracting last frame from ${prevVideoKey}`);
+      try {
+        execFileSync('ffmpeg', [
+          '-y',
+          '-sseof',
+          '-0.1',
+          '-i',
+          this.absolutePath(prevVideoPath),
+          '-frames:v',
+          '1',
+          '-update',
+          '1',
+          outputFramePath,
+        ], { stdio: 'pipe' });
+      } catch (error) {
+        const details = error instanceof Error
+          ? error.message
+          : String(error);
+        throw new Error(`Continuity extraction failed: ffmpeg error extracting last frame from ${prevVideoKey}. ${details}`);
+      }
+
+      const relativeStartPath = this.relativePath(outputFramePath);
+      this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, relativeStartPath);
+
+      return {
+        shotNumber: shot.shotNumber,
+        startPath: relativeStartPath,
+      };
     }
 
     const aspectRatio = state.options?.aspectRatio;

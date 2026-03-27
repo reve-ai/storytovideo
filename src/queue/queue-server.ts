@@ -699,6 +699,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         try {
           const newItem = runManager.redoItem(runId, targetItem.id, targetInputs);
           if (!newItem) { sendJson(res, 404, { error: `Item not found: ${targetItem.id}` }); return; }
+
+          // When enabling continuity, ensure the new frame item depends on the previous video
+          if (enabled && shotInScene > 1) {
+            const prevVideoKey = `video:scene:${sceneNumber}:shot:${shotInScene - 1}`;
+            qm.addDependency(newItem.id, prevVideoKey);
+          }
+
           qm.updateShotContinuity(sceneNumber, shotInScene, enabled);
           qm.save();
           await runManager.resumeRun(runId);

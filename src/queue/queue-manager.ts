@@ -262,6 +262,19 @@ export class QueueManager {
     return this.snapshot(item);
   }
 
+  /** Add a dependency to an existing pending item (idempotent — skips if already present). */
+  addDependency(itemId: string, depRef: string): WorkItem {
+    const item = this.requireItem(itemId);
+    if (item.status !== 'pending') {
+      throw new Error(`Cannot add dependency to item ${itemId}: status is '${item.status}', expected 'pending'`);
+    }
+    if (!item.dependencies.includes(depRef)) {
+      item.dependencies.push(depRef);
+      this.touch();
+    }
+    return this.snapshot(item);
+  }
+
   updateItemInputs(id: string, fields: Record<string, unknown>): WorkItem {
     const item = this.requireItem(id);
     if (item.status !== 'pending') {
