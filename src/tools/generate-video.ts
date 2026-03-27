@@ -247,7 +247,12 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         let veoReleased = false;
         try {
 
-        let operation = await client.models.generateVideos({
+        console.log(`[generateVideo] ${shotContext}: Calling Veo API (attempt ${attempt}/${maxRetries})...`);
+
+        // Wrap the generateVideos call with a 60-second timeout to avoid hanging forever
+        const veoTimeoutMs = 60000;
+        let operation: Awaited<ReturnType<typeof client.models.generateVideos>>;
+        const veoCallPromise = client.models.generateVideos({
           model: "veo-3.1-generate-preview",
           prompt: videoPrompt,
           image: startImage,
@@ -255,6 +260,12 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
             ...config,
           } as any,
         });
+        const veoTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Veo API call timed out after ${veoTimeoutMs / 1000}s for ${shotContext}`)), veoTimeoutMs)
+        );
+        operation = await Promise.race([veoCallPromise, veoTimeoutPromise]);
+
+        console.log(`[generateVideo] ${shotContext}: Veo API returned operation: ${operation.name}, done=${operation.done}`);
 
         // Poll for operation completion
         console.log(`[generateVideo] Polling for completion (operation: ${operation.name})`);
@@ -312,6 +323,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         }
       } catch (error: any) {
         lastError = error;
+        console.error(`[generateVideo] ${shotContext}: Veo API error (attempt ${attempt}/${maxRetries}):`, error);
         // Don't retry if cancelled due to pipeline interruption
         if (error?.message?.includes('cancelled due to pipeline interruption')) {
           throw error;
