@@ -227,14 +227,20 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         };
 
         // Build config
-        // Veo 3.1 interpolation only supports 8s duration.
+        // Veo 3.1 image-to-video supports 4, 6, or 8 second durations.
+        // Clamp the requested duration to the nearest valid value.
+        const validDurations = [4, 6, 8];
+        const clampedDuration = validDurations.reduce((prev, curr) =>
+          Math.abs(curr - durationSeconds) < Math.abs(prev - durationSeconds) ? curr : prev
+        );
+        const aspectRatio = params.aspectRatio || "16:9";
         const config: Record<string, unknown> = {
-          durationSeconds: 8,
-          aspectRatio: "16:9",
+          durationSeconds: clampedDuration,
+          aspectRatio,
           personGeneration: "allow_adult",
         };
 
-        console.log(`[generateVideo] Config: durationSeconds=${config.durationSeconds}, aspectRatio=${config.aspectRatio}`);
+        console.log(`[generateVideo] Veo config: durationSeconds=${clampedDuration} (requested ${durationSeconds}), aspectRatio=${aspectRatio}`);
 
         const limiter = rateLimiters.get('veo');
         await limiter.acquire();
@@ -296,7 +302,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         });
 
         console.log(`[generateVideo] ${shotContext} saved to ${outputPath}`);
-	        return { shotNumber, path: outputPath, duration: 8, promptSent: videoPrompt };
+	        return { shotNumber, path: outputPath, duration: clampedDuration, promptSent: videoPrompt };
 
         } finally {
           if (!veoReleased) {
@@ -346,7 +352,7 @@ export const generateVideoTool = {
     dialogue: z.string().describe("Character dialogue (empty if none)"),
     soundEffects: z.string().describe("Sound effects description"),
     cameraDirection: z.string().describe("Camera movement and angle"),
-    durationSeconds: z.number().describe("Video duration in seconds (0.5-15). Veo always uses 8; Grok supports 1-15."),
+    durationSeconds: z.number().describe("Video duration in seconds (0.5-15). Veo supports 4, 6, or 8 seconds; Grok supports 1-15."),
     startFramePath: z.string().describe("Path to start frame image"),
     outputDir: z.string().describe("Output directory for video file"),
     dryRun: z.boolean().optional().describe("Return placeholder without calling API"),
