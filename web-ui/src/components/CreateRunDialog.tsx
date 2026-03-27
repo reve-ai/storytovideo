@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useNavigate } from "react-router";
 import { useRunStore, type ImageBackend, type VideoBackend } from "../stores/run-store";
 
 interface CreateRunDialogProps {
@@ -35,6 +36,7 @@ export default function CreateRunDialog({
   const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
   const [submitting, setSubmitting] = useState(false);
   const createRun = useRunStore((s) => s.createRun);
+  const navigate = useNavigate();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus textarea when dialog opens
@@ -53,6 +55,7 @@ export default function CreateRunDialog({
       setSubmitting(true);
       try {
         await createRun(text, { aspectRatio, imageBackend, videoBackend });
+        navigate("/");
         setStoryText("");
         setAspectRatio("16:9");
         setImageBackend("grok");
@@ -64,7 +67,7 @@ export default function CreateRunDialog({
         setSubmitting(false);
       }
     },
-    [storyText, aspectRatio, imageBackend, videoBackend, submitting, createRun, onClose],
+    [storyText, aspectRatio, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
   );
 
   if (!open) return null;

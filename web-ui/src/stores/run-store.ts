@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { usePipelineStore } from "./pipeline-store";
+import { useUIStore } from "./ui-store";
 
 // --- URL hash helpers ---
 
@@ -124,6 +125,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
     const run: RunRecord = await res.json();
     await get().loadRuns();
     await get().selectRun(run.id);
+    useUIStore.getState().setView("queue");
     return run;
   },
 
