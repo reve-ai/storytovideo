@@ -481,18 +481,15 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
   console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
 
   // Resolve aspect ratio to LTX pixel dimensions
-  // Parse ratio string (e.g. "16:9") into a numeric aspect value
   const aspectRatio = params.aspectRatio || "16:9";
-  const [aw, ah] = aspectRatio.split(":").map(Number);
-  const aspect = aw && ah ? aw / ah : 16 / 9;
   let width: number;
   let height: number;
-  if (aspect >= 1.5) {
-    width = 1408; height = 768;   // landscape
-  } else if (aspect <= 0.67) {
-    width = 768; height = 1408;   // portrait
+  if (aspectRatio === "16:9") {
+    width = 1408; height = 768;
+  } else if (aspectRatio === "9:16") {
+    width = 768; height = 1408;
   } else {
-    width = 1024; height = 1024;  // square-ish
+    width = 1024; height = 1024;
   }
 
   try {
