@@ -93,6 +93,14 @@ SCENE TRANSITIONS:
 - "fade_black" for dramatic mood shifts, time jumps, or emotional beats — quick fade out to black then fade in
 - Keep transitions SHORT (0.5-0.75 second) — they shouldn't distract
 
+PROMPT WRITING STYLE:
+- startFramePrompt should read like a director's shot description, NOT a character sheet or casting call.
+- Focus on blocking (where characters stand/sit), action (what they're doing), camera angle, and mood.
+- Reference images provide all character and location appearance — the prompt provides DIRECTION.
+- Refer to characters by name (e.g., "Elena") or role (e.g., "the detective"). Do NOT describe hair color, eye color, skin tone, clothing details, or other physical attributes.
+- Do NOT describe location visuals in detail — the location reference image handles that. Just name the location.
+- Keep startFramePrompt concise: under 150 words. Every word should describe composition or action, not appearance.
+
 `;
 
 // ---------------------------------------------------------------------------

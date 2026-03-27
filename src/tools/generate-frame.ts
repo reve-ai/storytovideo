@@ -1,9 +1,20 @@
 import { z } from "zod";
 import { createImage, remixImage } from "../reve-client";
 import { createImageGrok, remixImageGrok } from "../grok-image-client";
-import type { Shot, AssetLibrary, FrameReference } from "../types";
+import { createImageNanoBanana, remixImageNanoBanana } from "../nano-banana-image-client";
+import type { Shot, AssetLibrary, FrameReference, ImageBackend, VideoBackend } from "../types";
 import * as fs from "fs";
 import * as path from "path";
+
+type LegacyImageBackend = VideoBackend | "comfy";
+
+function resolveImageBackend(imageBackend?: ImageBackend, videoBackend?: LegacyImageBackend): ImageBackend {
+  if (imageBackend) {
+    return imageBackend;
+  }
+
+  return videoBackend === "grok" ? "grok" : "reve";
+}
 
 type GeneratedSingleFrameResult = {
   path: string;
@@ -23,7 +34,8 @@ export async function generateFrame(params: {
   assetLibrary: AssetLibrary;
   outputDir: string;
   dryRun?: boolean;
-  videoBackend?: "veo" | "comfy" | "grok";
+  imageBackend?: ImageBackend;
+  videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
 }): Promise<{
@@ -31,8 +43,9 @@ export async function generateFrame(params: {
   startPath?: string;
   startReferences?: FrameReference[];
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, videoBackend, aspectRatio, version = 1 } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1 } = params;
   const shotContext = formatShotContext(shot);
+  const resolvedImageBackend = resolveImageBackend(imageBackend, videoBackend);
 
   // Create frames directory if it doesn't exist
   const framesDir = path.join(outputDir, "frames");
@@ -57,7 +70,7 @@ export async function generateFrame(params: {
       artStyle,
       assetLibrary,
       outputPath: startPath,
-      videoBackend,
+      imageBackend: resolvedImageBackend,
       aspectRatio,
     });
 
@@ -74,14 +87,14 @@ export async function generateFrame(params: {
 }
 
 /**
- * Generates a single start frame with reference images using the Reve/Grok API.
+ * Generates a single start frame with reference images using the selected image backend.
  */
 async function generateSingleFrame(params: {
   shot: Shot;
   artStyle: string;
   assetLibrary: AssetLibrary;
   outputPath: string;
-  videoBackend?: "veo" | "comfy" | "grok";
+  imageBackend: ImageBackend;
   aspectRatio?: string;
 }): Promise<GeneratedSingleFrameResult> {
   const {
@@ -89,7 +102,7 @@ async function generateSingleFrame(params: {
     artStyle,
     assetLibrary,
     outputPath,
-    videoBackend,
+    imageBackend,
     aspectRatio,
   } = params;
 
@@ -98,6 +111,14 @@ async function generateSingleFrame(params: {
     && shot.charactersPresent.length > 1
     && normalizedSpeaker !== "narrator"
     && normalizedSpeaker !== "voiceover";
+
+  // Pre-check whether any reference images exist in the asset library
+  const hasAnyCharRef = shot.charactersPresent.some(name => {
+    const refs = assetLibrary.characterImages[name];
+    return refs && (refs.front || refs.angle);
+  });
+  const hasLocationRef = Boolean(assetLibrary.locationImages[shot.location]);
+  const hasReferenceImages = hasAnyCharRef || hasLocationRef;
 
   // Build the prompt
   const framePrompt = shot.startFramePrompt;
@@ -110,6 +131,7 @@ async function generateSingleFrame(params: {
     framePrompt,
     cameraDirection: shot.cameraDirection,
     hasCharacterDialogue,
+    hasReferenceImages,
   });
 
   const shotContext = formatShotContext(shot);
@@ -158,8 +180,8 @@ async function generateSingleFrame(params: {
     }
   }
 
-  // Limit reference images: Grok supports up to 5, Reve up to 6
-  const maxRefs = videoBackend === "grok" ? 5 : 6;
+  // Limit reference images: Grok supports up to 5, Reve and Nano Banana up to 6 here.
+  const maxRefs = imageBackend === "grok" ? 5 : 6;
   const limitedReferencePaths = referenceImagePaths.slice(0, maxRefs);
   const referencesUsed = limitedReferencePaths.map((refPath): FrameReference => {
     if (refPath === locationRef) {
@@ -195,59 +217,83 @@ async function generateSingleFrame(params: {
     }
     const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
     const remixPrompt = imgPrefix + prompt;
-    if (videoBackend !== "grok" && remixPrompt.length > 2560) {
+    if (imageBackend === "reve" && remixPrompt.length > 2560) {
       console.warn(`[generateFrame] ${shotContext}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
     console.log(`[generateFrame]   Final reference paths (${limitedReferencePaths.length}):`, limitedReferencePaths);
     console.log(`[generateFrame]   Prompt (first 200 chars): ${remixPrompt.substring(0, 200)}...`);
 
-    if (videoBackend === "grok") {
-      return {
-        path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
-          aspectRatio: aspectRatio ?? "16:9",
-          outputPath,
-        }),
-        referencesUsed,
-      };
-    } else {
-      return {
-        path: await remixImage(remixPrompt, limitedReferencePaths, {
-          aspectRatio: aspectRatio ?? "16:9",
-          outputPath,
-        }),
-        referencesUsed,
-      };
+    switch (imageBackend) {
+      case "grok":
+        return {
+          path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed,
+        };
+      case "nano-banana":
+        return {
+          path: await remixImageNanoBanana(remixPrompt, limitedReferencePaths, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed,
+        };
+      case "reve":
+        return {
+          path: await remixImage(remixPrompt, limitedReferencePaths, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed,
+        };
     }
   } else {
     // No reference images — use text-to-image generation
     console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
     console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
-    if (videoBackend !== "grok" && prompt.length > 2560) {
+    if (imageBackend === "reve" && prompt.length > 2560) {
       console.warn(`[generateFrame] ${shotContext}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
-    if (videoBackend === "grok") {
-      return {
-        path: await createImageGrok(prompt, {
-          aspectRatio: aspectRatio ?? "16:9",
-          outputPath,
-        }),
-        referencesUsed: [],
-      };
-    } else {
-      return {
-        path: await createImage(prompt, {
-          aspectRatio: aspectRatio ?? "16:9",
-          outputPath,
-        }),
-        referencesUsed: [],
-      };
+
+    switch (imageBackend) {
+      case "grok":
+        return {
+          path: await createImageGrok(prompt, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed: [],
+        };
+      case "nano-banana":
+        return {
+          path: await createImageNanoBanana(prompt, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed: [],
+        };
+      case "reve":
+        return {
+          path: await createImage(prompt, {
+            aspectRatio: aspectRatio ?? "16:9",
+            outputPath,
+          }),
+          referencesUsed: [],
+        };
     }
   }
 }
 
 /**
  * Builds a detailed prompt for frame generation.
+ *
+ * When `hasReferenceImages` is true (the common case), outputs a slim prompt
+ * that omits verbose location/character descriptions — those come from the
+ * reference images themselves. When false (rare edge-case with no refs),
+ * keeps the fuller legacy format as a fallback.
  */
 function buildFramePrompt(params: {
   artStyle: string;
@@ -258,6 +304,7 @@ function buildFramePrompt(params: {
   framePrompt: string;
   cameraDirection: string;
   hasCharacterDialogue: boolean;
+  hasReferenceImages: boolean;
 }): string {
   const {
     artStyle,
@@ -268,8 +315,24 @@ function buildFramePrompt(params: {
     framePrompt,
     cameraDirection,
     hasCharacterDialogue,
+    hasReferenceImages,
   } = params;
 
+  if (hasReferenceImages) {
+    // Slim prompt — reference images provide character/location appearance
+    const locationName = locationDescription.split(",")[0].split(".")[0].trim();
+    const parts = [
+      `Style: ${artStyle}.`,
+      `${composition} shot, ${cameraDirection}.`,
+      `Location: ${locationName}.`,
+      (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
+      hasCharacterDialogue ? "Characters face each other, not the camera." : "",
+      framePrompt,
+    ].filter(Boolean);
+    return parts.join(" ");
+  }
+
+  // Fallback — no reference images, include full descriptions
   const parts = [
     `Style: ${artStyle}.`,
     `${composition} shot, ${cameraDirection}.`,
@@ -288,7 +351,7 @@ function buildFramePrompt(params: {
  */
 export const generateFrameTool = {
   description:
-    "Generate start keyframe image for a shot using the Reve/Grok API.",
+    "Generate start keyframe image for a shot using the configured image backend.",
   parameters: z.object({
     shot: z.object({
       shotNumber: z.number(),
