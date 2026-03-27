@@ -28,6 +28,12 @@ Each shot has a START FRAME (an image) and an ACTION PROMPT (what happens). A vi
 - The action prompt describes what happens during the shot.
 - If you need a different camera angle or different character focus, that is a NEW SHOT (cut to it).
 
+CONTINUITY FLAG (continuousFromPrevious):
+- Only set continuousFromPrevious=true when this shot is literally the SAME camera a moment later: same composition, same subject, same camera angle, same framing.
+- Use it for true visual continuity only — the next shot should feel like the same camera kept rolling for another beat.
+- The first shot of every scene MUST set continuousFromPrevious=false.
+- If the subject changes, the camera angle changes, or the composition changes, set continuousFromPrevious=false.
+
 COMPOSITION TYPES:
 - wide_establishing: Wide view of the setting. Characters in context, spatial relationships.
 - over_the_shoulder: Camera behind ONE character's shoulder, focused on the person they're facing.
@@ -107,6 +113,7 @@ const perSceneShotSchema = z.object({
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
+  continuousFromPrevious: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -159,6 +166,7 @@ export function planShotsForScene(
     shotType: "first_last_frame" as const,
     durationSeconds: Math.max(2, Math.ceil(shot.durationSeconds)),
     objectsPresent: shot.objectsPresent ?? [],
+    continuousFromPrevious: shot.shotInScene > 1 ? (shot.continuousFromPrevious ?? false) : false,
   }));
 
   return processedShots;
