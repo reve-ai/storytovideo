@@ -216,17 +216,15 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!startFramePath) {
-          throw new Error("first_last_frame requires startFramePath");
+          throw new Error("startFramePath required");
         }
 
-        // Load start image as base64 (used for both start and end frame)
+        // Load start image as base64 (start frame)
         const startImageBuffer = readFileSync(startFramePath);
         const startImage = {
           imageBytes: startImageBuffer.toString("base64"),
           mimeType: "image/png",
         };
-
-        const endImage = startImage; // Use same frame for both
 
         // Build config
         // Veo 3.1 interpolation only supports 8s duration.
@@ -249,19 +247,21 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
           image: startImage,
           config: {
             ...config,
-            lastFrame: endImage,
           } as any,
         });
 
         // Poll for operation completion
         console.log(`[generateVideo] Polling for completion (operation: ${operation.name})`);
 
+        let pollCount = 0;
         while (!operation.done) {
           // Check abort signal before polling
           if (abortSignal?.aborted) {
             throw new Error("Video generation cancelled due to pipeline interruption");
           }
           await new Promise((resolve) => setTimeout(resolve, 10000)); // Wait 10 seconds between polls
+          pollCount++;
+          console.log(`[generateVideo] ${shotContext}: Polling... (${pollCount * 10}s elapsed)`);
           operation = await client.operations.getVideosOperation({ operation });
         }
 
