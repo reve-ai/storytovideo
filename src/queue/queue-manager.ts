@@ -143,6 +143,9 @@ export class QueueManager {
       const item = this.findNextReady(queue, priority);
       if (!item) continue;
       item.status = 'in_progress';
+      if (item.dependencies.some(d => d.startsWith('video:'))) {
+        console.log(`[claim] Claimed ${item.itemKey} with video deps: ${item.dependencies.filter(d => d.startsWith('video:')).join(', ')}`);
+      }
       item.startedAt = new Date().toISOString();
       this.touch();
       return this.snapshot(item);
@@ -320,7 +323,12 @@ export class QueueManager {
   private areDependenciesMet(item: WorkItem): boolean {
     return item.dependencies.every(depRef => {
       const dep = this.resolveDependencyRef(depRef);
-      return dep !== undefined && dep.status === 'completed';
+      const met = dep !== undefined && dep.status === 'completed';
+      // Log continuity-related dependency resolution
+      if (depRef.startsWith('video:')) {
+        console.log(`[deps] ${item.itemKey} dep "${depRef}" -> ${dep ? `${dep.itemKey} v${dep.version} (${dep.status})` : 'NOT FOUND'} => ${met ? 'MET' : 'NOT MET'}`);
+      }
+      return met;
     });
   }
 

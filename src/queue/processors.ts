@@ -469,6 +469,7 @@ ${JSON.stringify(analysis, null, 2)}`,
 
     const shot = item.inputs.shot as Shot;
     const shotContext = `scene ${shot.sceneNumber} shot ${shot.shotInScene}`;
+    console.log(`[handleGenerateFrame] ${shotContext}: dependencies=${JSON.stringify(item.dependencies)}, continuousFromPrevious=${shot.continuousFromPrevious}`);
 
     if (shot.continuousFromPrevious && shot.shotInScene > 1) {
       const prevVideoKey = `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`;
