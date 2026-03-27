@@ -101,6 +101,16 @@ PROMPT WRITING STYLE:
 - Do NOT describe location visuals in detail — the location reference image handles that. Just name the location.
 - Keep startFramePrompt concise: under 150 words. Every word should describe composition or action, not appearance.
 
+ACTION PROMPT WRITING STYLE:
+- actionPrompt describes what HAPPENS during the shot — it builds on the start frame, which already shows the visual scene.
+- The start frame provides all visual context (character appearance, object appearance, setting). actionPrompt only adds motion and change.
+- Think of actionPrompt as a director calling out blocking cues: "Elena reaches for the cup, lifts it, sips, sets it down."
+- Describe the sequence of actions, gestures, facial expression changes, and camera movement.
+- Use character names ("Elena") or roles ("the woman"), NOT physical descriptions ("the woman with dark brown hair").
+- Reference objects by name ("the toothpaste tube"), NOT by appearance ("the sleek white-and-blue toothpaste tube").
+- Do NOT re-describe what the start frame already shows. No appearance, no clothing, no setting details.
+- Keep actionPrompt concise — every word should describe motion, not appearance.
+
 `;
 
 // ---------------------------------------------------------------------------
