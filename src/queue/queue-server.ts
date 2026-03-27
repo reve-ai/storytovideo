@@ -754,6 +754,30 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           }
         }
 
+        // If this is a generate_video redo and the shot has continuousFromPrevious,
+        // redo the upstream frame instead — it will re-extract from the previous video
+        // and cascade back to create a new video
+        if (originalItem.type === 'generate_video' && targetItemId === itemId) {
+          const shot = (targetInputs?.shot ?? originalItem.inputs.shot) as Record<string, unknown> | undefined;
+          if (shot?.continuousFromPrevious) {
+            const frameItemId = originalItem.dependencies.find(depId => {
+              const dep = qm.getItem(depId);
+              return dep && dep.type === 'generate_frame';
+            });
+            if (frameItemId) {
+              targetItemId = frameItemId;
+              // Use the frame's own inputs so it re-extracts the continuity start frame;
+              // merge any caller-provided shot changes
+              const frameItem = qm.getItem(frameItemId);
+              if (newInputs && frameItem) {
+                targetInputs = { ...frameItem.inputs, ...newInputs };
+              } else {
+                targetInputs = undefined;
+              }
+            }
+          }
+        }
+
         const targetItem = qm.getItem(targetItemId);
         if (!targetItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
         if (targetItem.status === 'in_progress') {
