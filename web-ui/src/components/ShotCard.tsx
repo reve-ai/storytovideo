@@ -79,11 +79,7 @@ export default function ShotCard({
     Boolean(targetItemId) &&
     typeof shotInScene === "number" &&
     shotInScene > 1;
-  const continuityDisabled =
-    !canToggleContinuity ||
-    continuityBusy ||
-    frameItem?.status === "in_progress" ||
-    videoItem?.status === "in_progress";
+  const continuityDisabled = !canToggleContinuity || continuityBusy;
   const truncatedAction =
     actionPrompt && actionPrompt.length > 100
       ? actionPrompt.slice(0, 100) + "…"
