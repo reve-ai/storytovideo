@@ -373,7 +373,7 @@ export class QueueManager {
 
       // Normal cascade: create a new version of the dependent with updated dependency
       const updatedDeps = dep.dependencies.map(d =>
-        d === oldItemId ? newItemId : this.latestVersionId(d)
+        (d === oldItemId || d === oldItem?.itemKey) ? newItemId : this.latestVersionId(d)
       );
 
       const newDep = this.addItem({
@@ -420,26 +420,6 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
-      if (dep.type === 'generate_frame') {
-        const updatedDeps = dep.dependencies.map(dependency =>
-          dependencyRefs.has(dependency) ? videoItem.itemKey : this.latestVersionId(dependency)
-        );
-
-        const newDep = this.addItem({
-          type: dep.type,
-          queue: dep.queue,
-          itemKey: dep.itemKey,
-          dependencies: updatedDeps,
-          inputs: { ...dep.inputs },
-          priority: 'high',
-        });
-
-        dep.status = 'superseded';
-        dep.supersededBy = newDep.id;
-        this.cascadeRedo(dep.id, newDep.id);
-        continue;
-      }
-
       dep.status = 'superseded';
       this.supersedeDependents(dep.id);
     }
