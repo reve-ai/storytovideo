@@ -149,10 +149,12 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     return generateVideoVeo(sanitized);
   } else if (backend === "grok") {
     return generateVideoGrok(sanitized);
-  } else if (backend === "ltx") {
-    return generateVideoLtxBackend(sanitized);
+  } else if (backend === "ltx-full") {
+    return generateVideoLtxBackend(sanitized, "full");
+  } else if (backend === "ltx-distilled") {
+    return generateVideoLtxBackend(sanitized, "distilled");
   } else {
-    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "grok", or "ltx".`);
+    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "grok", "ltx-full", or "ltx-distilled".`);
   }
 }
 
@@ -436,7 +438,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
  * Uses image-to-video when a start frame is available; supports arbitrary durations.
  * Defaults to distilled mode for faster generation.
  */
-async function generateVideoLtxBackend(params: GenerateVideoParams): Promise<GenerateVideoResult> {
+async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full" | "distilled"): Promise<GenerateVideoResult> {
   const {
     shotNumber,
     sceneNumber,
@@ -495,7 +497,7 @@ async function generateVideoLtxBackend(params: GenerateVideoParams): Promise<Gen
       duration: durationSeconds,
       width,
       height,
-      mode: "distilled",
+      mode,
       outputPath,
       abortSignal,
     });

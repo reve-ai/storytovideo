@@ -21,7 +21,8 @@ const IMAGE_BACKENDS = [
 const VIDEO_BACKENDS = [
   { value: "grok", label: "Grok" },
   { value: "veo", label: "Veo" },
-  { value: "ltx", label: "LTX" },
+  { value: "ltx-distilled", label: "LTX Distilled" },
+  { value: "ltx-full", label: "LTX Full" },
 ] as const;
 
 export default function CreateRunDialog({
