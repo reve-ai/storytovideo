@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import { execFileSync } from 'child_process';
+import { mkdirSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
@@ -35,6 +37,7 @@ const perSceneShotSchema = z.object({
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
+  continuousFromPrevious: z.boolean().optional(),
 });
 
 const sceneShotsSchema = z.object({
@@ -348,6 +351,9 @@ SHOT PLANNING PRINCIPLES:
 - The actionPrompt describes the motion/action that unfolds from that starting point (character gestures, movement, expressions, etc.).
 - endFramePrompt must always be an empty string "" (the field is required by the schema but unused).
 - Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
+- continuousFromPrevious should be true ONLY when the next shot is literally the same camera a moment later: same composition, same subject, same camera angle, same framing.
+- The first shot in every scene must set continuousFromPrevious to false.
+- If the subject changes or the camera angle/composition changes, continuousFromPrevious must be false.
 
 COMPOSITION TYPES (what the camera sees and what happens):
 - wide_establishing: Wide view of the setting. Shows the environment, characters in context, spatial relationships. Action: characters move through space, enter/exit, interact with environment.
@@ -392,6 +398,7 @@ For this scene:
 9. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
 10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
 11. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
+12. Set continuousFromPrevious=true only for true hard continuity: the same composition, same subject, same angle, and same camera a beat later. First shot of the scene must be false. Different subject or different angle means false.
 
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}
@@ -459,6 +466,49 @@ ${JSON.stringify(analysis, null, 2)}`,
     }
 
     const shot = item.inputs.shot as Shot;
+    const shotContext = `scene ${shot.sceneNumber} shot ${shot.shotInScene}`;
+
+    if (shot.continuousFromPrevious && shot.shotInScene > 1) {
+      const prevVideoKey = `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`;
+      const prevVideoPath = state.generatedOutputs[prevVideoKey];
+
+      if (prevVideoPath) {
+        const framesDir = join(this.resolvedOutputDir(), 'frames');
+        const outputFramePath = join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${item.version}_start.png`);
+
+        try {
+          mkdirSync(framesDir, { recursive: true });
+          console.log(`[handleGenerateFrame] ${shotContext}: extracting last frame from ${prevVideoKey}`);
+          execFileSync('ffmpeg', [
+            '-y',
+            '-sseof',
+            '-0.1',
+            '-i',
+            this.absolutePath(prevVideoPath),
+            '-frames:v',
+            '1',
+            '-update',
+            '1',
+            outputFramePath,
+          ], { stdio: 'pipe' });
+
+          const relativeStartPath = this.relativePath(outputFramePath);
+          this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, relativeStartPath);
+
+          return {
+            shotNumber: shot.shotNumber,
+            startPath: relativeStartPath,
+          };
+        } catch (error) {
+          const details = error instanceof Error
+            ? error.message
+            : String(error);
+          console.warn(`[handleGenerateFrame] ${shotContext}: failed to extract last frame from ${prevVideoKey}; falling back to normal generation. ${details}`);
+        }
+      } else {
+        console.log(`[handleGenerateFrame] ${shotContext}: previous video ${prevVideoKey} not available; falling back to normal frame generation`);
+      }
+    }
 
     const aspectRatio = state.options?.aspectRatio;
     const result = await generateFrame({
@@ -829,6 +879,10 @@ ${JSON.stringify(analysis, null, 2)}`,
     for (const shot of shots) {
       const frameDeps = [planItem.id, ...assetItemIds];
 
+      if (shot.continuousFromPrevious && shot.shotInScene > 1) {
+        frameDeps.push(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`);
+      }
+
       this.queueManager.addItem({
         type: 'generate_frame',
         queue: 'image',
@@ -866,6 +920,34 @@ ${JSON.stringify(analysis, null, 2)}`,
     });
   }
 
+  private seedContinuityFrameAfterGenerateVideo(videoItem: WorkItem, analysis: StoryAnalysis, shot: Shot): void {
+    const scene = analysis.scenes.find(candidate => candidate.sceneNumber === shot.sceneNumber);
+    const nextShot = scene?.shots.find(candidate => candidate.shotInScene === shot.shotInScene + 1);
+
+    if (!nextShot || nextShot.skipped || !nextShot.continuousFromPrevious) {
+      return;
+    }
+
+    const frameKey = `frame:scene:${nextShot.sceneNumber}:shot:${nextShot.shotInScene}`;
+    const existingFrame = this.queueManager.getItemsByKey(frameKey);
+    const hasActiveFrame = existingFrame.some(
+      item => item.status !== 'superseded' && item.status !== 'cancelled'
+    );
+
+    if (hasActiveFrame) {
+      return;
+    }
+
+    this.queueManager.addItem({
+      type: 'generate_frame',
+      queue: 'image',
+      itemKey: frameKey,
+      dependencies: [videoItem.id],
+      inputs: { shot: nextShot },
+      priority: videoItem.priority,
+    });
+  }
+
   private seedAfterGenerateVideo(item: WorkItem, outputs: Record<string, unknown>): void {
     const state = this.queueManager.getState();
     const analysis = state.storyAnalysis;
@@ -876,6 +958,8 @@ ${JSON.stringify(analysis, null, 2)}`,
     const videoPath = outputs.path as string;
     const startFramePath = item.inputs.startFramePath as string;
     const shot = item.inputs.shot as Shot;
+
+    this.seedContinuityFrameAfterGenerateVideo(item, analysis, shot);
 
     // Collect reference image paths from the asset library for characters/objects/location in this shot
     const referenceImagePaths: string[] = [];

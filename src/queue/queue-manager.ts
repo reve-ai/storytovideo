@@ -352,7 +352,13 @@ export class QueueManager {
     for (const dep of dependents) {
       // Don't cascade items whose inputs come from parent outputs. They will be
       // re-seeded later with fresh paths after the upstream item completes.
-      if (dep.type === 'generate_video' || dep.type === 'analyze_video') {
+      if (dep.type === 'generate_video') {
+        dep.status = 'superseded';
+        this.cascadeSupersededVideoDependents(dep);
+        continue;
+      }
+
+      if (dep.type === 'analyze_video') {
         dep.status = 'superseded';
         this.supersedeDependents(dep.id);
         continue;
@@ -399,6 +405,41 @@ export class QueueManager {
     );
 
     for (const dep of dependents) {
+      dep.status = 'superseded';
+      this.supersedeDependents(dep.id);
+    }
+  }
+
+  private cascadeSupersededVideoDependents(videoItem: WorkItem): void {
+    const dependencyRefs = new Set<string>([videoItem.id, videoItem.itemKey]);
+
+    const dependents = this.state.workItems.filter(item =>
+      item.dependencies.some(dep => dependencyRefs.has(dep)) &&
+      item.status !== 'superseded' &&
+      item.status !== 'cancelled'
+    );
+
+    for (const dep of dependents) {
+      if (dep.type === 'generate_frame') {
+        const updatedDeps = dep.dependencies.map(dependency =>
+          dependencyRefs.has(dependency) ? videoItem.itemKey : this.latestVersionId(dependency)
+        );
+
+        const newDep = this.addItem({
+          type: dep.type,
+          queue: dep.queue,
+          itemKey: dep.itemKey,
+          dependencies: updatedDeps,
+          inputs: { ...dep.inputs },
+          priority: 'high',
+        });
+
+        dep.status = 'superseded';
+        dep.supersededBy = newDep.id;
+        this.cascadeRedo(dep.id, newDep.id);
+        continue;
+      }
+
       dep.status = 'superseded';
       this.supersedeDependents(dep.id);
     }

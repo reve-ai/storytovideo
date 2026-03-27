@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { QueueManager } from './queue-manager.js';
+import { QueueProcessor } from './processors.js';
+import type { Shot, StoryAnalysis } from '../types.js';
 
 async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
@@ -12,6 +14,47 @@ async function sleep(ms: number): Promise<void> {
 function makeQueueManager(): QueueManager {
   const dir = mkdtempSync(join(tmpdir(), 'queue-state-'));
   return new QueueManager('run-1', '(test)', dir);
+}
+
+function makeShot(shotNumber: number, shotInScene: number, continuousFromPrevious = false): Shot {
+  return {
+    shotNumber,
+    sceneNumber: 1,
+    shotInScene,
+    durationSeconds: 4,
+    shotType: 'first_last_frame',
+    composition: 'medium_shot',
+    startFramePrompt: `shot ${shotNumber}`,
+    actionPrompt: `action ${shotNumber}`,
+    dialogue: '',
+    speaker: '',
+    soundEffects: '',
+    cameraDirection: '',
+    charactersPresent: [],
+    objectsPresent: [],
+    location: 'Studio',
+    continuousFromPrevious,
+  };
+}
+
+function makeAnalysis(shots: Shot[]): StoryAnalysis {
+  return {
+    title: 'Test Story',
+    artStyle: 'cinematic',
+    characters: [],
+    locations: [{ name: 'Studio', visualDescription: 'A sound stage' }],
+    objects: [],
+    scenes: [{
+      sceneNumber: 1,
+      title: 'Scene 1',
+      narrativeSummary: 'Test scene',
+      charactersPresent: [],
+      location: 'Studio',
+      estimatedDurationSeconds: 12,
+      shots,
+      transition: 'cut',
+    }],
+  };
 }
 
 function testClaimNextReady(): void {
@@ -180,6 +223,95 @@ function testRedoDoesNotCascadeAnalyzeVideo(): void {
   console.log('  ✓ redo supersedes analyze_video without cascading a stale replacement');
 }
 
+function testRedoRecreatesContinuityFramesBehindSupersededVideos(): void {
+  const qm = makeQueueManager();
+  const shot1 = makeShot(1, 1, false);
+  const shot2 = makeShot(2, 2, true);
+  const shot3 = makeShot(3, 3, true);
+  qm.setStoryAnalysis(makeAnalysis([shot1, shot2, shot3]));
+
+  const frame1 = qm.addItem({
+    type: 'generate_frame',
+    queue: 'image',
+    itemKey: 'frame:scene:1:shot:1',
+    inputs: { shot: shot1 },
+  });
+  const video1 = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    dependencies: [frame1.id],
+    inputs: { shot: shot1, startFramePath: 'frames/1.png' },
+  });
+  const frame2 = qm.addItem({
+    type: 'generate_frame',
+    queue: 'image',
+    itemKey: 'frame:scene:1:shot:2',
+    dependencies: [video1.itemKey],
+    inputs: { shot: shot2 },
+  });
+  const video2 = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:2',
+    dependencies: [frame2.id],
+    inputs: { shot: shot2, startFramePath: 'frames/2.png' },
+  });
+  qm.addItem({
+    type: 'generate_frame',
+    queue: 'image',
+    itemKey: 'frame:scene:1:shot:3',
+    dependencies: [video2.itemKey],
+    inputs: { shot: shot3 },
+  });
+
+  qm.redoItem(frame1.id);
+
+  const frame2Items = qm.getItemsByKey('frame:scene:1:shot:2');
+  const activeFrame2 = frame2Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.equal(frame2Items.length, 2);
+  assert.ok(activeFrame2);
+  assert.deepEqual(activeFrame2.dependencies, ['video:scene:1:shot:1']);
+
+  const video2Items = qm.getItemsByKey('video:scene:1:shot:2');
+  assert.equal(video2Items.length, 1);
+  assert.equal(video2Items[0].status, 'superseded');
+
+  const frame3Items = qm.getItemsByKey('frame:scene:1:shot:3');
+  const activeFrame3 = frame3Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
+  assert.equal(frame3Items.length, 2);
+  assert.ok(activeFrame3);
+  assert.deepEqual(activeFrame3.dependencies, ['video:scene:1:shot:2']);
+  console.log('  ✓ continuity frames are recreated when an upstream video is superseded');
+}
+
+function testGenerateVideoSeedsMissingContinuityFrame(): void {
+  const qm = makeQueueManager();
+  const shot1 = makeShot(1, 1, false);
+  const shot2 = makeShot(2, 2, true);
+  qm.setStoryAnalysis(makeAnalysis([shot1, shot2]));
+
+  const video = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    inputs: { shot: shot1, startFramePath: 'frames/1.png' },
+    priority: 'high',
+  });
+
+  const processor = new QueueProcessor('video', qm, 'run-1', 1);
+  (processor as any).seedAfterGenerateVideo(video, {
+    shotNumber: 1,
+    path: 'videos/1.mp4',
+  });
+
+  const frameItems = qm.getItemsByKey('frame:scene:1:shot:2');
+  assert.equal(frameItems.length, 1);
+  assert.deepEqual(frameItems[0].dependencies, [video.id]);
+  assert.equal(frameItems[0].priority, 'high');
+  console.log('  ✓ completed videos seed a missing downstream continuity frame');
+}
+
 async function testConcurrentResumeIsSerialized(): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'run-manager-'));
   process.env.STORYTOVIDEO_RUN_DB_DIR = join(root, 'db');
@@ -226,6 +358,8 @@ async function main(): Promise<void> {
   testAnalyzeMutationsAreGuarded();
   testRedoDoesNotCascadeOutputDerivedItemsFromFrame();
   testRedoDoesNotCascadeAnalyzeVideo();
+  testRedoRecreatesContinuityFramesBehindSupersededVideos();
+  testGenerateVideoSeedsMissingContinuityFrame();
   await testConcurrentResumeIsSerialized();
   console.log('\nAll tests passed ✓');
 }
