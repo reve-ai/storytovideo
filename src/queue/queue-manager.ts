@@ -302,8 +302,8 @@ export class QueueManager {
   }
 
   private areDependenciesMet(item: WorkItem): boolean {
-    return item.dependencies.every(depId => {
-      const dep = this.findItem(depId);
+    return item.dependencies.every(depRef => {
+      const dep = this.resolveDependencyRef(depRef);
       return dep !== undefined && dep.status === 'completed';
     });
   }
@@ -339,9 +339,12 @@ export class QueueManager {
   }
 
   private cascadeRedo(oldItemId: string, newItemId: string): void {
+    const oldItem = this.findItem(oldItemId);
+    const dependencyRefs = new Set<string>([oldItemId, oldItem?.itemKey].filter((value): value is string => Boolean(value)));
+
     // Find all items that depend on the old item (direct dependents)
     const dependents = this.state.workItems.filter(item =>
-      item.dependencies.includes(oldItemId) &&
+      item.dependencies.some(dep => dependencyRefs.has(dep)) &&
       item.status !== 'superseded' &&
       item.status !== 'cancelled'
     );
@@ -357,7 +360,6 @@ export class QueueManager {
 
       // If the old item was a frame and this dependent is also a frame (continuity link),
       // just update the dependency pointer — don't supersede/regenerate
-      const oldItem = this.findItem(oldItemId);
       if (oldItem?.type === 'generate_frame' && dep.type === 'generate_frame') {
         dep.dependencies = dep.dependencies.map(d => d === oldItemId ? newItemId : d);
         continue;
@@ -387,8 +389,11 @@ export class QueueManager {
   }
 
   private supersedeDependents(itemId: string): void {
+    const item = this.findItem(itemId);
+    const dependencyRefs = new Set<string>([itemId, item?.itemKey].filter((value): value is string => Boolean(value)));
+
     const dependents = this.state.workItems.filter(item =>
-      item.dependencies.includes(itemId) &&
+      item.dependencies.some(dep => dependencyRefs.has(dep)) &&
       item.status !== 'superseded' &&
       item.status !== 'cancelled'
     );
@@ -436,8 +441,11 @@ export class QueueManager {
 
     const edges: DependencyGraphEdge[] = [];
     for (const item of this.state.workItems) {
-      for (const depId of item.dependencies) {
-        edges.push({ from: depId, to: item.id });
+      for (const depRef of item.dependencies) {
+        const dep = this.resolveDependencyRef(depRef);
+        if (dep) {
+          edges.push({ from: dep.id, to: item.id });
+        }
       }
     }
 
@@ -537,9 +545,20 @@ export class QueueManager {
     const scene = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
     if (!scene) throw new Error(`updateShotDuration: scene ${sceneNumber} not found`);
     const shot = scene.shots.find(s => s.shotInScene === shotInScene);
-    if (shot) {
-      shot.durationSeconds = duration;
-    }
+    if (!shot) throw new Error(`updateShotDuration: shot ${sceneNumber}.${shotInScene} not found`);
+    shot.durationSeconds = duration;
+    this.touch();
+  }
+
+  /** Update one shot's continuity flag by scene number and shot-in-scene index. */
+  updateShotContinuity(sceneNumber: number, shotInScene: number, enabled: boolean): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) throw new Error('updateShotContinuity: no storyAnalysis');
+    const scene = analysis.scenes.find(s => s.sceneNumber === sceneNumber);
+    if (!scene) throw new Error(`updateShotContinuity: scene ${sceneNumber} not found`);
+    const shot = scene.shots.find(s => s.shotInScene === shotInScene);
+    if (!shot) throw new Error(`updateShotContinuity: shot ${sceneNumber}.${shotInScene} not found`);
+    shot.continuousFromPrevious = enabled;
     this.touch();
   }
 
@@ -587,8 +606,18 @@ export class QueueManager {
     return this.state.workItems.find(item => item.id === id);
   }
 
+  private resolveDependencyRef(depRef: string): WorkItem | undefined {
+    return this.findItem(depRef) ?? this.findActiveItemByKey(depRef);
+  }
+
   private findItemsByKey(itemKey: string): WorkItem[] {
     return this.state.workItems.filter(item => item.itemKey === itemKey);
+  }
+
+  private findActiveItemByKey(itemKey: string): WorkItem | undefined {
+    return this.findItemsByKey(itemKey)
+      .filter(item => item.status !== 'superseded' && item.status !== 'cancelled')
+      .sort((a, b) => b.version - a.version)[0];
   }
 
   private findNextReady(queue: QueueName, priority: Priority): WorkItem | null {

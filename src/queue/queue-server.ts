@@ -613,6 +613,78 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/items/:itemId/continuity
+      if (method === "POST" && action === "items" && pathParts.length >= 6 && pathParts[5] === "continuity") {
+        const itemId = decodeURIComponent(pathParts[4]);
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const enabled = body.enabled;
+        if (typeof enabled !== "boolean") {
+          sendJson(res, 400, { error: 'enabled must be a boolean' });
+          return;
+        }
+
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+        const originalItem = qm.getItem(itemId);
+        if (!originalItem) { sendJson(res, 404, { error: `Item not found: ${itemId}` }); return; }
+
+        let targetItem = originalItem;
+        if (originalItem.type === 'generate_video') {
+          const frameItemId = originalItem.dependencies.find(depId => {
+            const dep = qm.getItem(depId);
+            return dep && dep.type === 'generate_frame';
+          });
+          if (!frameItemId) {
+            sendJson(res, 409, { error: 'Could not find upstream frame item for continuity toggle' });
+            return;
+          }
+          const frameItem = qm.getItem(frameItemId);
+          if (!frameItem) {
+            sendJson(res, 404, { error: `Item not found: ${frameItemId}` });
+            return;
+          }
+          targetItem = frameItem;
+        } else if (originalItem.type !== 'generate_frame') {
+          sendJson(res, 400, { error: 'Continuity can only be toggled for frame/video items' });
+          return;
+        }
+
+        if (targetItem.status === 'in_progress') {
+          sendJson(res, 409, { error: `Cannot redo item ${targetItem.id}: status is 'in_progress'` });
+          return;
+        }
+
+        const shot = targetItem.inputs.shot as Record<string, unknown> | undefined;
+        const sceneNumber = shot?.sceneNumber as number | undefined;
+        const shotInScene = shot?.shotInScene as number | undefined;
+        if (sceneNumber === undefined || shotInScene === undefined) {
+          sendJson(res, 400, { error: 'Shot metadata is missing sceneNumber/shotInScene' });
+          return;
+        }
+        if (enabled && shotInScene <= 1) {
+          sendJson(res, 409, { error: 'The first shot in a scene cannot use continuity' });
+          return;
+        }
+
+        const updatedShot = { ...shot, continuousFromPrevious: enabled };
+        const targetInputs = { ...targetItem.inputs, shot: updatedShot };
+
+        try {
+          const newItem = runManager.redoItem(runId, targetItem.id, targetInputs);
+          if (!newItem) { sendJson(res, 404, { error: `Item not found: ${targetItem.id}` }); return; }
+          qm.updateShotContinuity(sceneNumber, shotInScene, enabled);
+          qm.save();
+          await runManager.resumeRun(runId);
+          emitEvent(runId, "item_redo", { oldItemId: targetItem.id, newItem });
+          sendJson(res, 200, { enabled, newItem });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
+        return;
+      }
+
       // POST /api/runs/:id/items/:itemId/redo
       if (method === "POST" && action === "items" && pathParts.length >= 6 && pathParts[5] === "redo") {
         const itemId = decodeURIComponent(pathParts[4]);

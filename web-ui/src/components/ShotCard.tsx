@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { WorkItem } from "../stores/pipeline-store";
+import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
 import ImageUpload from "./ImageUpload";
@@ -18,8 +18,12 @@ export default function ShotCard({
   aspectRatio,
 }: ShotCardProps) {
   const activeRunId = useRunStore((s) => s.activeRunId);
+  const fetchQueues = usePipelineStore((s) => s.fetchQueues);
+  const fetchGraph = usePipelineStore((s) => s.fetchGraph);
   const openDetail = useUIStore((s) => s.openDetail);
+  const showToast = useUIStore((s) => s.showToast);
   const [playing, setPlaying] = useState(false);
+  const [continuityBusy, setContinuityBusy] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const shot: Record<string, unknown> =
@@ -28,6 +32,7 @@ export default function ShotCard({
     {};
 
   const clickId = videoItem?.id ?? frameItem?.id;
+  const targetItemId = frameItem?.id ?? videoItem?.id;
 
   const frameCompleted = frameItem?.status === "completed";
   const videoCompleted = videoItem?.status === "completed";
@@ -65,10 +70,75 @@ export default function ShotCard({
   const composition = shot.composition as string | undefined;
   const durationSeconds = shot.durationSeconds as number | undefined;
   const actionPrompt = shot.actionPrompt as string | undefined;
+  const sceneNumber = shot.sceneNumber as number | undefined;
+  const shotInScene = shot.shotInScene as number | undefined;
+  const continuityEnabled = Boolean(shot.continuousFromPrevious);
+  const shotLabel = `S${String(sceneNumber ?? "?")}.${shotNum}`;
+  const canToggleContinuity =
+    Boolean(activeRunId) &&
+    Boolean(targetItemId) &&
+    typeof shotInScene === "number" &&
+    shotInScene > 1;
+  const continuityDisabled =
+    !canToggleContinuity ||
+    continuityBusy ||
+    frameItem?.status === "in_progress" ||
+    videoItem?.status === "in_progress";
   const truncatedAction =
     actionPrompt && actionPrompt.length > 100
       ? actionPrompt.slice(0, 100) + "…"
       : actionPrompt;
+
+  const handleToggleContinuity = useCallback(
+    async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      if (!activeRunId || !targetItemId || !canToggleContinuity || continuityBusy) {
+        return;
+      }
+
+      const nextEnabled = !continuityEnabled;
+      setContinuityBusy(true);
+      try {
+        const res = await fetch(
+          `/api/runs/${activeRunId}/items/${targetItemId}/continuity`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: nextEnabled }),
+          },
+        );
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          showToast(errorText || "Failed to update continuity", "error");
+          return;
+        }
+
+        await Promise.all([fetchQueues(activeRunId), fetchGraph(activeRunId)]);
+        showToast(
+          nextEnabled
+            ? `Enabled continuity for ${shotLabel}`
+            : `Disabled continuity for ${shotLabel}`,
+        );
+      } catch (error) {
+        console.error("toggle continuity failed:", error);
+        showToast("Failed to update continuity", "error");
+      } finally {
+        setContinuityBusy(false);
+      }
+    },
+    [
+      activeRunId,
+      canToggleContinuity,
+      continuityBusy,
+      continuityEnabled,
+      fetchGraph,
+      fetchQueues,
+      showToast,
+      shotLabel,
+      targetItemId,
+    ],
+  );
 
   return (
     <div className="story-shot-card" data-opens-detail onClick={handleCardClick}>
@@ -90,7 +160,7 @@ export default function ShotCard({
           style={{ aspectRatio }}
           onClick={videoSrc ? handlePlay : undefined}
         >
-          <img src={frameSrc} alt={`S${String(shot.sceneNumber ?? "?")}.${shotNum}`} />
+          <img src={frameSrc} alt={shotLabel} />
           {videoSrc && <div className="play-overlay">▶</div>}
           {frameItem && (
             <ImageUpload itemId={frameItem.id} field="startPath" />
@@ -110,16 +180,40 @@ export default function ShotCard({
       {/* Info area */}
       <div className="story-shot-info">
         <div className="story-shot-meta">
-          <span className="story-shot-number">S{String(shot.sceneNumber ?? "?")}.{shotNum}</span>
+          <span className="story-shot-number">{shotLabel}</span>
           {composition && (
             <span className="story-shot-comp">{composition}</span>
           )}
           {durationSeconds != null && (
             <span className="story-shot-duration">{durationSeconds}s</span>
           )}
+          {continuityEnabled && (
+            <span
+              className="story-shot-continuity-indicator"
+              title="Uses the previous shot for continuity"
+            >
+              ↔ continuity
+            </span>
+          )}
         </div>
         {truncatedAction && (
           <div className="story-shot-action">{truncatedAction}</div>
+        )}
+        {canToggleContinuity && (
+          <div className="story-shot-controls">
+            <button
+              type="button"
+              className={`story-shot-toggle${continuityEnabled ? " enabled" : ""}`}
+              onClick={handleToggleContinuity}
+              disabled={continuityDisabled}
+            >
+              {continuityBusy
+                ? "Updating..."
+                : continuityEnabled
+                  ? "Continuity on"
+                  : "Continuity off"}
+            </button>
+          </div>
         )}
       </div>
     </div>
