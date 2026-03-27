@@ -18,6 +18,14 @@ function ensureDir(filePath: string): void {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+export type LtxProgressInfo = {
+  status: "pending" | "running";
+  progress?: number;       // 0.0–1.0
+  step?: number;
+  totalSteps?: number;
+  queuePosition?: number;
+};
+
 export type LtxVideoOptions = {
   image?: string;          // path to input image for image-to-video
   duration?: number;       // seconds (default 5)
@@ -29,6 +37,7 @@ export type LtxVideoOptions = {
   frameRate?: number;
   outputPath: string;
   abortSignal?: AbortSignal;
+  onProgress?: (info: LtxProgressInfo) => void;
 };
 
 export type LtxVideoResult = {
@@ -148,8 +157,19 @@ export async function cancelJob(jobId: string): Promise<void> {
   }
 }
 
-async function pollUntilDone(jobId: string, abortSignal?: AbortSignal): Promise<StatusResponse> {
+async function pollUntilDone(
+  jobId: string,
+  queuePosition: number,
+  abortSignal?: AbortSignal,
+  onProgress?: (info: LtxProgressInfo) => void,
+): Promise<StatusResponse> {
   const apiKey = getApiKey();
+
+  // Report initial queue position
+  if (onProgress) {
+    onProgress({ status: "pending", queuePosition });
+  }
+
   while (true) {
     if (abortSignal?.aborted) {
       await cancelJob(jobId).catch(() => {});
@@ -164,6 +184,17 @@ async function pollUntilDone(jobId: string, abortSignal?: AbortSignal): Promise<
     }
     const resp = (await response.json()) as StatusResponse;
     if (resp.status === "completed" || resp.status === "failed") return resp;
+
+    // Report progress
+    if (onProgress) {
+      onProgress({
+        status: resp.status as "pending" | "running",
+        progress: resp.progress,
+        step: resp.step,
+        totalSteps: resp.total_steps,
+      });
+    }
+
     const progressStr = resp.progress !== undefined
       ? ` ${(resp.progress * 100).toFixed(0)}%` + (resp.step !== undefined ? ` (step ${resp.step}/${resp.total_steps})` : "")
       : "";
@@ -191,7 +222,7 @@ export async function generateVideoLtx(
   prompt: string,
   options: LtxVideoOptions,
 ): Promise<LtxVideoResult> {
-  const { outputPath, abortSignal } = options;
+  const { outputPath, abortSignal, onProgress } = options;
   await mkdir(path.dirname(outputPath), { recursive: true });
 
   let lastError: unknown;
@@ -203,7 +234,7 @@ export async function generateVideoLtx(
       const jobId = genResponse.job_id;
       console.log(`[ltx] Job submitted: ${jobId} (queue pos: ${genResponse.queue_position}, adjusted duration: ${genResponse.params.seconds}s)`);
 
-      const result = await pollUntilDone(jobId, abortSignal);
+      const result = await pollUntilDone(jobId, genResponse.queue_position, abortSignal, onProgress);
       if (result.status === "failed") throw new Error(`LTX video generation failed: ${result.error ?? "unknown error"}`);
 
       console.log(`[ltx] Downloading video to ${outputPath} (generation_time: ${result.generation_time?.toFixed(1)}s)`);

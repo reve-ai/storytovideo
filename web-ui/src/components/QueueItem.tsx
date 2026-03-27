@@ -1,4 +1,4 @@
-import type { WorkItem } from "../stores/pipeline-store";
+import type { WorkItem, ItemProgress } from "../stores/pipeline-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
@@ -57,6 +57,7 @@ export default function QueueItem({ item }: QueueItemProps) {
   const runs = useRunStore((s) => s.runs);
   const openDetail = useUIStore((s) => s.openDetail);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
+  const progress = usePipelineStore((s) => s.itemProgress[item.id]);
 
   const statusBorderColor = STATUS_BORDER_COLORS[item.status] || "var(--border)";
   const isDimmed = item.status === "superseded" || item.status === "cancelled";
@@ -147,6 +148,9 @@ export default function QueueItem({ item }: QueueItemProps) {
       {/* Description */}
       {desc && <div className="mb-2 text-xs text-[--muted]">{desc}</div>}
 
+      {/* LTX progress */}
+      {progress && <ProgressIndicator progress={progress} />}
+
       {/* Media output */}
       {mediaSrc && isVideo && (
         <div className="mb-2">
@@ -207,6 +211,38 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`rounded px-1.5 py-0.5 text-xs ${colors[status] || ""}`}>
       {status}
     </span>
+  );
+}
+
+function ProgressIndicator({ progress }: { progress: ItemProgress }) {
+  const pct = progress.progress !== undefined ? Math.round(progress.progress * 100) : null;
+
+  let label: string;
+  if (progress.status === "pending") {
+    label = progress.queuePosition !== undefined
+      ? `Queued (position ${progress.queuePosition})`
+      : "Queued";
+  } else if (pct !== null) {
+    const stepStr = progress.step !== undefined && progress.totalSteps !== undefined
+      ? ` · step ${progress.step}/${progress.totalSteps}`
+      : "";
+    label = `Generating ${pct}%${stepStr}`;
+  } else {
+    label = "Generating…";
+  }
+
+  return (
+    <div className="mb-2">
+      <div className="mb-0.5 text-xs text-[--muted]">{label}</div>
+      {pct !== null && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-[--surface2]">
+          <div
+            className="h-full rounded-full bg-[--accent] transition-all duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

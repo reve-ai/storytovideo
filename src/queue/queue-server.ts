@@ -262,6 +262,14 @@ runManager.on("item:completed", (data: { runId: string; item: WorkItem }) => {
   }
 });
 
+runManager.on("item:progress", (data: { runId: string; itemId: string; itemKey: string; progress: { status: string; progress?: number; step?: number; totalSteps?: number; queuePosition?: number } }) => {
+  emitEvent(data.runId, "item_progress", {
+    itemId: data.itemId,
+    itemKey: data.itemKey,
+    progress: data.progress,
+  });
+});
+
 runManager.on("item:failed", (data: { runId: string; item: WorkItem; error: string }) => {
   emitEvent(data.runId, "item_failed", {
     itemId: data.item.id,

@@ -560,6 +560,14 @@ ${JSON.stringify(analysis, null, 2)}`,
       abortSignal: signal,
       version: item.version,
       priority: item.priority,
+      onLtxProgress: (info) => {
+        this.emit('item:progress', {
+          runId: this.runId,
+          itemId: item.id,
+          itemKey: item.itemKey,
+          progress: info,
+        });
+      },
     });
 
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
@@ -1142,6 +1150,7 @@ export class ProcessorGroup extends EventEmitter {
       proc.on('item:completed', (data) => this.emit('item:completed', data));
       proc.on('item:failed', (data) => this.emit('item:failed', data));
       proc.on('item:cancelled', (data) => this.emit('item:cancelled', data));
+      proc.on('item:progress', (data) => this.emit('item:progress', data));
       proc.on('pipeline:pause', (data) => this.emit('pipeline:pause', data));
       return proc;
     });

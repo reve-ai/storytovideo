@@ -4,7 +4,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { getGoogleClient } from "../google-client";
 import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
-import { generateVideoLtx as ltxGenerateVideo } from "../ltx-client";
+import { generateVideoLtx as ltxGenerateVideo, type LtxProgressInfo } from "../ltx-client";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import type { VideoBackend } from "../types";
 
@@ -67,6 +67,8 @@ type GenerateVideoParams = {
   version?: number;
   /** Queue priority — forwarded to backends that support it (e.g. LTX). */
   priority?: "normal" | "high";
+  /** Progress callback for LTX backend — reports queue position and generation progress. */
+  onLtxProgress?: (info: LtxProgressInfo) => void;
 };
 
 /** Shared return type for all video backends. */
@@ -502,6 +504,7 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
       priority: params.priority,
       outputPath,
       abortSignal,
+      onProgress: params.onLtxProgress,
     });
 
     console.log(`[generateVideo] ${shotContext} saved to ${result.path} (LTX adjusted duration: ${result.duration}s)`);

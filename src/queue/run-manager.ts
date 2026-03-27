@@ -230,6 +230,7 @@ export class RunManager extends EventEmitter {
       });
       proc.on("item:failed", (data) => this.emit("item:failed", data));
       proc.on("item:cancelled", (data) => this.emit("item:cancelled", data));
+      proc.on("item:progress", (data) => this.emit("item:progress", data));
       proc.on("pipeline:pause", (data) => {
         this.emit("pipeline:pause", data);
         // Auto-pause: stop all processors for this run

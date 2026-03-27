@@ -25,6 +25,14 @@ export type WorkItemType =
   | "assemble";
 export type Priority = "normal" | "high";
 
+export interface ItemProgress {
+  status: "pending" | "running";
+  progress?: number;       // 0.0–1.0
+  step?: number;
+  totalSteps?: number;
+  queuePosition?: number;
+}
+
 export interface WorkItem {
   id: string;
   type: WorkItemType;
@@ -83,6 +91,8 @@ interface PipelineState {
   queues: Record<QueueName, QueueSnapshot | null>;
   graph: DependencyGraph | null;
   analyzeItems: WorkItem[];
+  /** Live progress info for in-progress items, keyed by item ID. Cleared when item completes/fails. */
+  itemProgress: Record<string, ItemProgress>;
   sseStatus: SSEStatus;
 }
 
@@ -106,6 +116,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   queues: { llm: null, image: null, video: null },
   graph: null,
   analyzeItems: [],
+  itemProgress: {},
   sseStatus: "disconnected",
 
   fetchQueues: async (runId: string) => {
@@ -295,6 +306,20 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       "item_cancelled",
     ]) {
       es.addEventListener(evt, (e: MessageEvent) => {
+        // Clear progress when item finishes
+        if (evt === "item_completed" || evt === "item_failed" || evt === "item_cancelled") {
+          try {
+            const data = JSON.parse(e.data) as { payload?: { itemId?: string } };
+            const itemId = data.payload?.itemId;
+            if (itemId) {
+              set((s) => {
+                const next = { ...s.itemProgress };
+                delete next[itemId];
+                return { itemProgress: next };
+              });
+            }
+          } catch { /* ignore */ }
+        }
         if (isAnalyzeEvent(e)) {
           refreshData();
         } else {
@@ -302,6 +327,18 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         }
       });
     }
+
+    // LTX progress updates — lightweight, no queue refresh needed
+    es.addEventListener("item_progress", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { payload?: { itemId?: string; progress?: ItemProgress } };
+        const itemId = data.payload?.itemId;
+        const progress = data.payload?.progress;
+        if (itemId && progress) {
+          set((s) => ({ itemProgress: { ...s.itemProgress, [itemId]: progress } }));
+        }
+      } catch { /* ignore */ }
+    });
 
     // Run status events
     es.addEventListener("run_status", (e: MessageEvent) => {
