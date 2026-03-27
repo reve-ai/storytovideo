@@ -975,6 +975,14 @@ ${JSON.stringify(analysis, null, 2)}`,
     const videoPath = outputs.path as string;
     const startFramePath = item.inputs.startFramePath as string;
     const shot = item.inputs.shot as Shot;
+    let analyzeShot = shot;
+
+    if (shot.continuousFromPrevious && shot.shotInScene > 1) {
+      analyzeShot = {
+        ...shot,
+        startFramePrompt: `Continuity shot: The start frame is the last frame extracted from the previous shot (scene ${shot.sceneNumber} shot ${shot.shotInScene - 1}). It should show visual continuity with the end of that shot. The action described should flow naturally from that starting point.`,
+      };
+    }
 
     this.seedContinuityFrameAfterGenerateVideo(item, analysis, shot);
 
@@ -1010,7 +1018,7 @@ ${JSON.stringify(analysis, null, 2)}`,
           videoPath,
           startFramePath,
           referenceImagePaths,
-          shot,
+          shot: analyzeShot,
         },
         priority: item.priority,
       });
