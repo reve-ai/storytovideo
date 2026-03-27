@@ -163,8 +163,12 @@ export async function generateVideoGrok(
       if (err.message?.includes("cancelled due to pipeline interruption") || abortSignal?.aborted) {
         throw error;
       }
-      const isRetryable = err.status === 429 || (err.status !== undefined && err.status >= 500);
+      const isContentModeration = err.status === 400 && err.message?.includes("content moderation");
+      const isRetryable = err.status === 429 || (err.status !== undefined && err.status >= 500) || isContentModeration;
       if (isRetryable && attempt < MAX_RETRIES) {
+        if (isContentModeration) {
+          console.warn("[grok] Content moderation rejection, retrying...");
+        }
         const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 60_000);
         console.warn(`[grok] Retryable error (${err.status}), backoff ${backoffMs / 1000}s (retry ${attempt + 1}/${MAX_RETRIES})`);
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
