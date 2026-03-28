@@ -827,6 +827,51 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/reseed-assemble
+      if (method === "POST" && action === "reseed-assemble" && pathParts.length === 4) {
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+        const state = qm.getState();
+        const analysis = state.storyAnalysis;
+        if (!analysis) { sendJson(res, 409, { error: 'No story analysis available yet' }); return; }
+
+        const allShots = analysis.scenes.flatMap(s => s.shots || []).filter(s => !s.skipped);
+        const allVideosDone = allShots.every(shot => {
+          const items = qm.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
+          return items.some(i => i.status === 'completed' && !i.supersededBy);
+        });
+
+        if (!allVideosDone) {
+          sendJson(res, 409, { error: 'Cannot reseed assemble until all videos are completed' });
+          return;
+        }
+
+        const existingAssemble = qm.getItemsByKey('assemble')
+          .filter(i => i.status !== 'superseded' && i.status !== 'cancelled');
+        const videoKeys = allShots.map(shot => `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
+
+        const newItem = qm.addItem({
+          type: 'assemble',
+          queue: 'llm',
+          itemKey: 'assemble',
+          dependencies: videoKeys,
+        });
+
+        for (const existing of existingAssemble) {
+          qm.supersedeItem(existing.id, newItem.id);
+        }
+
+        qm.save();
+        await runManager.resumeRun(runId);
+        emitEvent(runId, 'item_redo', {
+          oldItemIds: existingAssemble.map(item => item.id),
+          newItem,
+        });
+        sendJson(res, 200, { item: newItem });
+        return;
+      }
+
       // POST /api/runs/:id/items/:itemId/edit
       if (method === "POST" && action === "items" && pathParts.length >= 6 && pathParts[5] === "edit") {
         const itemId = decodeURIComponent(pathParts[4]);

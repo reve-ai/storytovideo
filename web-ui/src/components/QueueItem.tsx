@@ -169,7 +169,7 @@ export default function QueueItem({ item }: QueueItemProps) {
 
       {/* Actions */}
       <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-        {item.status === "failed" && (
+        {(item.status === "failed" || item.status === "cancelled") && (
           <button
             className="rounded bg-[--accent] px-2 py-1 text-xs text-white hover:opacity-80"
             onClick={() => handleAction("retry")}

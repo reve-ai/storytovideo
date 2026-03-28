@@ -230,13 +230,13 @@ export class QueueManager {
     return true;
   }
 
-  /** Manual retry — resets a failed item to pending so it gets picked up again.
+  /** Manual retry — resets a failed or cancelled item to pending so it gets picked up again.
    *  Unlike redo, this does NOT create a new version or cascade to dependents.
    *  No retry limit — the user can call this as many times as they want. */
   retryItem(id: string): WorkItem {
     const item = this.requireItem(id);
-    if (item.status !== 'failed') {
-      throw new Error(`Cannot retry item ${id}: status is '${item.status}', expected 'failed'`);
+    if (item.status !== 'failed' && item.status !== 'cancelled') {
+      throw new Error(`Cannot retry item ${id}: status is '${item.status}', expected 'failed' or 'cancelled'`);
     }
     item.status = 'pending';
     item.retryCount = (item.retryCount ?? 0) + 1;
@@ -253,6 +253,19 @@ export class QueueManager {
     item.status = 'cancelled';
     this.touch();
     return true;
+  }
+
+  supersedeItem(id: string, supersededBy?: string): WorkItem {
+    const item = this.requireItem(id);
+    if (item.status === 'superseded' || item.status === 'cancelled') {
+      return this.snapshot(item);
+    }
+    this.setSuperseded(item);
+    if (supersededBy) {
+      item.supersededBy = supersededBy;
+    }
+    this.touch();
+    return this.snapshot(item);
   }
 
   setReviewStatus(id: string, reviewStatus: 'accepted' | 'rejected'): WorkItem {

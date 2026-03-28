@@ -352,7 +352,7 @@ function DetailActions({
   item: WorkItem;
   onAction: (action: string, itemId: string) => void;
 }) {
-  if (item.status === "failed") {
+  if (item.status === "failed" || item.status === "cancelled") {
     return (
       <div className="detail-actions">
         <button className="primary" onClick={() => onAction("retry", item.id)}>
