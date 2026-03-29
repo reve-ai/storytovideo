@@ -372,6 +372,50 @@ function testGenerateVideoSeedsMissingContinuityFrame(): void {
   console.log('  ✓ completed videos seed a missing downstream continuity frame');
 }
 
+function testGenerateVideoSeedsAssembleWithVideoKeys(): void {
+  const qm = makeQueueManager();
+  const shot1 = makeShot(1, 1, false);
+  const shot2 = makeShot(2, 2, false);
+  qm.setStoryAnalysis(makeAnalysis([shot1, shot2]));
+
+  const video1 = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:1',
+    inputs: { shot: shot1, startFramePath: 'frames/1.png' },
+  });
+  const video2 = qm.addItem({
+    type: 'generate_video',
+    queue: 'video',
+    itemKey: 'video:scene:1:shot:2',
+    inputs: { shot: shot2, startFramePath: 'frames/2.png' },
+  });
+
+  qm.markInProgress(video1.id);
+  qm.markCompleted(video1.id, { path: 'videos/1.mp4' });
+
+  const processor = new QueueProcessor('video', qm, 'run-1', 1);
+  (processor as any).seedAfterGenerateVideo(video1, {
+    shotNumber: 1,
+    path: 'videos/1.mp4',
+  });
+
+  qm.markInProgress(video2.id);
+  qm.markCompleted(video2.id, { path: 'videos/2.mp4' });
+  (processor as any).seedAfterGenerateVideo(video2, {
+    shotNumber: 2,
+    path: 'videos/2.mp4',
+  });
+
+  const assembleItems = qm.getItemsByKey('assemble');
+  assert.equal(assembleItems.length, 1);
+  assert.deepEqual(assembleItems[0].dependencies, [
+    'video:scene:1:shot:1',
+    'video:scene:1:shot:2',
+  ]);
+  console.log('  ✓ completed videos seed assemble with key-based video dependencies');
+}
+
 async function testConcurrentResumeIsSerialized(): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'run-manager-'));
   process.env.STORYTOVIDEO_RUN_DB_DIR = join(root, 'db');
@@ -421,6 +465,7 @@ async function main(): Promise<void> {
   testRedoVideoRemapsKeyBasedContinuityDependency();
   testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete();
   testGenerateVideoSeedsMissingContinuityFrame();
+  testGenerateVideoSeedsAssembleWithVideoKeys();
   await testConcurrentResumeIsSerialized();
   console.log('\nAll tests passed ✓');
 }

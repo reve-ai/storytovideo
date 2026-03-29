@@ -1037,20 +1037,15 @@ ${JSON.stringify(analysis, null, 2)}`,
     const existingAssemble = this.queueManager.getItemsByKey('assemble');
     if (existingAssemble.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) return;
 
-    // Collect all video item IDs as dependencies
-    const videoItemIds = allShots
-      .map(shot => {
-        const items = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
-        return items.find(i => i.status === 'completed' && !i.supersededBy);
-      })
-      .filter((i): i is WorkItem => !!i)
-      .map(i => i.id);
+    const videoKeys = allShots.map(
+      shot => `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`
+    );
 
     this.queueManager.addItem({
       type: 'assemble',
       queue: 'llm', // Assembly uses ffmpeg, not an API — put in LLM queue as it's CPU-bound
       itemKey: 'assemble',
-      dependencies: videoItemIds,
+      dependencies: videoKeys,
     });
   }
 
