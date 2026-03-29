@@ -27,7 +27,8 @@ Accepts `application/json` or `multipart/form-data` (required when uploading an 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `prompt` | string | **yes** | — | Text description of the video |
-| `image` | file | no | — | Input image for image-to-video (multipart only) |
+| `image` | file | no | — | Start frame image for image-to-video (multipart only) |
+| `end_image` | file | no | — | End frame image — model interpolates between start and end (multipart only) |
 | `mode` | string | no | `"full"` | `"full"` (30 steps, guided) or `"distilled"` (8 steps, fast) |
 | `seconds` | float | no | `5.0` | Video duration in seconds |
 | `width` | int | no | `768` | Video width (rounded to nearest multiple of 32) |
@@ -38,7 +39,8 @@ Accepts `application/json` or `multipart/form-data` (required when uploading an 
 | `priority` | string | no | `"normal"` | `"high"` or `"normal"` — high priority jobs run before normal ones |
 
 **Notes:**
-- When an image is provided, its dimensions are used unless `width`/`height` are explicitly set.
+- When a start image is provided, its dimensions are used unless `width`/`height` are explicitly set.
+- When both `image` and `end_image` are provided, the model generates a video that transitions from the start frame to the end frame.
 - Resolution is capped by aspect ratio: landscape up to 1408×768, portrait up to 768×1408, square up to 1024×1024. Larger inputs are scaled down proportionally.
 - Frame count is rounded up to satisfy the model constraint of `8k + 1` frames (e.g. 9, 17, 25, ..., 121).
 - Distilled mode is ~3-4x faster than full mode with comparable quality.
@@ -68,6 +70,18 @@ curl -X POST http://api.revemovies.com:8080/generate \
   -F "image=@portrait.png" \
   -F "mode=distilled" \
   -F "seconds=6"
+```
+
+**Start + end frame interpolation (multipart):**
+
+```bash
+curl -X POST http://api.revemovies.com:8080/generate \
+  -H "Authorization: Bearer $LTX_API_KEY" \
+  -F "prompt=A sunrise timelapse over the mountains" \
+  -F "image=@dawn.png" \
+  -F "end_image=@daylight.png" \
+  -F "mode=distilled" \
+  -F "seconds=5"
 ```
 
 #### Response (202 Accepted)
@@ -190,6 +204,64 @@ curl -X POST http://api.revemovies.com:8080/cancel/1b8adfaf-2bad-4c7a-a062-22deb
 - Pending jobs are skipped when they reach the front of the queue.
 - Running jobs abort at the next denoising step boundary (typically within 2-8 seconds).
 - Already completed, failed, or cancelled jobs cannot be cancelled (returns 400).
+
+---
+
+### GET /queue
+
+View all jobs with their status and progress. Returns JSON for API clients or an auto-refreshing HTML dashboard for browsers.
+
+**API usage:**
+
+```bash
+curl http://api.revemovies.com:8080/queue \
+  -H "Authorization: Bearer $LTX_API_KEY"
+```
+
+**Browser usage:**
+
+```
+http://api.revemovies.com:8080/queue?key=<LTX_API_KEY>
+```
+
+#### JSON Response
+
+```json
+{
+  "total": 3,
+  "jobs": [
+    {
+      "job_id": "...",
+      "status": "running",
+      "priority": "normal",
+      "mode": "distilled",
+      "prompt": "A golden retriever...",
+      "width": 768,
+      "height": 1408,
+      "num_frames": 121,
+      "stage": "denoising",
+      "step": 5,
+      "total_steps": 8,
+      "elapsed": 32.1
+    },
+    {
+      "job_id": "...",
+      "status": "pending",
+      "priority": "high",
+      "mode": "full",
+      "prompt": "..."
+    },
+    {
+      "job_id": "...",
+      "status": "completed",
+      "video_url": "/video/...",
+      "generation_time": 72.8
+    }
+  ]
+}
+```
+
+Jobs are sorted: running first, then pending (high priority before normal), then completed/failed/cancelled by recency. The HTML view auto-refreshes every 3 seconds and includes progress bars, download links, and status badges.
 
 ---
 
