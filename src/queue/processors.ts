@@ -415,6 +415,10 @@ For this scene:
    GOOD: "Back of Marcus's head and shoulders visible, he faces away from camera, walking down the hallway ahead"
    GOOD: "Rear view of Elena, her back to the camera, she looks ahead at the door in front of her"
    Use descriptors like: "back of the head visible", "character facing away from camera", "seen from behind showing their back and shoulders", "rear view of the character walking away", "character's back to the camera".
+14. CHARACTER PROMINENCE IN START FRAMES: Every character who speaks or performs an action in the shot MUST be prominently visible in the startFramePrompt — at minimum a medium shot size (waist up). Do NOT place important characters in the background or distance of the start frame expecting the camera to move toward them. The video model cannot maintain character identity or detail from tiny distant figures. If the shot involves approaching a character, start the frame close enough that they are clearly visible and identifiable.
+   BAD: "Wide shot of the restaurant. In the far background, Ethan is visible seated at a table near the window."
+   GOOD: "Medium shot of Ethan seated at the candlelit table, looking up expectantly. The restaurant interior is visible around him."
+   The video model animates what it can see in the start frame. If a character is too small or distant, the video model will hallucinate their appearance.
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
