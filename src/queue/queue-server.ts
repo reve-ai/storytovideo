@@ -639,6 +639,144 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/assets/replace — Replace an asset image with a user-uploaded one
+      if (method === "POST" && action === "assets" && pathParts.length >= 5 && pathParts[4] === "replace") {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+        const assetKey = url.searchParams.get("assetKey");
+        if (!assetKey) {
+          sendJson(res, 400, { error: "assetKey query parameter is required (e.g. character:Sophie:front)" });
+          return;
+        }
+
+        const imageData = await readRawBody(req);
+        if (imageData.length === 0) {
+          sendJson(res, 400, { error: "Empty request body" });
+          return;
+        }
+
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or not initialized: ${runId}` }); return; }
+
+        // Parse asset type from key (character:Name:front -> character)
+        const [assetType] = assetKey.split(":");
+        if (!["character", "location", "object"].includes(assetType)) {
+          sendJson(res, 400, { error: `Invalid asset type: ${assetType}. Must be character, location, or object.` });
+          return;
+        }
+
+        // Resize the image based on asset type
+        const targetAspectRatio = run.options.aspectRatio ?? "16:9";
+        let resizedBuffer: Buffer;
+        if (assetType === "location") {
+          // Locations match the video's aspect ratio
+          const [arW, arH] = targetAspectRatio.split(":").map(Number);
+          const ratio = arW / arH;
+          let width: number, height: number;
+          if (ratio >= 1) {
+            width = 1920; height = Math.round(1920 / ratio);
+          } else {
+            height = 1920; width = Math.round(1920 * ratio);
+          }
+          resizedBuffer = await sharp(imageData)
+            .resize(width, height, { fit: "cover" })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+        } else {
+          // Characters and objects: 1024x1024 square
+          resizedBuffer = await sharp(imageData)
+            .resize(1024, 1024, { fit: "cover" })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+        }
+
+        // Save to uploads/ directory
+        const outputDir = resolveOutputDir(run.outputDir);
+        const uploadsDir = join(outputDir, "uploads");
+        mkdirSync(uploadsDir, { recursive: true });
+        const filename = `${randomUUID()}.jpg`;
+        const filePath = join(uploadsDir, filename);
+        writeFileSync(filePath, resizedBuffer);
+        const relativePath = `uploads/${filename}`;
+
+        // Update generatedOutputs
+        qm.setGeneratedOutput(assetKey, relativePath);
+
+        // Rebuild asset library from generatedOutputs
+        const state = qm.getState();
+        const analysis = state.storyAnalysis;
+        if (analysis) {
+          const lib: { characterImages: Record<string, { front: string; angle: string }>; locationImages: Record<string, string>; objectImages: Record<string, string> } = {
+            characterImages: {},
+            locationImages: {},
+            objectImages: {},
+          };
+          const absPath = (p: string) => join(outputDir, p);
+          for (const char of analysis.characters) {
+            const frontPath = state.generatedOutputs[`character:${char.name}:front`];
+            const anglePath = state.generatedOutputs[`character:${char.name}:angle`];
+            if (frontPath) {
+              lib.characterImages[char.name] = {
+                front: absPath(frontPath),
+                angle: absPath(anglePath ?? frontPath),
+              };
+            }
+          }
+          for (const loc of analysis.locations) {
+            const path = state.generatedOutputs[`location:${loc.name}:front`];
+            if (path) lib.locationImages[loc.name] = absPath(path);
+          }
+          for (const obj of (analysis.objects ?? [])) {
+            const path = state.generatedOutputs[`object:${obj.name}:front`];
+            if (path) lib.objectImages[obj.name] = absPath(path);
+          }
+          qm.setAssetLibrary(lib);
+        }
+
+        // Find all active generate_frame items that reference this asset
+        const assetName = assetKey.split(":")[1];
+        const frameItemsToRedo: string[] = [];
+        for (const item of state.workItems) {
+          if (item.type !== "generate_frame") continue;
+          if (item.status === "superseded" || item.status === "cancelled") continue;
+          const shot = item.inputs.shot as { charactersPresent?: string[]; objectsPresent?: string[]; location?: string } | undefined;
+          if (!shot) continue;
+
+          let references = false;
+          if (assetType === "character" && shot.charactersPresent?.includes(assetName)) references = true;
+          if (assetType === "object" && shot.objectsPresent?.includes(assetName)) references = true;
+          if (assetType === "location" && shot.location === assetName) references = true;
+
+          if (references) frameItemsToRedo.push(item.id);
+        }
+
+        // Redo each frame item (cascade will handle downstream video items)
+        const redoneItems: Array<{ oldItemId: string; newItemId: string }> = [];
+        for (const frameItemId of frameItemsToRedo) {
+          try {
+            const newItem = runManager.redoItem(runId, frameItemId);
+            if (newItem) {
+              redoneItems.push({ oldItemId: frameItemId, newItemId: newItem.id });
+              emitEvent(runId, "item_redo", { oldItemId: frameItemId, newItem });
+            }
+          } catch {
+            // Item may already be superseded by a previous redo in this batch
+          }
+        }
+
+        qm.save();
+        await runManager.resumeRun(runId);
+
+        sendJson(res, 200, {
+          assetKey,
+          path: relativePath,
+          framesRequeued: redoneItems.length,
+          redoneItems,
+        });
+        return;
+      }
+
       // POST /api/runs/:id/items/:itemId/continuity
       if (method === "POST" && action === "items" && pathParts.length >= 6 && pathParts[5] === "continuity") {
         const itemId = decodeURIComponent(pathParts[4]);

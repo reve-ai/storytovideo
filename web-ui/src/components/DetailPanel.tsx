@@ -4,6 +4,7 @@ import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import InputForm from "./InputForm";
 import ImageUpload from "./ImageUpload";
+import AssetReplace from "./AssetReplace";
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -295,6 +296,9 @@ function DetailOutputs({
     } else {
       const uploadField =
         item.type === "generate_frame" ? "startPath" : item.type === "generate_asset" ? "path" : null;
+      const assetKey = item.type === "generate_asset"
+        ? (item.outputs as Record<string, string>)?.key ?? null
+        : null;
       mediaEl = (
         <div className="detail-media-wrap">
           <img
@@ -304,6 +308,9 @@ function DetailOutputs({
           />
           {uploadField && (
             <ImageUpload itemId={item.id} field={uploadField} />
+          )}
+          {assetKey && (
+            <AssetReplace assetKey={assetKey} label={assetKey.split(":")[1]} />
           )}
         </div>
       );

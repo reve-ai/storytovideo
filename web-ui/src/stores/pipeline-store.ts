@@ -103,6 +103,7 @@ interface PipelineActions {
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
+  replaceAsset: (runId: string, assetKey: string, file: File) => Promise<{ framesRequeued: number } | null>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
@@ -237,6 +238,28 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     } catch (e) {
       console.error("uploadImage:", e);
       return false;
+    }
+  },
+
+  replaceAsset: async (runId: string, assetKey: string, file: File) => {
+    try {
+      const params = new URLSearchParams({ assetKey });
+      const res = await fetch(`/api/runs/${runId}/assets/replace?${params}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) {
+        console.error("replaceAsset failed:", await res.text());
+        return null;
+      }
+      const data = await res.json();
+      await get().fetchQueues(runId);
+      await get().fetchGraph(runId);
+      return { framesRequeued: data.framesRequeued ?? 0 };
+    } catch (e) {
+      console.error("replaceAsset:", e);
+      return null;
     }
   },
 
