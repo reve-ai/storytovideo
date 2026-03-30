@@ -16,6 +16,34 @@ function resolveImageBackend(imageBackend?: ImageBackend, videoBackend?: LegacyI
   return videoBackend === "grok" ? "grok" : "reve";
 }
 
+export function buildAssetPrompt(params: {
+  assetType: "character" | "location" | "object";
+  description: string;
+  artStyle: string;
+  isEditing: boolean;
+}): string {
+  const { assetType, description, artStyle, isEditing } = params;
+
+  if (isEditing) {
+    if (assetType === "character") {
+      return `Edit this image to show the same character from a different angle/perspective. Keep their exact appearance, clothing, facial features, body proportions, and color palette identical. Only change the viewing angle to a 3/4 perspective. The character must have a completely original appearance (NOT resembling any real celebrity or public figure). Character details: ${description}`;
+    }
+
+    return `Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ${description}`;
+  }
+
+  let prompt = `Generate a ${artStyle} style reference image of `;
+  if (assetType === "character") {
+    prompt += `a character with a completely original appearance (NOT resembling any real celebrity or public figure): ${description}`;
+  } else if (assetType === "object") {
+    prompt += `an object/product: ${description}. Show the object clearly against a neutral background for reference.`;
+  } else {
+    prompt += `a location: ${description}`;
+  }
+
+  return prompt;
+}
+
 /**
  * Generates reference images for characters and locations using the Reve API.
  * Returns file path for the generated image.
@@ -33,7 +61,7 @@ export async function generateAsset(params: {
   videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
-}): Promise<{ key: string; path: string }> {
+}): Promise<{ key: string; path: string; finalPrompt: string }> {
   const {
     characterName,
     locationName,
@@ -70,37 +98,20 @@ export async function generateAsset(params: {
 
   const key = `${assetType}:${assetName}:${angleType}`;
 
+  // Build the prompt
+  const isEditing = Boolean(referenceImagePath && fs.existsSync(referenceImagePath));
+  const prompt = buildAssetPrompt({
+    assetType,
+    description,
+    artStyle,
+    isEditing,
+  });
+  const imageBackend = resolveImageBackend(params.imageBackend, params.videoBackend);
+
   // Dry-run mode: return placeholder path
   if (dryRun) {
     const placeholder = `[dry-run] assets/${assetType}s/${assetName}_${angleType}.png`;
-    return { key, path: placeholder };
-  }
-
-  // Build the prompt
-  let prompt: string;
-  let isEditing = false;
-  const imageBackend = resolveImageBackend(params.imageBackend, params.videoBackend);
-
-  // Check if reference image provided
-  if (referenceImagePath && fs.existsSync(referenceImagePath)) {
-    isEditing = true;
-
-    // Image editing prompt for consistency
-    if (assetType === "character") {
-      prompt = `Edit this image to show the same character from a different angle/perspective. Keep their exact appearance, clothing, facial features, body proportions, and color palette identical. Only change the viewing angle to a 3/4 perspective. The character must have a completely original appearance (NOT resembling any real celebrity or public figure). Character details: ${description}`;
-    } else {
-      prompt = `Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ${description}`;
-    }
-  } else {
-    // Generate new image
-    prompt = `Generate a ${artStyle} style reference image of `;
-    if (assetType === "character") {
-      prompt += `a character with a completely original appearance (NOT resembling any real celebrity or public figure): ${description}`;
-    } else if (assetType === "object") {
-      prompt += `an object/product: ${description}. Show the object clearly against a neutral background for reference.`;
-    } else {
-      prompt += `a location: ${description}`;
-    }
+    return { key, path: placeholder, finalPrompt: prompt };
   }
 
   // Log the operation
@@ -169,7 +180,7 @@ export async function generateAsset(params: {
         }
       }
 
-      return { key, path: resultPath };
+      return { key, path: resultPath, finalPrompt: prompt };
     } catch (error) {
       lastError = error as Error;
       // Don't retry if cancelled due to pipeline interruption

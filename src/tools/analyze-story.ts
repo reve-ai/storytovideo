@@ -38,8 +38,8 @@ const storyAnalysisSchema = z.object({
  * Analyzes a story to extract characters, locations, art style, and scenes.
  * Uses Claude Opus 4.6 with structured output.
  */
-export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
-  const prompt = `Analyze the following story and extract:
+export function buildAnalyzeStoryPrompt(storyText: string): string {
+  return `Analyze the following story and extract:
 1. Title
 2. Visual art style (describe the visual aesthetic)
 3. Characters (name, detailed physical description, personality, age range)
@@ -56,6 +56,10 @@ Unless the story explicitly specifies an art style, default to "photorealistic" 
 
 Story:
 ${storyText}`;
+}
+
+export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
+  const prompt = buildAnalyzeStoryPrompt(storyText);
 
   const limiter = rateLimiters.get('anthropic');
   await limiter.acquire();

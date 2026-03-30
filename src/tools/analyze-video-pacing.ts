@@ -36,6 +36,48 @@ export interface AnalyzeVideoClipOptions {
   startFramePrompt?: string;
 }
 
+export function buildAnalyzeVideoPrompt(opts: Pick<AnalyzeVideoClipOptions, "shotNumber" | "dialogue" | "actionPrompt" | "durationSeconds" | "cameraDirection" | "startFramePrompt" | "referenceImagePaths">): string {
+  return `Analyze this video clip (shot ${opts.shotNumber}, ${opts.durationSeconds}s) for quality and accuracy.
+
+The intended action for this shot was: "${opts.actionPrompt}"
+${opts.dialogue ? `Dialogue: "${opts.dialogue}"` : "No dialogue in this shot."}
+Current camera direction: "${opts.cameraDirection || 'not specified'}"
+Current start frame prompt: "${opts.startFramePrompt || 'not specified'}"
+
+The first image after the video is the start frame that was used as input to generate this clip.
+${opts.referenceImagePaths.length > 0 ? "The remaining images are character/location/object reference sheets from the asset library." : ""}
+
+Evaluate:
+1. How well does the generated video match the intended action and start frame?
+2. Are there visual artifacts, glitches, or quality issues?
+3. Do characters/objects match their reference images?
+4. Is the pacing appropriate for the content?
+5. Are there static/frozen frames or unnecessary repetition?
+
+For each recommendation, provide a structured object with:
+- "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
+- "commentary": explain what you're changing and why
+- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
+
+IMPORTANT: When suggesting changes to actionPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
+
+Return JSON:
+{
+  "matchScore": <0-100>,
+  "issues": ["<specific issue 1>", "<specific issue 2>"],
+  "recommendations": [
+    {
+      "type": "redo_video" | "redo_frame" | "no_change",
+      "commentary": "<explanation of the change>",
+      "suggestedInputs": {
+        "actionPrompt": "<complete rewritten action prompt if changing>",
+        "startFramePrompt": "<complete rewritten frame prompt if changing>"
+      }
+    }
+  ]
+}`;
+}
+
 export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<VideoClipAnalysis> {
   const client = getGoogleClient();
 
@@ -80,45 +122,7 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
   }
 
   parts.push({
-    text: `Analyze this video clip (shot ${opts.shotNumber}, ${opts.durationSeconds}s) for quality and accuracy.
-
-The intended action for this shot was: "${opts.actionPrompt}"
-${opts.dialogue ? `Dialogue: "${opts.dialogue}"` : "No dialogue in this shot."}
-Current camera direction: "${opts.cameraDirection || 'not specified'}"
-Current start frame prompt: "${opts.startFramePrompt || 'not specified'}"
-
-The first image after the video is the start frame that was used as input to generate this clip.
-${opts.referenceImagePaths.length > 0 ? "The remaining images are character/location/object reference sheets from the asset library." : ""}
-
-Evaluate:
-1. How well does the generated video match the intended action and start frame?
-2. Are there visual artifacts, glitches, or quality issues?
-3. Do characters/objects match their reference images?
-4. Is the pacing appropriate for the content?
-5. Are there static/frozen frames or unnecessary repetition?
-
-For each recommendation, provide a structured object with:
-- "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
-- "commentary": explain what you're changing and why
-- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
-
-IMPORTANT: When suggesting changes to actionPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
-
-Return JSON:
-{
-  "matchScore": <0-100>,
-  "issues": ["<specific issue 1>", "<specific issue 2>"],
-  "recommendations": [
-    {
-      "type": "redo_video" | "redo_frame" | "no_change",
-      "commentary": "<explanation of the change>",
-      "suggestedInputs": {
-        "actionPrompt": "<complete rewritten action prompt if changing>",
-        "startFramePrompt": "<complete rewritten frame prompt if changing>"
-      }
-    }
-  ]
-}`,
+    text: buildAnalyzeVideoPrompt(opts),
   });
 
   const limiter = rateLimiters.get('gemini');
