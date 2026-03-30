@@ -10,8 +10,8 @@ import { rateLimiters } from "../queue/rate-limiter-registry.js";
  * that "show, don't tell" — turning exposition into visual scenes, action, and
  * dialogue — so the downstream analyzeStory step has richer material to work with.
  */
-export async function storyToScript(storyText: string): Promise<string> {
-  const prompt = `You are a screenwriter adapting a story into a visual script. Your job is to convert narration-heavy prose into vivid, filmable scenes.
+export function buildStoryToScriptPrompt(storyText: string): string {
+  return `You are a screenwriter adapting a story into a visual script. Your job is to convert narration-heavy prose into vivid, filmable scenes.
 
 Rules:
 - "Show, don't tell." If the story says "she was nervous," describe her fidgeting, avoiding eye contact, tapping her fingers.
@@ -27,6 +27,10 @@ Rules:
 Convert the following story into a visual prose script:
 
 ${storyText}`;
+}
+
+export async function storyToScript(storyText: string): Promise<string> {
+  const prompt = buildStoryToScriptPrompt(storyText);
 
   const limiter = rateLimiters.get('anthropic');
   await limiter.acquire();

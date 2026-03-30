@@ -82,7 +82,7 @@ type GenerateVideoParams = {
 };
 
 /** Shared return type for all video backends. */
-type GenerateVideoResult = { shotNumber: number; path: string; duration: number; promptSent?: string };
+type GenerateVideoResult = { shotNumber: number; path: string; duration: number; finalPrompt: string };
 
 function buildSceneShotFilename(sceneNumber: number, shotInScene: number, version: number = 1): string {
   return `scene_${String(sceneNumber).padStart(2, "0")}_shot_${String(shotInScene).padStart(2, "0")}_v${version}`;
@@ -139,6 +139,16 @@ function buildDialoguePrompt(dialogue: string, speaker?: string, charactersPrese
   return `${subject} says: "${dialogue}"`;
 }
 
+export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt" | "dialogue" | "speaker" | "charactersPresent" | "soundEffects" | "cameraDirection">): string {
+  const promptParts: string[] = [];
+  if (params.actionPrompt) promptParts.push(params.actionPrompt);
+  const dialoguePart = buildDialoguePrompt(params.dialogue, params.speaker, params.charactersPresent);
+  if (dialoguePart) promptParts.push(dialoguePart);
+  if (params.soundEffects) promptParts.push(`Sound effects: ${params.soundEffects}`);
+  if (params.cameraDirection) promptParts.push(`Camera: ${params.cameraDirection}`);
+  return promptParts.join(". ");
+}
+
 
 /**
  * Generates video clips for shots.
@@ -181,10 +191,6 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
     sceneNumber,
     shotInScene,
     shotType,
-    actionPrompt,
-    dialogue,
-    soundEffects,
-    cameraDirection,
     durationSeconds,
     startFramePath,
     outputDir,
@@ -199,24 +205,17 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
   const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
-	// Build video prompt from components
-	const promptParts: string[] = [];
-	if (actionPrompt) promptParts.push(actionPrompt);
-	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
-	if (dialoguePart) promptParts.push(dialoguePart);
-	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-	const videoPrompt = promptParts.join(". ");
+	const finalPrompt = buildVideoPrompt(params);
 
   // Dry-run mode: return placeholder
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: ${shotContext} (${shotType}, ${durationSeconds}s)`);
-	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
-	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
+		  console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
+		  return { shotNumber, path: outputPath, duration: durationSeconds, finalPrompt };
   }
 
   console.log(`[generateVideo] Generating ${shotContext} (${shotType}, ${durationSeconds}s)`);
-	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+		console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
 
   try {
     const client = getGoogleClient();
@@ -264,7 +263,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         let operation: Awaited<ReturnType<typeof client.models.generateVideos>>;
         const veoCallPromise = client.models.generateVideos({
           model: "veo-3.1-generate-preview",
-          prompt: videoPrompt,
+	          prompt: finalPrompt,
           image: startImage,
           config: {
             ...config,
@@ -323,7 +322,7 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
         });
 
         console.log(`[generateVideo] ${shotContext} saved to ${outputPath}`);
-	        return { shotNumber, path: outputPath, duration: clampedDuration, promptSent: videoPrompt };
+		        return { shotNumber, path: outputPath, duration: clampedDuration, finalPrompt };
 
         } finally {
           if (!veoReleased) {
@@ -392,10 +391,6 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
     sceneNumber,
     shotInScene,
     shotType,
-    actionPrompt,
-    dialogue,
-    soundEffects,
-    cameraDirection,
     durationSeconds,
     startFramePath,
     outputDir,
@@ -410,20 +405,13 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
   const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
-	// Build video prompt from components
-	const promptParts: string[] = [];
-	if (actionPrompt) promptParts.push(actionPrompt);
-	const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
-	if (dialoguePart) promptParts.push(dialoguePart);
-	if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-	if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-	const videoPrompt = promptParts.join(". ");
+	const finalPrompt = buildVideoPrompt(params);
 
   // Dry-run mode: return placeholder
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: ${shotContext} (${shotType}, ${durationSeconds}s)`);
-	  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
-	  return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
+		  console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
+		  return { shotNumber, path: outputPath, duration: durationSeconds, finalPrompt };
   }
 
   if (!startFramePath) {
@@ -431,7 +419,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
   }
 
   console.log(`[generateVideo] Generating ${shotContext} via Grok (${shotType}, ${durationSeconds}s)`);
-	console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+		console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
 
   // Convert start frame to base64 data URI
   const imageBuffer = readFileSync(startFramePath);
@@ -443,7 +431,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
 
   try {
     // grok-client already handles retries with exponential backoff
-    const result = await grokGenerateVideo(videoPrompt, {
+    const result = await grokGenerateVideo(finalPrompt, {
       image: dataUri,
       duration: clampedDuration,
       aspectRatio: params.aspectRatio || "16:9",
@@ -457,7 +445,7 @@ async function generateVideoGrok(params: GenerateVideoParams): Promise<GenerateV
     }
 
     console.log(`[generateVideo] ${shotContext} saved to ${result.path}`);
-	    return { shotNumber, path: result.path, duration: clampedDuration, promptSent: videoPrompt };
+		    return { shotNumber, path: result.path, duration: clampedDuration, finalPrompt };
   } catch (error) {
     console.error(`[generateVideo] Error generating ${shotContext} via Grok:`, error);
     throw error;
@@ -475,10 +463,6 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
     shotNumber,
     sceneNumber,
     shotInScene,
-    actionPrompt,
-    dialogue,
-    soundEffects,
-    cameraDirection,
     durationSeconds,
     startFramePath,
     outputDir,
@@ -492,23 +476,16 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
   const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
   const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
 
-  // Build video prompt from components
-  const promptParts: string[] = [];
-  if (actionPrompt) promptParts.push(actionPrompt);
-  const dialoguePart = buildDialoguePrompt(dialogue, params.speaker, params.charactersPresent);
-  if (dialoguePart) promptParts.push(dialoguePart);
-  if (soundEffects) promptParts.push(`Sound effects: ${soundEffects}`);
-  if (cameraDirection) promptParts.push(`Camera: ${cameraDirection}`);
-  const videoPrompt = promptParts.join(". ");
+  const finalPrompt = buildVideoPrompt(params);
 
   if (dryRun) {
     console.log(`[generateVideo] DRY-RUN: ${shotContext} via LTX (${durationSeconds}s)`);
-    console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
-    return { shotNumber, path: outputPath, duration: durationSeconds, promptSent: videoPrompt };
+    console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
+    return { shotNumber, path: outputPath, duration: durationSeconds, finalPrompt };
   }
 
   console.log(`[generateVideo] Generating ${shotContext} via LTX (${durationSeconds}s)`);
-  console.log(`[generateVideo] Prompt sent to API: ${videoPrompt}`);
+  console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
 
   // Resolve aspect ratio to LTX pixel dimensions
   const aspectRatio = params.aspectRatio || "16:9";
@@ -523,7 +500,7 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
   }
 
   try {
-    const result = await ltxGenerateVideo(videoPrompt, {
+    const result = await ltxGenerateVideo(finalPrompt, {
       image: startFramePath || undefined,
       duration: durationSeconds,
       width,
@@ -536,7 +513,7 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
     });
 
     console.log(`[generateVideo] ${shotContext} saved to ${result.path} (LTX adjusted duration: ${result.duration}s)`);
-    return { shotNumber, path: result.path, duration: result.duration, promptSent: videoPrompt };
+    return { shotNumber, path: result.path, duration: result.duration, finalPrompt };
   } catch (error) {
     console.error(`[generateVideo] Error generating ${shotContext} via LTX:`, error);
     throw error;
