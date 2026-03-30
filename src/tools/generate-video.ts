@@ -238,15 +238,14 @@ function buildDialoguePrompt(
 
 export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt" | "dialogue" | "speaker" | "charactersPresent" | "characterDescriptions" | "soundEffects" | "cameraDirection">): string {
   const promptParts: string[] = [];
-  // Cinematic framing at the start shifts the model away from YouTube/vlog/portrait training data
-  promptParts.push("Cinematic narrative film. Characters are unaware of the camera and never look at it.");
+  // Cinematic framing + gaze instruction at the very start — shifts the model away from YouTube/vlog/portrait training data
+  promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
+  promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
   if (params.actionPrompt) promptParts.push(params.actionPrompt);
   const dialoguePart = buildDialoguePrompt(params.dialogue, params.speaker, params.charactersPresent, params.characterDescriptions);
   if (dialoguePart) promptParts.push(dialoguePart);
   if (params.soundEffects) promptParts.push(`Sound effects: ${params.soundEffects}`);
   if (params.cameraDirection) promptParts.push(`Camera: ${params.cameraDirection}`);
-  // Append gaze instruction to every video prompt to prevent characters looking at camera
-  promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
   // Sound effects and ambient audio are intentionally kept.
   promptParts.push("No music. No soundtrack. No background music.");
