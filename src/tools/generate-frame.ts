@@ -470,6 +470,48 @@ async function generateSingleFrame(params: {
 }
 
 /**
+ * Returns a composition-aware gaze direction instruction for the frame prompt.
+ * Every shot gets a gaze instruction — not just dialogue shots.
+ */
+function buildGazeInstruction(params: {
+  composition: string;
+  charactersPresent: string[];
+  hasCharacterDialogue: boolean;
+}): string {
+  const { composition, charactersPresent, hasCharacterDialogue } = params;
+  const comp = composition.toLowerCase();
+  const charCount = charactersPresent.length;
+
+  // Wide/establishing shots: characters engaged in environment
+  if (comp.includes("wide") || comp.includes("establishing")) {
+    return "Characters are engaged in their environment, not aware of the camera. No one looks at the camera.";
+  }
+
+  // Multi-character dialogue shots
+  if (charCount >= 2 && hasCharacterDialogue) {
+    return "Characters look at each other, NOT at the camera. No eye contact with the camera.";
+  }
+
+  // Multi-character non-dialogue (reaction, group activity)
+  if (charCount >= 2) {
+    return "Characters look at each other or at their activity, NOT at the camera. No eye contact with the camera.";
+  }
+
+  // Solo character with dialogue (speaking to someone off-screen)
+  if (charCount === 1 && hasCharacterDialogue) {
+    return "Character looks slightly off-camera, as if speaking to someone just out of frame. NOT looking at the camera.";
+  }
+
+  // Solo character, no dialogue (thinking, reacting, doing something)
+  if (charCount === 1) {
+    return "Character's gaze is directed at their activity or into the middle distance, NOT at the camera.";
+  }
+
+  // No characters (object shots, empty scenes)
+  return "";
+}
+
+/**
  * Builds a detailed prompt for frame generation.
  *
  * When `hasReferenceImages` is true (the common case), outputs a slim prompt
@@ -500,13 +542,15 @@ export function buildFramePrompt(params: {
     hasReferenceImages,
   } = params;
 
+  const gazeInstruction = buildGazeInstruction({ composition, charactersPresent, hasCharacterDialogue });
+
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
     const parts = [
       `Style: ${artStyle}.`,
       `${composition} shot, ${cameraDirection}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
-      hasCharacterDialogue ? "Characters face each other, not the camera." : "",
+      gazeInstruction,
       framePrompt,
     ].filter(Boolean);
     return parts.join(" ");
@@ -519,7 +563,7 @@ export function buildFramePrompt(params: {
     `Location: ${locationDescription}.`,
     charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
     (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
-    hasCharacterDialogue ? "Characters face each other, not the camera." : "",
+    gazeInstruction,
     framePrompt,
   ].filter(Boolean);
 
