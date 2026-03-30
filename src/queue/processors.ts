@@ -428,6 +428,7 @@ For this scene:
    - Camera movement
    Write it as a flowing paragraph of direction, not a list. The existing structured fields (dialogue, speaker, soundEffects, cameraDirection, actionPrompt) are still required — they're used for TTS, subtitles, and metadata. But videoPrompt is what goes to the video model and must be self-contained.
    Example videoPrompt: "The woman looks across the table at the man and says 'I never thought we'd end up here.' She reaches for her glass, her eyes staying on him. The man shifts in his seat, glancing down at his hands before meeting her gaze. Ambient restaurant chatter and soft clinking of glasses. Camera slowly pushes in on a slight dolly."
+   CRITICAL — ABSENT CHARACTERS: If the dialogue mentions a character who is NOT in charactersPresent for this shot, the videoPrompt MUST explicitly state that only the visible characters are in the frame. The video model will hallucinate people into the scene if they are referenced without being excluded. For example, if the man says "Sophie called me yesterday" but Sophie is not in charactersPresent, write: "Only the man is visible in the frame. He looks down at his phone and says 'Sophie called me yesterday.'" Do NOT mention absent characters by name or visual description without clarifying they are not present.
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
