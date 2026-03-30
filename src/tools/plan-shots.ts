@@ -95,10 +95,13 @@ SCENE TRANSITIONS:
 
 PROMPT WRITING STYLE:
 - startFramePrompt should read like a director's shot description, NOT a character sheet or casting call.
-- Focus on blocking (where characters stand/sit), action (what they're doing), camera angle, and mood.
+- Focus on blocking (where characters stand/sit), action (what they're doing), camera angle, and composition.
 - Reference images provide all character and location appearance — the prompt provides DIRECTION.
 - Refer to characters by name (e.g., "Elena") or role (e.g., "the detective"). Do NOT describe hair color, eye color, skin tone, clothing details, or other physical attributes.
 - Do NOT describe location visuals in detail — the location reference image handles that. Just name the location.
+- BAD startFramePrompt: "Wide shot of the restaurant entrance interior, warm ambient golden lighting, exposed brick walls visible. Liam stands alone near the entrance. Soft candlelight glows from tables in the background. Evening cityscape visible through arched windows."
+- GOOD startFramePrompt: "Wide shot, Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff. His posture is upright but tense. Tables visible in the background."
+- The bad example wastes words on lighting, materials, and architectural details that the location reference image already provides. The good example focuses on character blocking, pose, expression, and composition.
 - Keep startFramePrompt concise: under 150 words. Every word should describe composition or action, not appearance.
 
 ACTION PROMPT WRITING STYLE:
