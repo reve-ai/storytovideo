@@ -532,11 +532,6 @@ ${JSON.stringify(scene, null, 2)}`;
 
     const aspectRatio = state.options?.aspectRatio;
     const imageBackend = state.options?.imageBackend ?? 'grok';
-    const previousFrameKey = `frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}:start`;
-    const previousFramePath = !shot.continuousFromPrevious && shot.shotInScene > 1
-      ? state.generatedOutputs[previousFrameKey]
-      : undefined;
-    console.log(`[handleGenerateFrame] Previous frame lookup: key=${previousFrameKey}, found=${!!previousFramePath}, eligible=${!shot.continuousFromPrevious && shot.shotInScene > 1}`);
     console.log(`[handleGenerateFrame] Using imageBackend=${imageBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
     const result = await generateFrame({
       shot,
@@ -546,7 +541,6 @@ ${JSON.stringify(scene, null, 2)}`;
       imageBackend,
       aspectRatio,
       version: item.version,
-      previousFramePath: previousFramePath ? this.absolutePath(previousFramePath) : undefined,
     });
 
     if (result.finalPrompt) {

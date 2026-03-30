@@ -172,10 +172,9 @@ export async function buildFrameReferencePlan(params: {
   shot: Shot;
   assetLibrary: AssetLibrary;
   imageBackend: ImageBackend;
-  previousFramePath?: string;
   collageOutputPath: string;
 }): Promise<PlannedFrameReferences> {
-  const { shot, assetLibrary, imageBackend, previousFramePath, collageOutputPath } = params;
+  const { shot, assetLibrary, imageBackend, collageOutputPath } = params;
   const maxRefs = imageBackend === "grok" ? 5 : 6;
   const referencesUsed: FrameReference[] = [];
   const droppedReferences: FrameReference[] = [];
@@ -188,13 +187,6 @@ export async function buildFrameReferencePlan(params: {
       ? [{ type: "character", name, path: refPath }]
       : [];
   });
-
-  const previousFrameReference = previousFramePath
-    && !shot.continuousFromPrevious
-    && shot.shotInScene > 1
-    && fs.existsSync(previousFramePath)
-    ? { type: "continuity" as const, name: "Previous shot frame", path: previousFramePath }
-    : undefined;
 
   const locationRefPath = assetLibrary.locationImages[shot.location];
   const locationReference = locationRefPath && fs.existsSync(locationRefPath)
@@ -218,10 +210,6 @@ export async function buildFrameReferencePlan(params: {
 
   for (const reference of characterReferences) {
     pushWithPriority(reference);
-  }
-
-  if (previousFrameReference) {
-    pushWithPriority(previousFrameReference);
   }
 
   if (locationReference) {
@@ -275,14 +263,13 @@ export async function generateFrame(params: {
   videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
-  previousFramePath?: string;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
   startReferences?: FrameReference[];
   finalPrompt?: string;
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1, previousFramePath } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1 } = params;
   const shotContext = formatShotContext(shot);
   const resolvedImageBackend = resolveImageBackend(imageBackend, videoBackend);
 
@@ -311,7 +298,6 @@ export async function generateFrame(params: {
       outputPath: startPath,
       imageBackend: resolvedImageBackend,
       aspectRatio,
-      previousFramePath,
     });
 
     return {
@@ -337,7 +323,6 @@ async function generateSingleFrame(params: {
   outputPath: string;
   imageBackend: ImageBackend;
   aspectRatio?: string;
-  previousFramePath?: string;
 }): Promise<GeneratedSingleFrameResult> {
   const {
     shot,
@@ -346,7 +331,6 @@ async function generateSingleFrame(params: {
     outputPath,
     imageBackend,
     aspectRatio,
-    previousFramePath,
   } = params;
 
   const normalizedSpeaker = (shot.speaker ?? "").trim().toLowerCase();
@@ -375,13 +359,10 @@ async function generateSingleFrame(params: {
   const locationRef = assetLibrary.locationImages[shot.location];
   console.log(`[generateFrame]   Location ref "${shot.location}": path=${JSON.stringify(locationRef)}, exists=${locationRef ? fs.existsSync(locationRef) : 'N/A'}`);
 
-  console.log(`[generateFrame]   Previous frame ref: path=${JSON.stringify(previousFramePath)}, eligible=${!shot.continuousFromPrevious && shot.shotInScene > 1}, exists=${previousFramePath ? fs.existsSync(previousFramePath) : 'N/A'}`);
-
   const referencePlan = await buildFrameReferencePlan({
     shot,
     assetLibrary,
     imageBackend,
-    previousFramePath,
     collageOutputPath: buildCollageOutputPath(outputPath),
   });
 
@@ -576,7 +557,6 @@ export const generateFrameTool = {
       objectImages: z.record(z.string(), z.string()).optional(),
     }).describe("AssetLibrary with character, location, and object reference image paths"),
     outputDir: z.string().describe("Output directory for saving frame images"),
-    previousFramePath: z.string().optional().describe("Optional previous shot start frame path for continuity references"),
     dryRun: z
       .boolean()
       .optional()

@@ -44,7 +44,6 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
   const dir = mkdtempSync(join(tmpdir(), "generate-frame-"));
   const alice = join(dir, "alice.png");
   const bob = join(dir, "bob.png");
-  const previous = join(dir, "previous.png");
   const archive = join(dir, "archive.png");
   const lantern = join(dir, "lantern.png");
   const map = join(dir, "map.png");
@@ -54,7 +53,6 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
   await Promise.all([
     writePng(alice, { r: 255, g: 0, b: 0 }),
     writePng(bob, { r: 0, g: 255, b: 0 }),
-    writePng(previous, { r: 0, g: 0, b: 255 }),
     writePng(archive, { r: 255, g: 255, b: 0 }),
     writePng(lantern, { r: 255, g: 0, b: 255 }),
     writePng(map, { r: 0, g: 255, b: 255 }),
@@ -80,12 +78,11 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
     shot: makeShot(),
     assetLibrary,
     imageBackend: "grok",
-    previousFramePath: previous,
     collageOutputPath: collage,
   });
 
-  assert.deepEqual(plan.referencesUsed.map(reference => reference.type), ["character", "character", "continuity", "location", "collage"]);
-  assert.deepEqual(plan.mergedReferences.map(reference => reference.name), ["Lantern", "Map", "Compass"]);
+  assert.deepEqual(plan.referencesUsed.map(reference => reference.type), ["character", "character", "location", "object", "collage"]);
+  assert.deepEqual(plan.mergedReferences.map(reference => reference.name), ["Map", "Compass"]);
   assert.equal(plan.droppedReferences.length, 0);
   assert.ok(existsSync(collage));
 
@@ -93,22 +90,19 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
   const legacyTag = ["<", "img", ">"].join("");
   assert.equal(leadIn.includes(legacyTag), false);
   assert.match(leadIn, /Image 1: Alice\./);
-  assert.match(leadIn, /Image 3: previous shot\./);
   assert.match(leadIn, /Image 5: props collage\./);
   // No composition directive in terse format
   assert.equal(leadIn.includes("Compose the scene"), false);
-  console.log("  ✓ reference plan prioritizes characters, continuity, and collage overflow");
+  console.log("  ✓ reference plan prioritizes characters and collage overflow");
 }
 
 async function testPreviousFrameRequiresEligibleShot(): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "generate-frame-"));
   const alice = join(dir, "alice.png");
-  const previous = join(dir, "previous.png");
   const collage = join(dir, "collage.png");
 
   await Promise.all([
     writePng(alice, { r: 255, g: 0, b: 0 }),
-    writePng(previous, { r: 0, g: 0, b: 255 }),
   ]);
 
   const plan = await buildFrameReferencePlan({
@@ -119,12 +113,11 @@ async function testPreviousFrameRequiresEligibleShot(): Promise<void> {
       objectImages: {},
     },
     imageBackend: "grok",
-    previousFramePath: previous,
     collageOutputPath: collage,
   });
 
   assert.equal(plan.referencesUsed.some(reference => reference.type === "continuity"), false);
-  console.log("  ✓ previous-frame references are skipped for ineligible shots");
+  console.log("  ✓ no continuity references are produced (feature removed)");
 }
 
 function testReferenceAwarePromptOmitsLocationLine(): void {
