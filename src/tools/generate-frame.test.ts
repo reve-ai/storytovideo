@@ -21,6 +21,7 @@ function makeShot(overrides: Partial<Shot> = {}): Shot {
     speaker: "",
     soundEffects: "",
     cameraDirection: "static camera",
+    videoPrompt: "",
     charactersPresent: ["Alice", "Bob"],
     objectsPresent: ["Lantern", "Map", "Compass"],
     location: "Archive",

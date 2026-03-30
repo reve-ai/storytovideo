@@ -35,6 +35,7 @@ const perSceneShotSchema = z.object({
   speaker: z.string(),
   soundEffects: z.string(),
   cameraDirection: z.string(),
+  videoPrompt: z.string(),
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()).optional(),
   location: z.string(),
@@ -419,6 +420,14 @@ For this scene:
    BAD: "Wide shot of the restaurant. In the far background, Ethan is visible seated at a table near the window."
    GOOD: "Medium shot of Ethan seated at the candlelit table, looking up expectantly. The restaurant interior is visible around him."
    The video model animates what it can see in the start frame. If a character is too small or distant, the video model will hallucinate their appearance.
+15. Write videoPrompt as a COMPLETE, SELF-CONTAINED description of what happens in the shot from the video model's perspective. This is the primary direction sent to the video model — it must contain EVERYTHING the video model needs in natural prose:
+   - Character actions and blocking (using visual descriptors, NOT names — the video model can't read names)
+   - Dialogue with natural visual attribution: "the man turns to the woman and says '...'"
+   - Where each character is looking (gaze direction) — NEVER at the camera
+   - Sound effects and ambient audio woven naturally into the description
+   - Camera movement
+   Write it as a flowing paragraph of direction, not a list. The existing structured fields (dialogue, speaker, soundEffects, cameraDirection, actionPrompt) are still required — they're used for TTS, subtitles, and metadata. But videoPrompt is what goes to the video model and must be self-contained.
+   Example videoPrompt: "The woman looks across the table at the man and says 'I never thought we'd end up here.' She reaches for her glass, her eyes staying on him. The man shifts in his seat, glancing down at his hands before meeting her gaze. Ambient restaurant chatter and soft clinking of glasses. Camera slowly pushes in on a slight dolly."
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
@@ -593,14 +602,11 @@ ${JSON.stringify(scene, null, 2)}`;
       charactersPresent: shot.charactersPresent,
       soundEffects: shot.soundEffects,
       cameraDirection: shot.cameraDirection,
+      videoPrompt: shot.videoPrompt,
       durationSeconds: shot.durationSeconds,
       startFramePath,
       outputDir: join(this.resolvedOutputDir(), 'videos'),
       videoBackend,
-      characterNames: state.storyAnalysis?.characters.map(c => c.name) ?? [],
-      characterDescriptions: state.storyAnalysis
-        ? Object.fromEntries(state.storyAnalysis.characters.map(c => [c.name, c.physicalDescription]))
-        : {},
       aspectRatio,
       abortSignal: signal,
       version: item.version,

@@ -25,6 +25,7 @@ function makeShot(shotNumber: number, shotInScene: number): Shot {
     speaker: '',
     soundEffects: '',
     cameraDirection: '',
+    videoPrompt: '',
     charactersPresent: [],
     objectsPresent: [],
     location: 'Studio',

@@ -19,122 +19,7 @@ export class RaiCelebrityError extends Error {
 
 
 
-/**
- * Infer gender from a physical description string.
- * Returns "man", "woman", or "person" when ambiguous.
- */
-function inferGender(description: string): "man" | "woman" | "person" {
-  const d = description.toLowerCase();
-  const femaleSignals = /\b(woman|female|girl|she|her|lady|feminine|petite)\b/;
-  const maleSignals = /\b(man|male|boy|he|his|guy|gentleman|masculine)\b/;
-  if (femaleSignals.test(d)) return "woman";
-  if (maleSignals.test(d)) return "man";
-  return "person";
-}
 
-/**
- * Extract a short (3–6 word) visual descriptor from a character's physical description.
- * Picks the most visually distinctive trait — clothing first, then hair, then age/build.
- */
-function extractVisualDescriptor(
-  description: string,
-  gender: "man" | "woman" | "person",
-): string {
-  const d = description.toLowerCase();
-
-  // Try clothing: "wearing a/an …" or "dressed in …"
-  const clothingMatch = d.match(/(?:wearing\s+(?:a\s+)?|dressed\s+in\s+(?:a\s+)?)([\w\s-]+?)(?:\.|,|;|$)/);
-  if (clothingMatch) {
-    const clothing = clothingMatch[1].trim().replace(/\s+/g, " ");
-    // Keep it short — at most 4 words from the clothing phrase
-    const words = clothing.split(" ").slice(0, 4).join(" ");
-    return `the ${gender} in the ${words}`;
-  }
-
-  // Try hair color
-  const hairMatch = d.match(/\b(blonde?|brunette|red|auburn|black|dark(?:\s+brown)?|brown|grey|gray|white|silver|ginger|strawberry\s+blonde?|sandy|golden|platinum)\b[^.]*?\bhair\b/);
-  if (hairMatch) {
-    const hairColor = hairMatch[1].trim();
-    return `the ${gender} with ${hairColor} hair`;
-  }
-
-  // Try age cue
-  const ageMatch = d.match(/\b(young|elderly|older|teenage|middle-aged|old)\b/);
-  if (ageMatch) {
-    return `the ${ageMatch[1]} ${gender}`;
-  }
-
-  // Fallback
-  return `the ${gender}`;
-}
-
-/**
- * Build a map of character name → short visual descriptor.
- * Ensures descriptors are unique across all characters in the shot.
- * Falls back to appending distinguishing traits when two characters would
- * otherwise receive the same label.
- */
-export function buildCharacterDescriptors(
-  names: string[],
-  descriptions: Record<string, string>,
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  const validNames = names.filter((n) => !!n);
-
-  if (validNames.length === 0) return result;
-
-  // First pass: generate descriptors
-  for (const name of validNames) {
-    const desc = descriptions[name] ?? "";
-    const gender = inferGender(desc || name);
-    if (desc) {
-      result[name] = extractVisualDescriptor(desc, gender);
-    } else {
-      result[name] = `the ${gender}`;
-    }
-  }
-
-  // Second pass: resolve collisions by appending hair or build info
-  const labelCounts = new Map<string, string[]>();
-  for (const [name, label] of Object.entries(result)) {
-    const existing = labelCounts.get(label) || [];
-    existing.push(name);
-    labelCounts.set(label, existing);
-  }
-
-  for (const [label, namesWithLabel] of labelCounts) {
-    if (namesWithLabel.length <= 1) continue;
-    // Try to disambiguate with a secondary feature
-    for (let i = 0; i < namesWithLabel.length; i++) {
-      const name = namesWithLabel[i];
-      const desc = (descriptions[name] ?? "").toLowerCase();
-      const gender = inferGender(desc || name);
-      // Already used clothing? Try hair. Already used hair? Try clothing.
-      if (label.includes("in the")) {
-        // Clothing was used, try hair
-        const hairMatch = desc.match(/\b(blonde?|brunette|red|auburn|black|dark(?:\s+brown)?|brown|grey|gray|white|silver|ginger)\b[^.]*?\bhair\b/);
-        if (hairMatch) {
-          result[name] = `the ${gender} with ${hairMatch[1]} hair`;
-          continue;
-        }
-      } else if (label.includes("with") && label.includes("hair")) {
-        // Hair was used, try clothing
-        const clothingMatch = desc.match(/(?:wearing\s+(?:a\s+)?|dressed\s+in\s+(?:a\s+)?)([\w\s-]+?)(?:\.|,|;|$)/);
-        if (clothingMatch) {
-          const words = clothingMatch[1].trim().split(" ").slice(0, 4).join(" ");
-          result[name] = `the ${gender} in the ${words}`;
-          continue;
-        }
-      }
-      // Last resort: add positional hint
-      if (i > 0) {
-        result[name] = `the other ${gender}`;
-      }
-    }
-  }
-
-  return result;
-}
 
 
 
@@ -152,15 +37,13 @@ type GenerateVideoParams = {
   charactersPresent?: string[];
   soundEffects: string;
   cameraDirection: string;
+  /** Complete video direction as natural prose from the planner. */
+  videoPrompt: string;
   durationSeconds: number;
   startFramePath: string;
   outputDir: string;
   dryRun?: boolean;
   abortSignal?: AbortSignal;
-  /** Character names to strip from prompts before sending to Veo. */
-  characterNames?: string[];
-  /** Map of character name → physicalDescription for building visual descriptors. */
-  characterDescriptions?: Record<string, string>;
   /** Video backend override. Defaults to process.env.VIDEO_BACKEND or "veo". */
   videoBackend?: VideoBackend;
   /** Aspect ratio for the generated video (e.g. "16:9", "9:16"). */
@@ -186,66 +69,13 @@ function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sce
   return `scene ${params.sceneNumber} shot ${params.shotInScene} (shot ${params.shotNumber})`;
 }
 
-/**
- * Build a dialogue description for the video prompt.
- * Uses the speaker field to attribute dialogue to the correct character.
- * Character names are replaced with short visual descriptors derived from
- * their physicalDescription so the video model can identify who is speaking.
- */
-function buildDialoguePrompt(
-  dialogue: string,
-  speaker?: string,
-  charactersPresent?: string[],
-  characterDescriptions?: Record<string, string>,
-): string {
-  if (!dialogue) return "";
-  const normalizedSpeaker = (speaker ?? "").trim().toLowerCase();
-  if (normalizedSpeaker === "narrator" || normalizedSpeaker === "voiceover") {
-    return `${normalizedSpeaker === "voiceover" ? "Voiceover" : "Narrator"} says: "${dialogue}"`;
-  }
-
-  const descriptions = characterDescriptions ?? {};
-  const descriptors = buildCharacterDescriptors(charactersPresent ?? [], descriptions);
-
-  const labelFor = (name: string): string => descriptors[name] ?? "the person";
-
-  let speakerLabel = "the person";
-  let listenerLabel = "another person";
-
-  if (charactersPresent && charactersPresent.length > 0) {
-    const speakerMatch = charactersPresent.find(c => c.trim().toLowerCase() === normalizedSpeaker);
-    speakerLabel = speakerMatch
-      ? labelFor(speakerMatch)
-      : charactersPresent.length > 1
-        ? "one of the people"
-        : "the person";
-
-    if (charactersPresent.length > 1) {
-      const listenerName = speakerMatch
-        ? charactersPresent.find(c => c !== speakerMatch) ?? charactersPresent[0]
-        : charactersPresent[0];
-      listenerLabel = labelFor(listenerName);
-    }
-  }
-
-  const subject = `${speakerLabel[0].toUpperCase()}${speakerLabel.slice(1)}`;
-  if (charactersPresent && charactersPresent.length > 1) {
-    return `${subject} looks at ${listenerLabel} and says: "${dialogue}"`;
-  }
-
-  return `${subject} says: "${dialogue}"`;
-}
-
-export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt" | "dialogue" | "speaker" | "charactersPresent" | "characterDescriptions" | "soundEffects" | "cameraDirection">): string {
+export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt">): string {
   const promptParts: string[] = [];
   // Cinematic framing + gaze instruction at the very start — shifts the model away from YouTube/vlog/portrait training data
   promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
   promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
-  if (params.actionPrompt) promptParts.push(params.actionPrompt);
-  const dialoguePart = buildDialoguePrompt(params.dialogue, params.speaker, params.charactersPresent, params.characterDescriptions);
-  if (dialoguePart) promptParts.push(dialoguePart);
-  if (params.soundEffects) promptParts.push(`Sound effects: ${params.soundEffects}`);
-  if (params.cameraDirection) promptParts.push(`Camera: ${params.cameraDirection}`);
+  // The planner writes the complete video direction as natural prose
+  if (params.videoPrompt) promptParts.push(params.videoPrompt);
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
   // Sound effects and ambient audio are intentionally kept.
   promptParts.push("No music. No soundtrack. No background music.");
@@ -261,18 +91,14 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
   const backend = (params.videoBackend || process.env.VIDEO_BACKEND || "veo").toLowerCase();
   console.log(`[generateVideo] Using backend: ${backend}`);
 
-  // actionPrompt goes directly to the video backend — the shot planner is now
-  // responsible for using visual descriptors instead of character names.
-  const sanitized = params;
-
   if (backend === "veo") {
-    return generateVideoVeo(sanitized);
+    return generateVideoVeo(params);
   } else if (backend === "grok") {
-    return generateVideoGrok(sanitized);
+    return generateVideoGrok(params);
   } else if (backend === "ltx-full") {
-    return generateVideoLtxBackend(sanitized, "full");
+    return generateVideoLtxBackend(params, "full");
   } else if (backend === "ltx-distilled") {
-    return generateVideoLtxBackend(sanitized, "distilled");
+    return generateVideoLtxBackend(params, "distilled");
   } else {
     throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "grok", "ltx-full", or "ltx-distilled".`);
   }
@@ -469,6 +295,7 @@ export const generateVideoTool = {
     dialogue: z.string().describe("Character dialogue (empty if none)"),
     soundEffects: z.string().describe("Sound effects description"),
     cameraDirection: z.string().describe("Camera movement and angle"),
+    videoPrompt: z.string().describe("Complete video direction as natural prose from the planner"),
     durationSeconds: z.number().describe("Video duration in seconds (0.5-15). Veo supports 4, 6, or 8 seconds; Grok supports 1-15."),
     startFramePath: z.string().describe("Path to start frame image"),
     outputDir: z.string().describe("Output directory for video file"),

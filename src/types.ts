@@ -29,6 +29,7 @@ export interface Shot {
   speaker: string;             // who is speaking (character name, "narrator", "voiceover", etc; empty if no dialogue)
   soundEffects: string;
   cameraDirection: string;
+  videoPrompt: string;          // complete video direction as natural prose from the planner
   charactersPresent: string[];
   objectsPresent: string[];
   location: string;

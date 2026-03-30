@@ -28,7 +28,7 @@ function testFrameFinalPromptIncludesReferenceLeadIn(): void {
   console.log("  ✓ frame final prompt includes the assembled reference lead-in");
 }
 
-async function testVideoDryRunReturnsSanitizedFinalPrompt(): Promise<void> {
+async function testVideoDryRunReturnsFinalPrompt(): Promise<void> {
   const result = await generateVideo({
     shotNumber: 1,
     sceneNumber: 1,
@@ -40,19 +40,19 @@ async function testVideoDryRunReturnsSanitizedFinalPrompt(): Promise<void> {
     charactersPresent: ["Alice", "Bob"],
     soundEffects: "footsteps",
     cameraDirection: "slow push in",
+    videoPrompt: "The woman runs toward the man, looking at him urgently. She says 'We need to go.' Footsteps echo on the pavement. Camera slowly pushes in.",
     durationSeconds: 4,
     startFramePath: "/tmp/fake-start.png",
     outputDir: "/tmp",
     dryRun: true,
     videoBackend: "veo",
-    characterNames: ["Alice", "Bob"],
   });
 
-  assert.equal(result.finalPrompt.includes("Alice"), false);
-  assert.equal(result.finalPrompt.includes("Bob"), false);
-  assert.match(result.finalPrompt, /the first person runs toward the second person\./i);
-  assert.match(result.finalPrompt, /The first person looks at the second person and says: "We need to go\."/);
-  console.log("  ✓ video dry-run returns the exact sanitized Veo prompt");
+  // The final prompt should contain the cinematic prefix, the videoPrompt, and the no-music suffix
+  assert.match(result.finalPrompt, /Cinematic narrative film/);
+  assert.match(result.finalPrompt, /The woman runs toward the man/);
+  assert.match(result.finalPrompt, /No music\. No soundtrack\. No background music\./);
+  console.log("  ✓ video dry-run returns prompt with cinematic prefix + videoPrompt + no-music suffix");
 }
 
 async function testAssetDryRunReturnsFinalPrompt(): Promise<void> {
@@ -90,7 +90,7 @@ function testPromptBuildersMatchLoggedText(): void {
 async function main(): Promise<void> {
   console.log("Prompt logging tests:");
   testFrameFinalPromptIncludesReferenceLeadIn();
-  await testVideoDryRunReturnsSanitizedFinalPrompt();
+  await testVideoDryRunReturnsFinalPrompt();
   await testAssetDryRunReturnsFinalPrompt();
   testPromptBuildersMatchLoggedText();
   console.log("\nAll tests passed ✓");

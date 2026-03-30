@@ -30,6 +30,7 @@ function makeShot(shotNumber: number, shotInScene: number, continuousFromPreviou
     speaker: '',
     soundEffects: '',
     cameraDirection: '',
+    videoPrompt: '',
     charactersPresent: [],
     objectsPresent: [],
     location: 'Studio',
