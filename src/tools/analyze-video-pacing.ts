@@ -10,7 +10,7 @@ export interface VideoRecommendation {
   type: 'redo_video' | 'redo_frame' | 'no_change';
   commentary: string;        // explains what the AI changed and why
   suggestedInputs?: {
-    actionPrompt?: string;
+    videoPrompt?: string;
     dialogue?: string;
     startFramePrompt?: string;
     durationSeconds?: number;
@@ -30,25 +30,27 @@ export interface AnalyzeVideoClipOptions {
   startFramePath: string;
   referenceImagePaths: string[];
   dialogue?: string;
-  actionPrompt: string;
+  videoPrompt: string;
   durationSeconds: number;
   cameraDirection?: string;
   startFramePrompt?: string;
 }
 
-export function buildAnalyzeVideoPrompt(opts: Pick<AnalyzeVideoClipOptions, "shotNumber" | "dialogue" | "actionPrompt" | "durationSeconds" | "cameraDirection" | "startFramePrompt" | "referenceImagePaths">): string {
+export function buildAnalyzeVideoPrompt(opts: Pick<AnalyzeVideoClipOptions, "shotNumber" | "dialogue" | "videoPrompt" | "durationSeconds" | "cameraDirection" | "startFramePrompt" | "referenceImagePaths"> & { hasStartFrame: boolean }): string {
   return `Analyze this video clip (shot ${opts.shotNumber}, ${opts.durationSeconds}s) for quality and accuracy.
 
-The intended action for this shot was: "${opts.actionPrompt}"
+The video direction was: "${opts.videoPrompt}"
 ${opts.dialogue ? `Dialogue: "${opts.dialogue}"` : "No dialogue in this shot."}
 Current camera direction: "${opts.cameraDirection || 'not specified'}"
 Current start frame prompt: "${opts.startFramePrompt || 'not specified'}"
 
-The first image after the video is the start frame that was used as input to generate this clip.
-${opts.referenceImagePaths.length > 0 ? "The remaining images are character/location/object reference sheets from the asset library." : ""}
+${opts.hasStartFrame
+    ? "The images are labeled with text markers: START FRAME and REFERENCE IMAGES. The start frame is the image that was used as input to generate this clip."
+    : "No start frame available for comparison — it was missing at analysis time."}
+${opts.referenceImagePaths.length > 0 ? "Reference images are character/location/object reference sheets from the asset library." : ""}
 
 Evaluate:
-1. How well does the generated video match the intended action and start frame?
+1. How well does the generated video match the intended direction and start frame?
 2. Are there visual artifacts, glitches, or quality issues?
 3. Do characters/objects match their reference images?
 4. Is the pacing appropriate for the content?
@@ -57,9 +59,9 @@ Evaluate:
 For each recommendation, provide a structured object with:
 - "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
 - "commentary": explain what you're changing and why
-- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: actionPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
+- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: videoPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
 
-IMPORTANT: When suggesting changes to actionPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
+IMPORTANT: When suggesting changes to videoPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
 
 Return JSON:
 {
@@ -70,7 +72,7 @@ Return JSON:
       "type": "redo_video" | "redo_frame" | "no_change",
       "commentary": "<explanation of the change>",
       "suggestedInputs": {
-        "actionPrompt": "<complete rewritten action prompt if changing>",
+        "videoPrompt": "<complete rewritten video prompt if changing>",
         "startFramePrompt": "<complete rewritten frame prompt if changing>"
       }
     }
@@ -95,8 +97,10 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
     },
   ];
 
-  // Include start frame
-  if (fs.existsSync(opts.startFramePath)) {
+  // Include start frame with explicit label
+  const hasStartFrame = fs.existsSync(opts.startFramePath);
+  if (hasStartFrame) {
+    parts.push({ text: "START FRAME:" });
     const startFrameData = fs.readFileSync(opts.startFramePath);
     parts.push({
       inlineData: {
@@ -104,11 +108,15 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
         data: startFrameData.toString("base64"),
       },
     });
+  } else {
+    console.warn(`[analyze_video] WARNING: Start frame not found at ${opts.startFramePath} — analysis will proceed without start frame comparison`);
   }
 
-  // Include reference images from asset library
-  for (const refPath of opts.referenceImagePaths) {
-    if (fs.existsSync(refPath)) {
+  // Include reference images from asset library with explicit label
+  const existingRefPaths = opts.referenceImagePaths.filter(p => fs.existsSync(p));
+  if (existingRefPaths.length > 0) {
+    parts.push({ text: "REFERENCE IMAGES:" });
+    for (const refPath of existingRefPaths) {
       const refData = fs.readFileSync(refPath);
       const ext = path.extname(refPath).toLowerCase();
       const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
@@ -122,7 +130,7 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
   }
 
   parts.push({
-    text: buildAnalyzeVideoPrompt(opts),
+    text: buildAnalyzeVideoPrompt({ ...opts, hasStartFrame }),
   });
 
   const limiter = rateLimiters.get('gemini');

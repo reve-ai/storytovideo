@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { execFileSync } from 'child_process';
-import { mkdirSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
@@ -640,14 +640,20 @@ ${JSON.stringify(scene, null, 2)}`;
     const referenceImagePaths = (item.inputs.referenceImagePaths as string[]).map(p => this.absolutePath(p));
     const shot = item.inputs.shot as Shot;
 
+    const startFrameExists = existsSync(startFramePath);
+    if (!startFrameExists) {
+      console.warn(`[analyze_video] WARNING: Start frame not found for shot ${shotNumber}: ${startFramePath}`);
+    }
+
     this.promptLogger.log(item.itemKey, 'analyze_video', buildAnalyzeVideoPrompt({
       shotNumber,
       dialogue: shot.dialogue,
-      actionPrompt: shot.actionPrompt,
+      videoPrompt: shot.videoPrompt,
       durationSeconds: shot.durationSeconds,
       cameraDirection: shot.cameraDirection,
       startFramePrompt: shot.startFramePrompt,
       referenceImagePaths,
+      hasStartFrame: startFrameExists,
     }), { model: 'gemini-2.5-flash', shotNumber, durationSeconds: shot.durationSeconds });
 
     const analysis = await analyzeVideoClip({
@@ -656,7 +662,7 @@ ${JSON.stringify(scene, null, 2)}`;
       startFramePath,
       referenceImagePaths,
       dialogue: shot.dialogue,
-      actionPrompt: shot.actionPrompt,
+      videoPrompt: shot.videoPrompt,
       durationSeconds: shot.durationSeconds,
       cameraDirection: shot.cameraDirection,
       startFramePrompt: shot.startFramePrompt,

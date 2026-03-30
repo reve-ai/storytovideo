@@ -74,16 +74,17 @@ function testPromptBuildersMatchLoggedText(): void {
   const videoAnalysisPrompt = buildAnalyzeVideoPrompt({
     shotNumber: 7,
     dialogue: "Hello again.",
-    actionPrompt: "They hesitate, then embrace.",
+    videoPrompt: "They hesitate, then embrace.",
     durationSeconds: 6,
     cameraDirection: "static camera",
     startFramePrompt: "Both characters face each other across the platform.",
     referenceImagePaths: ["/tmp/ref.png"],
+    hasStartFrame: true,
   });
 
   assert.match(storyPrompt, /^You are a screenwriter adapting a story into a visual script\./);
   assert.match(analysisPrompt, /^Analyze the following story and extract:/);
-  assert.match(videoAnalysisPrompt, /The first image after the video is the start frame that was used as input to generate this clip\./);
+  assert.match(videoAnalysisPrompt, /The images are labeled with text markers: START FRAME and REFERENCE IMAGES\./);
   console.log("  ✓ shared prompt builders expose the exact logged text");
 }
 
