@@ -24,7 +24,7 @@ export interface Shot {
   composition: string;         // "wide_establishing" | "over_the_shoulder" | "two_shot" | "close_up" | "medium_shot" | "tracking" | "pov" | "insert_cutaway" | "low_angle" | "high_angle"
   startFramePrompt: string;
   endFramePrompt?: string;      // deprecated — kept optional for backward compat with saved data
-  actionPrompt: string;
+  actionPrompt?: string;        // deprecated — replaced by videoPrompt; kept optional for backward compat with saved data
   dialogue: string;            // quoted speech (empty if none)
   speaker: string;             // who is speaking (character name, "narrator", "voiceover", etc; empty if no dialogue)
   soundEffects: string;

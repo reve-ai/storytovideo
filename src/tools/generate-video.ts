@@ -29,7 +29,6 @@ type GenerateVideoParams = {
   sceneNumber: number;
   shotInScene: number;
   shotType: "first_last_frame";
-  actionPrompt: string;
   dialogue: string;
   /** Who is speaking: character name, "narrator", "voiceover", or empty. */
   speaker?: string;
@@ -298,7 +297,6 @@ export const generateVideoTool = {
     sceneNumber: z.number().describe("Scene number for the shot"),
     shotInScene: z.number().describe("Shot number within the scene"),
     shotType: z.literal("first_last_frame").describe("Video generation mode"),
-    actionPrompt: z.string().describe("Action description for the shot"),
     dialogue: z.string().describe("Character dialogue (empty if none)"),
     soundEffects: z.string().describe("Sound effects description"),
     cameraDirection: z.string().describe("Camera movement and angle"),

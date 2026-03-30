@@ -25,7 +25,6 @@ function makeShot(shotNumber: number, shotInScene: number, continuousFromPreviou
     shotType: 'first_last_frame',
     composition: 'medium_shot',
     startFramePrompt: `shot ${shotNumber}`,
-    actionPrompt: `action ${shotNumber}`,
     dialogue: '',
     speaker: '',
     soundEffects: '',

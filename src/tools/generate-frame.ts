@@ -587,7 +587,6 @@ export const generateFrameTool = {
       shotType: z.literal("first_last_frame"),
       composition: z.string(),
       startFramePrompt: z.string(),
-      actionPrompt: z.string(),
       dialogue: z.string(),
       speaker: z.string().optional(),
       soundEffects: z.string(),

@@ -30,7 +30,6 @@ const perSceneShotSchema = z.object({
   shotType: z.literal('first_last_frame'),
   composition: z.string(),
   startFramePrompt: z.string(),
-  actionPrompt: z.string(),
   dialogue: z.string(),
   speaker: z.string(),
   soundEffects: z.string(),
@@ -344,12 +343,12 @@ export class QueueProcessor extends EventEmitter {
     const planShotsPrompt = `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
 
 HOW GROK VIDEO GENERATION WORKS:
-Each shot has a START FRAME (an image prompt describing the visual setup) and an ACTION PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the action prompt. There are no end frames — Grok controls where the shot ends based on the action.
+Each shot has a START FRAME (an image prompt describing the visual setup) and a VIDEO PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the video prompt. There are no end frames — Grok controls where the shot ends based on the video direction.
 
 SHOT PLANNING PRINCIPLES:
 - Each shot = one camera setup on one subject. To change camera angle or subject, make a new shot.
 - The startFramePrompt describes the complete visual scene: composition, characters, setting, lighting, camera angle.
-- The actionPrompt describes the motion/action that unfolds from that starting point (character gestures, movement, expressions, etc.).
+- The videoPrompt describes the motion/action that unfolds from that starting point as complete natural prose direction for the video model.
 - endFramePrompt must always be an empty string "" (the field is required by the schema but unused).
 - Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
 - continuousFromPrevious controls whether the start frame is extracted from the end of the previous shot's video (true) or generated fresh from reference images (false). Continuity produces much better visual consistency and reduces hallucinations.
@@ -397,36 +396,36 @@ For this scene:
    BAD startFramePrompt: "Wide shot of the restaurant entrance interior, warm ambient golden lighting, exposed brick walls visible. Liam stands alone near the entrance. Soft candlelight glows from tables in the background. Evening cityscape visible through arched windows."
    GOOD startFramePrompt: "Wide shot, Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff. His posture is upright but tense. Tables visible in the background."
    The bad example wastes words on lighting, materials, and architectural details that the location reference image already provides. The good example focuses on character blocking, pose, expression, and composition.
-6. Write actionPrompt describing MOVEMENT and ACTION only: what characters do, how they move, gestures, facial expressions changing, interactions with objects, environmental changes. The start frame already establishes the visual scene — actionPrompt only adds motion and change. Do NOT describe object appearance (color, shape, material) — the start frame already shows all of this. In actionPrompt, NEVER use character names — the video model cannot read names. Instead, describe characters by their visual appearance using the shortest descriptor that uniquely identifies them in the frame: "the man", "the woman", "the man in the dark suit". If there is only one person of a given gender in the shot, just use "the man" or "the woman". Use character descriptions from the story analysis to pick distinguishing visual features when two characters share the same gender. Reference objects by name ("the toothpaste tube") not description ("the sleek white-and-blue toothpaste tube"). Think of actionPrompt as a director calling out blocking cues, not describing a painting.
-7. EVERY startFramePrompt and actionPrompt MUST specify where each character is looking. Default to looking at another character, an object, or into the middle distance. Characters should NEVER look directly at the camera unless the story explicitly requires breaking the fourth wall. If you don't specify gaze, the model will default to the character staring at the camera.
+6. EVERY startFramePrompt and videoPrompt MUST specify where each character is looking. Default to looking at another character, an object, or into the middle distance. Characters should NEVER look directly at the camera unless the story explicitly requires breaking the fourth wall. If you don't specify gaze, the model will default to the character staring at the camera.
    Examples of good gaze direction: "Elena looks at Marcus across the table" / "Liam gazes down at the menu" / "the woman glances toward the window"
    BAD: "Close-up on Liam as he smiles"
    GOOD: "Close-up on Liam looking slightly off-camera left toward Sophie, a warm smile spreading across his face"
    BAD: "Medium shot of Elena standing in the kitchen"
    GOOD: "Medium shot of Elena looking down at the cutting board, her focus on the vegetables she is chopping"
    For dialogue shots: characters look at each other, not the camera. For solo shots: character looks at their activity, another character off-screen, or into the middle distance. For wide/establishing shots: characters are engaged in their environment, unaware of the camera.
-8. In startFramePrompt, refer to characters by name (e.g., "Elena", "Marcus") — the image model has reference images and can map names to faces. In actionPrompt, NEVER use character names — the video model only sees pixels and cannot map names. Instead use short visual descriptors: "the man", "the woman", "the man in the dark suit". Use character descriptions from the story analysis to pick distinguishing visual features when two characters of the same gender are in the shot. In the dialogue field, USE the actual character names naturally as they appear in the script — dialogue goes to TTS, not the video model.
-9. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
-10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
-11. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
-12. Default to continuousFromPrevious=true within a scene. The only reasons to set it false are: first shot in the scene, location change, a new character entering who wasn't in the previous shot, or a significant time jump. Camera angle and composition changes do NOT require breaking continuity.
-13. BEHIND-THE-SUBJECT SHOTS: When describing a shot from behind a character, use explicit physical descriptions the image model cannot misinterpret. Do NOT write "following from behind" or "tracking from behind" — the image model will still generate the character facing the camera. Instead describe what is physically VISIBLE (back, shoulders, back of head) rather than the camera's position relative to the character.
+7. In startFramePrompt, refer to characters by name (e.g., "Elena", "Marcus") — the image model has reference images and can map names to faces. In videoPrompt, NEVER use character names — the video model only sees pixels and cannot map names. Instead use short visual descriptors: "the man", "the woman", "the man in the dark suit". Use character descriptions from the story analysis to pick distinguishing visual features when two characters of the same gender are in the shot. In the dialogue field, USE the actual character names naturally as they appear in the script — dialogue goes to TTS, not the video model.
+8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
+9. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
+10. NEVER describe a cut, transition, or camera change within a single shot's videoPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
+11. Default to continuousFromPrevious=true within a scene. The only reasons to set it false are: first shot in the scene, location change, a new character entering who wasn't in the previous shot, or a significant time jump. Camera angle and composition changes do NOT require breaking continuity.
+12. BEHIND-THE-SUBJECT SHOTS: When describing a shot from behind a character, use explicit physical descriptions the image model cannot misinterpret. Do NOT write "following from behind" or "tracking from behind" — the image model will still generate the character facing the camera. Instead describe what is physically VISIBLE (back, shoulders, back of head) rather than the camera's position relative to the character.
    BAD: "Tracking shot following Marcus from behind as he walks down the hallway"
    BAD: "Over-the-shoulder from behind Elena as she approaches the door"
    GOOD: "Back of Marcus's head and shoulders visible, he faces away from camera, walking down the hallway ahead"
    GOOD: "Rear view of Elena, her back to the camera, she looks ahead at the door in front of her"
    Use descriptors like: "back of the head visible", "character facing away from camera", "seen from behind showing their back and shoulders", "rear view of the character walking away", "character's back to the camera".
-14. CHARACTER PROMINENCE IN START FRAMES: Every character who speaks or performs an action in the shot MUST be prominently visible in the startFramePrompt — at minimum a medium shot size (waist up). Do NOT place important characters in the background or distance of the start frame expecting the camera to move toward them. The video model cannot maintain character identity or detail from tiny distant figures. If the shot involves approaching a character, start the frame close enough that they are clearly visible and identifiable.
+13. CHARACTER PROMINENCE IN START FRAMES: Every character who speaks or performs an action in the shot MUST be prominently visible in the startFramePrompt — at minimum a medium shot size (waist up). Do NOT place important characters in the background or distance of the start frame expecting the camera to move toward them. The video model cannot maintain character identity or detail from tiny distant figures. If the shot involves approaching a character, start the frame close enough that they are clearly visible and identifiable.
    BAD: "Wide shot of the restaurant. In the far background, Ethan is visible seated at a table near the window."
    GOOD: "Medium shot of Ethan seated at the candlelit table, looking up expectantly. The restaurant interior is visible around him."
    The video model animates what it can see in the start frame. If a character is too small or distant, the video model will hallucinate their appearance.
-15. Write videoPrompt as a COMPLETE, SELF-CONTAINED description of what happens in the shot from the video model's perspective. This is the primary direction sent to the video model — it must contain EVERYTHING the video model needs in natural prose:
-   - Character actions and blocking (using visual descriptors, NOT names — the video model can't read names)
+14. Write videoPrompt as a COMPLETE, SELF-CONTAINED description of what happens in the shot from the video model's perspective. This is the primary direction sent to the video model — it must contain EVERYTHING the video model needs in natural prose:
+   - Character actions and blocking: describe MOVEMENT and ACTION only — what characters do, how they move, gestures, facial expressions changing, interactions with objects, environmental changes. The start frame already establishes the visual scene — videoPrompt only adds motion and change. Do NOT describe object appearance (color, shape, material) — the start frame already shows all of this. Reference objects by name ("the toothpaste tube") not description ("the sleek white-and-blue toothpaste tube"). Think of videoPrompt as a director calling out blocking cues, not describing a painting.
+   - Use visual descriptors, NOT character names — the video model can't read names. Describe characters by their visual appearance using the shortest descriptor that uniquely identifies them in the frame: "the man", "the woman", "the man in the dark suit". If there is only one person of a given gender in the shot, just use "the man" or "the woman". Use character descriptions from the story analysis to pick distinguishing visual features when two characters share the same gender.
    - Dialogue with natural visual attribution: "the man turns to the woman and says '...'"
    - Where each character is looking (gaze direction) — NEVER at the camera
    - Sound effects and ambient audio woven naturally into the description
    - Camera movement
-   Write it as a flowing paragraph of direction, not a list. The existing structured fields (dialogue, speaker, soundEffects, cameraDirection, actionPrompt) are still required — they're used for TTS, subtitles, and metadata. But videoPrompt is what goes to the video model and must be self-contained.
+   Write it as a flowing paragraph of direction, not a list. The existing structured fields (dialogue, speaker, soundEffects, cameraDirection) are still required — they're used for TTS, subtitles, and metadata. But videoPrompt is what goes to the video model and must be self-contained.
    Example videoPrompt: "The woman looks across the table at the man and says 'I never thought we'd end up here.' She reaches for her glass, her eyes staying on him. The man shifts in his seat, glancing down at his hands before meeting her gaze. Ambient restaurant chatter and soft clinking of glasses. Camera slowly pushes in on a slight dolly."
    CRITICAL — ABSENT CHARACTERS: If the dialogue mentions a character who is NOT in charactersPresent for this shot, the videoPrompt MUST explicitly state that only the visible characters are in the frame. The video model will hallucinate people into the scene if they are referenced without being excluded. For example, if the man says "Sophie called me yesterday" but Sophie is not in charactersPresent, write: "Only the man is visible in the frame. He looks down at his phone and says 'Sophie called me yesterday.'" Do NOT mention absent characters by name or visual description without clarifying they are not present.
 
@@ -597,7 +596,6 @@ ${JSON.stringify(scene, null, 2)}`;
       sceneNumber: shot.sceneNumber,
       shotInScene: shot.shotInScene,
       shotType: 'first_last_frame',
-      actionPrompt: shot.actionPrompt,
       dialogue: shot.dialogue,
       speaker: shot.speaker,
       charactersPresent: shot.charactersPresent,

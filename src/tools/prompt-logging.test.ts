@@ -34,7 +34,6 @@ async function testVideoDryRunReturnsFinalPrompt(): Promise<void> {
     sceneNumber: 1,
     shotInScene: 1,
     shotType: "first_last_frame",
-    actionPrompt: "Alice runs toward Bob.",
     dialogue: "We need to go.",
     speaker: "Alice",
     charactersPresent: ["Alice", "Bob"],
