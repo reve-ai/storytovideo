@@ -238,6 +238,8 @@ function buildDialoguePrompt(
 
 export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt" | "dialogue" | "speaker" | "charactersPresent" | "characterDescriptions" | "soundEffects" | "cameraDirection">): string {
   const promptParts: string[] = [];
+  // Cinematic framing at the start shifts the model away from YouTube/vlog/portrait training data
+  promptParts.push("Cinematic narrative film. Characters are unaware of the camera and never look at it.");
   if (params.actionPrompt) promptParts.push(params.actionPrompt);
   const dialoguePart = buildDialoguePrompt(params.dialogue, params.speaker, params.charactersPresent, params.characterDescriptions);
   if (dialoguePart) promptParts.push(dialoguePart);

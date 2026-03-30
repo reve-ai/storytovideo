@@ -547,6 +547,7 @@ export function buildFramePrompt(params: {
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
     const parts = [
+      "Cinematic narrative film still. Candid, fly-on-the-wall cinematography. Characters are unaware of the camera.",
       `Style: ${artStyle}.`,
       `${composition} shot, ${cameraDirection}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
@@ -558,6 +559,7 @@ export function buildFramePrompt(params: {
 
   // Fallback — no reference images, include full descriptions
   const parts = [
+    "Cinematic narrative film still. Candid, fly-on-the-wall cinematography. Characters are unaware of the camera.",
     `Style: ${artStyle}.`,
     `${composition} shot, ${cameraDirection}.`,
     `Location: ${locationDescription}.`,
