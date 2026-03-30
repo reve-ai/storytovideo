@@ -409,6 +409,12 @@ For this scene:
 10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
 11. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
 12. Default to continuousFromPrevious=true within a scene. The only reasons to set it false are: first shot in the scene, location change, a new character entering who wasn't in the previous shot, or a significant time jump. Camera angle and composition changes do NOT require breaking continuity.
+13. BEHIND-THE-SUBJECT SHOTS: When describing a shot from behind a character, use explicit physical descriptions the image model cannot misinterpret. Do NOT write "following from behind" or "tracking from behind" — the image model will still generate the character facing the camera. Instead describe what is physically VISIBLE (back, shoulders, back of head) rather than the camera's position relative to the character.
+   BAD: "Tracking shot following Marcus from behind as he walks down the hallway"
+   BAD: "Over-the-shoulder from behind Elena as she approaches the door"
+   GOOD: "Back of Marcus's head and shoulders visible, he faces away from camera, walking down the hallway ahead"
+   GOOD: "Rear view of Elena, her back to the camera, she looks ahead at the door in front of her"
+   Use descriptors like: "back of the head visible", "character facing away from camera", "seen from behind showing their back and shoulders", "rear view of the character walking away", "character's back to the camera".
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
