@@ -69,11 +69,18 @@ function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sce
   return `scene ${params.sceneNumber} shot ${params.shotInScene} (shot ${params.shotNumber})`;
 }
 
-export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt">): string {
+export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt" | "charactersPresent">): string {
   const promptParts: string[] = [];
+  const hasCharacters = params.charactersPresent && params.charactersPresent.length > 0;
   // Cinematic framing + gaze instruction at the very start — shifts the model away from YouTube/vlog/portrait training data
-  promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
-  promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
+  // Only include character-awareness instructions when characters are actually present;
+  // otherwise the video model reads "characters" and hallucinates people into the scene.
+  if (hasCharacters) {
+    promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
+    promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
+  } else {
+    promptParts.push("Cinematic narrative film.");
+  }
   // The planner writes the complete video direction as natural prose
   if (params.videoPrompt) promptParts.push(params.videoPrompt);
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
