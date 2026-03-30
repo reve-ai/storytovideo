@@ -5,9 +5,10 @@ import { useRunStore } from "../stores/run-store";
 interface AssetReplaceProps {
   assetKey: string;
   label?: string;
+  onSuccess?: () => void;
 }
 
-export default function AssetReplace({ assetKey, label }: AssetReplaceProps) {
+export default function AssetReplace({ assetKey, label, onSuccess }: AssetReplaceProps) {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const replaceAsset = usePipelineStore((s) => s.replaceAsset);
   const [uploading, setUploading] = useState(false);
@@ -35,6 +36,7 @@ export default function AssetReplace({ assetKey, label }: AssetReplaceProps) {
           const assetName = assetKey.split(":")[1] ?? assetKey;
           setMessage(`Replaced ${assetName}. Regenerating ${result.framesRequeued} frame${result.framesRequeued !== 1 ? "s" : ""}.`);
           setTimeout(() => setMessage(null), 5000);
+          onSuccess?.();
         }
       } finally {
         setUploading(false);

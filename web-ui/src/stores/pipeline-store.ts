@@ -85,12 +85,26 @@ export interface DependencyGraph {
 
 export type SSEStatus = "disconnected" | "connecting" | "connected";
 
+export interface AssetEntry {
+  name: string;
+  description: string;
+  imagePath: string | null;
+  assetKey: string;
+}
+
+export interface AssetsData {
+  characters: AssetEntry[];
+  locations: AssetEntry[];
+  objects: AssetEntry[];
+}
+
 // --- Store ---
 
 interface PipelineState {
   queues: Record<QueueName, QueueSnapshot | null>;
   graph: DependencyGraph | null;
   analyzeItems: WorkItem[];
+  assets: AssetsData | null;
   /** Live progress info for in-progress items, keyed by item ID. Cleared when item completes/fails. */
   itemProgress: Record<string, ItemProgress>;
   sseStatus: SSEStatus;
@@ -100,6 +114,7 @@ interface PipelineActions {
   fetchQueues: (runId: string) => Promise<void>;
   fetchGraph: (runId: string) => Promise<void>;
   fetchAnalyzeItems: (runId: string) => Promise<void>;
+  fetchAssets: (runId: string) => Promise<void>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
@@ -117,6 +132,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   queues: { llm: null, image: null, video: null },
   graph: null,
   analyzeItems: [],
+  assets: null,
   itemProgress: {},
   sseStatus: "disconnected",
 
@@ -192,6 +208,62 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       }
     } catch (e) {
       console.error("fetchAnalyzeItems:", e);
+    }
+  },
+
+  fetchAssets: async (runId: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const state = data.state ?? {};
+      const analysis = state.storyAnalysis;
+      const outputs: Record<string, string> = state.generatedOutputs ?? {};
+
+      if (!analysis) {
+        set({ assets: null });
+        return;
+      }
+
+      const characters: AssetEntry[] = (analysis.characters ?? []).map(
+        (c: { name: string; physicalDescription?: string }) => {
+          const key = `character:${c.name}:front`;
+          return {
+            name: c.name,
+            description: c.physicalDescription ?? "",
+            imagePath: outputs[key] ?? null,
+            assetKey: key,
+          };
+        },
+      );
+
+      const locations: AssetEntry[] = (analysis.locations ?? []).map(
+        (l: { name: string; visualDescription?: string }) => {
+          const key = `location:${l.name}:establish`;
+          return {
+            name: l.name,
+            description: l.visualDescription ?? "",
+            imagePath: outputs[key] ?? null,
+            assetKey: key,
+          };
+        },
+      );
+
+      const objects: AssetEntry[] = (analysis.objects ?? []).map(
+        (o: { name: string; visualDescription?: string }) => {
+          const key = `object:${o.name}:detail`;
+          return {
+            name: o.name,
+            description: o.visualDescription ?? "",
+            imagePath: outputs[key] ?? null,
+            assetKey: key,
+          };
+        },
+      );
+
+      set({ assets: { characters, locations, objects } });
+    } catch (e) {
+      console.error("fetchAssets:", e);
     }
   },
 

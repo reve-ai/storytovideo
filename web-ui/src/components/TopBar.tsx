@@ -14,6 +14,7 @@ const VIEW_TABS = [
   { to: "/story", label: "Story", end: false },
   { to: "/video", label: "Video", end: false },
   { to: "/analyze", label: "Analyze", end: false },
+  { to: "/assets", label: "Assets", end: false },
 ] as const;
 
 export default function TopBar({ onNewRun }: TopBarProps) {
@@ -39,6 +40,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         story: { route: "/story", view: "story" },
         video: { route: "/video", view: "video" },
         analyze: { route: "/analyze", view: "analyze" },
+        assets: { route: "/assets", view: "assets" },
       };
       const mapping = viewMap[urlState.view];
       if (mapping) {

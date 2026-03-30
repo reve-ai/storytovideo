@@ -5,6 +5,7 @@ import QueueView from "./views/QueueView";
 import StoryView from "./views/StoryView";
 import VideoView from "./views/VideoView";
 import AnalyzeView from "./views/AnalyzeView";
+import AssetsView from "./views/AssetsView";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/story" element={<StoryView />} />
         <Route path="/video" element={<VideoView />} />
         <Route path="/analyze" element={<AnalyzeView />} />
+        <Route path="/assets" element={<AssetsView />} />
       </Route>
     </Routes>
   );
