@@ -16,7 +16,6 @@ function makeShot(overrides: Partial<Shot> = {}): Shot {
     shotType: "first_last_frame",
     composition: "medium_shot",
     startFramePrompt: "Alice and Bob study the table.",
-    actionPrompt: "They examine the clues.",
     dialogue: "",
     speaker: "",
     soundEffects: "",
