@@ -125,6 +125,7 @@ export async function createImageGrok(
     prompt,
     response_format: "b64_json",
     aspect_ratio: aspectRatio,
+    resolution: "2k",
   });
 
   const imageBuffer = Buffer.from(data.data[0].b64_json, "base64");
@@ -164,6 +165,7 @@ export async function remixImageGrok(
     prompt,
     response_format: "b64_json",
     aspect_ratio: aspectRatio,
+    resolution: "2k",
   };
 
   // Always use "images" array — the "image" (singular) field ignores aspect_ratio

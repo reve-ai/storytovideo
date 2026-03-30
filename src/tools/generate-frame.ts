@@ -1,4 +1,5 @@
 import { z } from "zod";
+import sharp from "sharp";
 import { createImage, remixImage } from "../reve-client";
 import { createImageGrok, remixImageGrok } from "../grok-image-client";
 import { createImageNanoBanana, remixImageNanoBanana } from "../nano-banana-image-client";
@@ -21,8 +22,206 @@ type GeneratedSingleFrameResult = {
   referencesUsed: FrameReference[];
 };
 
+export type PlannedFrameReferences = {
+  referenceImagePaths: string[];
+  referencesUsed: FrameReference[];
+  mergedReferences: FrameReference[];
+  droppedReferences: FrameReference[];
+};
+
+const ORDINAL_WORDS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
+
 function formatShotContext(shot: Pick<Shot, "shotNumber" | "sceneNumber" | "shotInScene">): string {
   return `scene ${shot.sceneNumber} shot ${shot.shotInScene} (shot ${shot.shotNumber})`;
+}
+
+function getOrdinalWord(index: number): string {
+  return ORDINAL_WORDS[index] ?? `${index + 1}th`;
+}
+
+function toPossessive(name: string): string {
+  return name.endsWith("s") ? `${name}'` : `${name}'s`;
+}
+
+function summarizeReference(reference: Pick<FrameReference, "type" | "name">): string {
+  switch (reference.type) {
+    case "character":
+      return `character:${reference.name}`;
+    case "continuity":
+      return "continuity:previous-shot";
+    case "location":
+      return `location:${reference.name}`;
+    case "object":
+      return `object:${reference.name}`;
+    case "collage":
+      return `collage:${reference.name}`;
+  }
+}
+
+function describeReferenceForCollage(reference: Pick<FrameReference, "type" | "name">): string {
+  switch (reference.type) {
+    case "character":
+      return `${toPossessive(reference.name)} appearance`;
+    case "continuity":
+      return "the previous shot";
+    case "location":
+      return `${reference.name} location`;
+    case "object":
+      return `${reference.name} prop`;
+    case "collage":
+      return reference.name;
+  }
+}
+
+function buildCollageOutputPath(outputPath: string): string {
+  const parsed = path.parse(outputPath);
+  return path.join(parsed.dir, `${parsed.name}_reference_collage.png`);
+}
+
+async function createReferenceCollage(references: FrameReference[], outputPath: string): Promise<string> {
+  const metadata = await Promise.all(references.map(reference => sharp(reference.path).metadata()));
+  const cellWidth = Math.max(...metadata.map(entry => entry.width ?? 1024));
+  const cellHeight = Math.max(...metadata.map(entry => entry.height ?? 1024));
+  const columns = Math.ceil(Math.sqrt(references.length));
+  const rows = Math.ceil(references.length / columns);
+
+  const composites = await Promise.all(references.map(async (reference, index) => ({
+    input: await sharp(reference.path)
+      .resize(cellWidth, cellHeight, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+      })
+      .png()
+      .toBuffer(),
+    left: (index % columns) * cellWidth,
+    top: Math.floor(index / columns) * cellHeight,
+  })));
+
+  await sharp({
+    create: {
+      width: columns * cellWidth,
+      height: rows * cellHeight,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  })
+    .composite(composites)
+    .png()
+    .toFile(outputPath);
+
+  return outputPath;
+}
+
+export function buildReferenceLeadIn(referencesUsed: FrameReference[]): string {
+  return referencesUsed.map((reference, index) => {
+    const ordinal = getOrdinalWord(index);
+    switch (reference.type) {
+      case "character":
+        return `The ${ordinal} image is ${toPossessive(reference.name)} appearance reference.`;
+      case "continuity":
+        return `The ${ordinal} image shows the previous shot for visual continuity.`;
+      case "location":
+        return `The ${ordinal} image is the location setting for ${reference.name}.`;
+      case "object":
+        return `The ${ordinal} image is the ${reference.name} prop reference.`;
+      case "collage":
+        return `The ${ordinal} image is a collage of the remaining references: ${reference.name}.`;
+    }
+  }).join(" ");
+}
+
+export async function buildFrameReferencePlan(params: {
+  shot: Shot;
+  assetLibrary: AssetLibrary;
+  imageBackend: ImageBackend;
+  previousFramePath?: string;
+  collageOutputPath: string;
+}): Promise<PlannedFrameReferences> {
+  const { shot, assetLibrary, imageBackend, previousFramePath, collageOutputPath } = params;
+  const maxRefs = imageBackend === "grok" ? 5 : 6;
+  const referencesUsed: FrameReference[] = [];
+  const droppedReferences: FrameReference[] = [];
+  const mergedReferences: FrameReference[] = [];
+
+  const characterReferences = shot.charactersPresent.flatMap((name): FrameReference[] => {
+    const refs = assetLibrary.characterImages[name];
+    const refPath = refs?.front || refs?.angle;
+    return refPath && fs.existsSync(refPath)
+      ? [{ type: "character", name, path: refPath }]
+      : [];
+  });
+
+  const previousFrameReference = previousFramePath
+    && !shot.continuousFromPrevious
+    && shot.shotInScene > 1
+    && fs.existsSync(previousFramePath)
+    ? { type: "continuity" as const, name: "Previous shot frame", path: previousFramePath }
+    : undefined;
+
+  const locationRefPath = assetLibrary.locationImages[shot.location];
+  const locationReference = locationRefPath && fs.existsSync(locationRefPath)
+    ? { type: "location" as const, name: shot.location, path: locationRefPath }
+    : undefined;
+
+  const objectReferences = (shot.objectsPresent ?? []).flatMap((name): FrameReference[] => {
+    const refPath = assetLibrary.objectImages?.[name];
+    return refPath && fs.existsSync(refPath)
+      ? [{ type: "object", name, path: refPath }]
+      : [];
+  });
+
+  const pushWithPriority = (reference: FrameReference): void => {
+    if (referencesUsed.length < maxRefs) {
+      referencesUsed.push(reference);
+      return;
+    }
+    droppedReferences.push(reference);
+  };
+
+  for (const reference of characterReferences) {
+    pushWithPriority(reference);
+  }
+
+  if (previousFrameReference) {
+    pushWithPriority(previousFrameReference);
+  }
+
+  if (locationReference) {
+    pushWithPriority(locationReference);
+  }
+
+  const remainingObjectSlots = maxRefs - referencesUsed.length;
+  if (remainingObjectSlots <= 0) {
+    droppedReferences.push(...objectReferences);
+  } else if (objectReferences.length <= remainingObjectSlots) {
+    referencesUsed.push(...objectReferences);
+  } else {
+    const individualObjectCount = Math.max(0, remainingObjectSlots - 1);
+    referencesUsed.push(...objectReferences.slice(0, individualObjectCount));
+    mergedReferences.push(...objectReferences.slice(individualObjectCount));
+  }
+
+  if (mergedReferences.length > 1 && referencesUsed.length < maxRefs) {
+    try {
+      const collagePath = await createReferenceCollage(mergedReferences, collageOutputPath);
+      referencesUsed.push({
+        type: "collage",
+        name: mergedReferences.map(describeReferenceForCollage).join(", "),
+        path: collagePath,
+      });
+    } catch (error) {
+      console.warn(`[generateFrame] Failed to create reference collage: ${error instanceof Error ? error.message : String(error)}`);
+      droppedReferences.push(...mergedReferences);
+      mergedReferences.length = 0;
+    }
+  }
+
+  return {
+    referenceImagePaths: referencesUsed.map(reference => reference.path),
+    referencesUsed,
+    mergedReferences,
+    droppedReferences,
+  };
 }
 
 /**
@@ -38,12 +237,13 @@ export async function generateFrame(params: {
   videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
+  previousFramePath?: string;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
   startReferences?: FrameReference[];
 }> {
-  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1 } = params;
+  const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1, previousFramePath } = params;
   const shotContext = formatShotContext(shot);
   const resolvedImageBackend = resolveImageBackend(imageBackend, videoBackend);
 
@@ -72,6 +272,7 @@ export async function generateFrame(params: {
       outputPath: startPath,
       imageBackend: resolvedImageBackend,
       aspectRatio,
+      previousFramePath,
     });
 
     return {
@@ -96,6 +297,7 @@ async function generateSingleFrame(params: {
   outputPath: string;
   imageBackend: ImageBackend;
   aspectRatio?: string;
+  previousFramePath?: string;
 }): Promise<GeneratedSingleFrameResult> {
   const {
     shot,
@@ -104,6 +306,7 @@ async function generateSingleFrame(params: {
     outputPath,
     imageBackend,
     aspectRatio,
+    previousFramePath,
   } = params;
 
   const normalizedSpeaker = (shot.speaker ?? "").trim().toLowerCase();
@@ -112,15 +315,37 @@ async function generateSingleFrame(params: {
     && normalizedSpeaker !== "narrator"
     && normalizedSpeaker !== "voiceover";
 
-  // Pre-check whether any reference images exist in the asset library
-  const hasAnyCharRef = shot.charactersPresent.some(name => {
-    const refs = assetLibrary.characterImages[name];
-    return refs && (refs.front || refs.angle);
-  });
-  const hasLocationRef = Boolean(assetLibrary.locationImages[shot.location]);
-  const hasReferenceImages = hasAnyCharRef || hasLocationRef;
+  const shotContext = formatShotContext(shot);
 
-  // Build the prompt
+  console.log(`[generateFrame] ${shotContext} (start): Building references...`);
+  console.log(`[generateFrame]   assetLibrary.characterImages:`, JSON.stringify(assetLibrary.characterImages));
+  console.log(`[generateFrame]   assetLibrary.locationImages:`, JSON.stringify(assetLibrary.locationImages));
+  console.log(`[generateFrame]   shot.charactersPresent:`, shot.charactersPresent);
+  console.log(`[generateFrame]   shot.location:`, shot.location);
+
+  for (const charName of shot.charactersPresent) {
+    const charRefs = assetLibrary.characterImages[charName];
+    const refPath = charRefs?.front || charRefs?.angle;
+    console.log(`[generateFrame]   Character ref "${charName}": front=${JSON.stringify(charRefs?.front)}, angle=${JSON.stringify(charRefs?.angle)}, chosen=${JSON.stringify(refPath)}, exists=${refPath ? fs.existsSync(refPath) : 'N/A'}`);
+    if (!charRefs) {
+      console.log(`[generateFrame]   Character ref "${charName}": NOT FOUND in assetLibrary`);
+    }
+  }
+
+  const locationRef = assetLibrary.locationImages[shot.location];
+  console.log(`[generateFrame]   Location ref "${shot.location}": path=${JSON.stringify(locationRef)}, exists=${locationRef ? fs.existsSync(locationRef) : 'N/A'}`);
+
+  console.log(`[generateFrame]   Previous frame ref: path=${JSON.stringify(previousFramePath)}, eligible=${!shot.continuousFromPrevious && shot.shotInScene > 1}, exists=${previousFramePath ? fs.existsSync(previousFramePath) : 'N/A'}`);
+
+  const referencePlan = await buildFrameReferencePlan({
+    shot,
+    assetLibrary,
+    imageBackend,
+    previousFramePath,
+    collageOutputPath: buildCollageOutputPath(outputPath),
+  });
+
+  const hasReferenceImages = referencePlan.referenceImagePaths.length > 0;
   const framePrompt = shot.startFramePrompt;
   const prompt = buildFramePrompt({
     artStyle,
@@ -134,156 +359,79 @@ async function generateSingleFrame(params: {
     hasReferenceImages,
   });
 
-  const shotContext = formatShotContext(shot);
+  console.log(`[generateFrame]   Included refs:`, referencePlan.referencesUsed.map(summarizeReference));
+  console.log(`[generateFrame]   Merged refs:`, referencePlan.mergedReferences.map(summarizeReference));
+  console.log(`[generateFrame]   Dropped refs:`, referencePlan.droppedReferences.map(summarizeReference));
 
-  console.log(`[generateFrame] ${shotContext} (start): Building references...`);
-  console.log(`[generateFrame]   assetLibrary.characterImages:`, JSON.stringify(assetLibrary.characterImages));
-  console.log(`[generateFrame]   assetLibrary.locationImages:`, JSON.stringify(assetLibrary.locationImages));
-  console.log(`[generateFrame]   shot.charactersPresent:`, shot.charactersPresent);
-  console.log(`[generateFrame]   shot.location:`, shot.location);
-
-  // Collect reference image file paths.
-  // Order: location > character > object.
-  const characterRefPaths = new Map<string, string>(); // path -> character name
-  const objectRefPaths = new Map<string, string>(); // path -> object name
-  const referenceImagePaths: string[] = [];
-
-  // Add location reference image if available
-  const locationRef = assetLibrary.locationImages[shot.location];
-  if (locationRef && fs.existsSync(locationRef)) {
-    referenceImagePaths.push(locationRef);
-  }
-  console.log(`[generateFrame]   Location ref "${shot.location}": path=${JSON.stringify(locationRef)}, exists=${locationRef ? fs.existsSync(locationRef) : 'N/A'}`);
-
-  // Add character reference images for all characters present
-  for (const charName of shot.charactersPresent) {
-    const charRefs = assetLibrary.characterImages[charName];
-    if (charRefs) {
-      const refPath = charRefs.front || charRefs.angle;
-      if (refPath && fs.existsSync(refPath)) {
-        referenceImagePaths.push(refPath);
-        characterRefPaths.set(refPath, charName);
-      }
-      console.log(`[generateFrame]   Character ref "${charName}": front=${JSON.stringify(charRefs?.front)}, angle=${JSON.stringify(charRefs?.angle)}, chosen=${JSON.stringify(refPath)}, exists=${refPath ? fs.existsSync(refPath) : 'N/A'}`);
-    } else {
-      console.log(`[generateFrame]   Character ref "${charName}": NOT FOUND in assetLibrary`);
-    }
-  }
-
-  // Add object reference images for all objects present
-  const objectImages = assetLibrary.objectImages ?? {};
-  for (const objName of (shot.objectsPresent ?? [])) {
-    const objRef = objectImages[objName];
-    if (objRef && fs.existsSync(objRef)) {
-      referenceImagePaths.push(objRef);
-      objectRefPaths.set(objRef, objName);
-    }
-  }
-
-  // Limit reference images: Grok supports up to 5, Reve and Nano Banana up to 6 here.
-  const maxRefs = imageBackend === "grok" ? 5 : 6;
-  const limitedReferencePaths = referenceImagePaths.slice(0, maxRefs);
-  const referencesUsed = limitedReferencePaths.map((refPath): FrameReference => {
-    if (refPath === locationRef) {
-      return { type: "location", name: shot.location, path: refPath };
-    }
-    if (characterRefPaths.has(refPath)) {
-      return { type: "character", name: characterRefPaths.get(refPath)!, path: refPath };
-    }
-    if (objectRefPaths.has(refPath)) {
-      return { type: "object", name: objectRefPaths.get(refPath)!, path: refPath };
-    }
-    return {
-      type: "continuity",
-      name: "Previous shot frame",
-      path: refPath,
-    };
-  });
-
-  if (limitedReferencePaths.length > 0) {
-    // Build <img> tag prefix to reference images by index
-    const imgTagParts: string[] = [];
-    for (let i = 0; i < limitedReferencePaths.length; i++) {
-      const refPath = limitedReferencePaths[i];
-      if (refPath === locationRef) {
-        imgTagParts.push(`<img>${i}</img> location`);
-      } else if (characterRefPaths.has(refPath)) {
-        imgTagParts.push(`<img>${i}</img> ${characterRefPaths.get(refPath)} ref`);
-      } else if (objectRefPaths.has(refPath)) {
-        imgTagParts.push(`<img>${i}</img> ${objectRefPaths.get(refPath)} object ref`);
-      } else {
-        imgTagParts.push(`<img>${i}</img> continuity (style only)`);
-      }
-    }
-    const imgPrefix = `Using ${imgTagParts.join(", ")}: `;
-    const remixPrompt = imgPrefix + prompt;
+  if (referencePlan.referenceImagePaths.length > 0) {
+    const referenceLeadIn = buildReferenceLeadIn(referencePlan.referencesUsed);
+    const remixPrompt = referenceLeadIn ? `${referenceLeadIn} ${prompt}` : prompt;
     if (imageBackend === "reve" && remixPrompt.length > 2560) {
       console.warn(`[generateFrame] ${shotContext}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
-    console.log(`[generateFrame]   Final reference paths (${limitedReferencePaths.length}):`, limitedReferencePaths);
+    console.log(`[generateFrame]   Final reference paths (${referencePlan.referenceImagePaths.length}):`, referencePlan.referenceImagePaths);
     console.log(`[generateFrame]   Prompt (first 200 chars): ${remixPrompt.substring(0, 200)}...`);
 
     switch (imageBackend) {
       case "grok":
         return {
-          path: await remixImageGrok(remixPrompt, limitedReferencePaths, {
+          path: await remixImageGrok(remixPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
-          referencesUsed,
+          referencesUsed: referencePlan.referencesUsed,
         };
       case "nano-banana":
         return {
-          path: await remixImageNanoBanana(remixPrompt, limitedReferencePaths, {
+          path: await remixImageNanoBanana(remixPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
-          referencesUsed,
+          referencesUsed: referencePlan.referencesUsed,
         };
       case "reve":
         return {
-          path: await remixImage(remixPrompt, limitedReferencePaths, {
+          path: await remixImage(remixPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
-          referencesUsed,
+          referencesUsed: referencePlan.referencesUsed,
         };
     }
-  } else {
-    // No reference images — use text-to-image generation
-    console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
-    console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
-    if (imageBackend === "reve" && prompt.length > 2560) {
-      console.warn(`[generateFrame] ${shotContext}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
-    }
+  }
 
-    switch (imageBackend) {
-      case "grok":
-        return {
-          path: await createImageGrok(prompt, {
-            aspectRatio: aspectRatio ?? "16:9",
-            outputPath,
-          }),
-          referencesUsed: [],
-        };
-      case "nano-banana":
-        return {
-          path: await createImageNanoBanana(prompt, {
-            aspectRatio: aspectRatio ?? "16:9",
-            outputPath,
-          }),
-          referencesUsed: [],
-        };
-      case "reve":
-        return {
-          path: await createImage(prompt, {
-            aspectRatio: aspectRatio ?? "16:9",
-            outputPath,
-          }),
-          referencesUsed: [],
-        };
-    }
+  console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
+  console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
+  if (imageBackend === "reve" && prompt.length > 2560) {
+    console.warn(`[generateFrame] ${shotContext}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
+  }
+
+  switch (imageBackend) {
+    case "grok":
+      return {
+        path: await createImageGrok(prompt, {
+          aspectRatio: aspectRatio ?? "16:9",
+          outputPath,
+        }),
+        referencesUsed: [],
+      };
+    case "nano-banana":
+      return {
+        path: await createImageNanoBanana(prompt, {
+          aspectRatio: aspectRatio ?? "16:9",
+          outputPath,
+        }),
+        referencesUsed: [],
+      };
+    case "reve":
+      return {
+        path: await createImage(prompt, {
+          aspectRatio: aspectRatio ?? "16:9",
+          outputPath,
+        }),
+        referencesUsed: [],
+      };
   }
 }
 
@@ -377,6 +525,7 @@ export const generateFrameTool = {
       objectImages: z.record(z.string(), z.string()).optional(),
     }).describe("AssetLibrary with character, location, and object reference image paths"),
     outputDir: z.string().describe("Output directory for saving frame images"),
+    previousFramePath: z.string().optional().describe("Optional previous shot start frame path for continuity references"),
     dryRun: z
       .boolean()
       .optional()

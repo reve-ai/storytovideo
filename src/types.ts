@@ -74,7 +74,7 @@ export interface ArtifactVersion {
 }
 
 export interface FrameReference {
-  type: "character" | "location" | "object" | "continuity";
+  type: "character" | "location" | "object" | "continuity" | "collage";
   name: string;
   path: string;
 }
