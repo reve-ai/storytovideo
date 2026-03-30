@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
 import { rateLimiters } from './rate-limiter-registry.js';
+import { PromptLogger } from './prompt-logger.js';
 import { analyzeStory } from '../tools/analyze-story.js';
 import { storyToScript } from '../tools/story-to-script.js';
 import { planShotsForScene } from '../tools/plan-shots.js';
@@ -66,6 +67,7 @@ export class QueueProcessor extends EventEmitter {
   private running = false;
   private workerPromises: Promise<void>[] = [];
   private activeAbortControllers = new Map<string, AbortController>();
+  private promptLogger: PromptLogger;
 
   constructor(
     private readonly queueName: QueueName,
@@ -74,6 +76,7 @@ export class QueueProcessor extends EventEmitter {
     private readonly concurrency: number = 2,
   ) {
     super();
+    this.promptLogger = new PromptLogger(this.resolvedOutputDir());
   }
 
   /** Resolve the run's outputDir to an absolute path. */
@@ -230,6 +233,7 @@ export class QueueProcessor extends EventEmitter {
     const state = this.queueManager.getState();
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
+    this.promptLogger.log(item.itemKey, 'analyze_story', `Analyze the following story and extract characters, locations, art style, objects, and scenes.\n\nStory:\n${textToAnalyze}`, { model: 'claude-opus-4-6' });
     const analysis = await analyzeStory(textToAnalyze);
     this.queueManager.setStoryAnalysis(analysis);
     return { analysis };
@@ -291,12 +295,14 @@ export class QueueProcessor extends EventEmitter {
   private async handleNameRun(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
+    const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
+    this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: 'claude-sonnet-4-20250514' });
     const limiter = rateLimiters.get('anthropic');
     await limiter.acquire();
     try {
       const { text } = await generateText({
         model: anthropic('claude-sonnet-4-20250514'),
-        prompt: `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`,
+        prompt: namePrompt,
         maxTokens: 30,
       } as any);
       const name = text.trim();
@@ -333,14 +339,7 @@ export class QueueProcessor extends EventEmitter {
 - Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
 - Long (8-15s): slow reveals, extended action, lingering moments`;
 
-    const limiter = rateLimiters.get('anthropic');
-    await limiter.acquire();
-    let planResult;
-    try {
-    planResult = await (generateObject as any)({
-      model: anthropic('claude-opus-4-6'),
-      schema: sceneShotsSchema,
-      prompt: `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
+    const planShotsPrompt = `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
 
 HOW GROK VIDEO GENERATION WORKS:
 Each shot has a START FRAME (an image prompt describing the visual setup) and an ACTION PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the action prompt. There are no end frames — Grok controls where the shot ends based on the action.
@@ -404,7 +403,18 @@ Scene to plan:
 ${JSON.stringify(scene, null, 2)}
 
 Full story analysis for context:
-${JSON.stringify(analysis, null, 2)}`,
+${JSON.stringify(analysis, null, 2)}`;
+
+    this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: 'claude-opus-4-6', sceneNumber });
+
+    const limiter = rateLimiters.get('anthropic');
+    await limiter.acquire();
+    let planResult;
+    try {
+    planResult = await (generateObject as any)({
+      model: anthropic('claude-opus-4-6'),
+      schema: sceneShotsSchema,
+      prompt: planShotsPrompt,
     });
     } catch (error: any) {
       if (error?.status === 429 || error?.message?.includes('429')) {
@@ -517,6 +527,7 @@ ${JSON.stringify(analysis, null, 2)}`,
     const aspectRatio = state.options?.aspectRatio;
     const imageBackend = state.options?.imageBackend ?? 'grok';
     console.log(`[handleGenerateFrame] Using imageBackend=${imageBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
+    this.promptLogger.log(item.itemKey, 'generate_frame', shot.startFramePrompt, { backend: imageBackend, composition: shot.composition, cameraDirection: shot.cameraDirection, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene });
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
@@ -544,6 +555,9 @@ ${JSON.stringify(analysis, null, 2)}`,
     const aspectRatio = state.options?.aspectRatio;
     const videoBackend = state.options?.videoBackend ?? 'grok';
     console.log(`[handleGenerateVideo] Using videoBackend=${videoBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
+
+    const promptParts = [shot.actionPrompt, shot.dialogue ? `Dialogue: ${shot.dialogue}` : "", shot.soundEffects ? `Sound effects: ${shot.soundEffects}` : "", shot.cameraDirection ? `Camera: ${shot.cameraDirection}` : ""].filter(Boolean);
+    this.promptLogger.log(item.itemKey, 'generate_video', promptParts.join(". "), { backend: videoBackend, duration: shot.durationSeconds, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene });
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
@@ -591,6 +605,8 @@ ${JSON.stringify(analysis, null, 2)}`,
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
     const referenceImagePaths = (item.inputs.referenceImagePaths as string[]).map(p => this.absolutePath(p));
     const shot = item.inputs.shot as Shot;
+
+    this.promptLogger.log(item.itemKey, 'analyze_video', `Analyzing video for shot ${shotNumber}.\nAction: ${shot.actionPrompt}\nDialogue: ${shot.dialogue}\nCamera: ${shot.cameraDirection}\nStart frame prompt: ${shot.startFramePrompt}`, { model: 'gemini-2.5-flash', shotNumber, durationSeconds: shot.durationSeconds });
 
     const analysis = await analyzeVideoClip({
       videoPath,
