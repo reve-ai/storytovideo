@@ -20,6 +20,7 @@ function resolveImageBackend(imageBackend?: ImageBackend, videoBackend?: LegacyI
 type GeneratedSingleFrameResult = {
   path: string;
   referencesUsed: FrameReference[];
+  finalPrompt: string;
 };
 
 export type PlannedFrameReferences = {
@@ -29,14 +30,8 @@ export type PlannedFrameReferences = {
   droppedReferences: FrameReference[];
 };
 
-const ORDINAL_WORDS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth"];
-
 function formatShotContext(shot: Pick<Shot, "shotNumber" | "sceneNumber" | "shotInScene">): string {
   return `scene ${shot.sceneNumber} shot ${shot.shotInScene} (shot ${shot.shotNumber})`;
-}
-
-function getOrdinalWord(index: number): string {
-  return ORDINAL_WORDS[index] ?? `${index + 1}th`;
 }
 
 function toPossessive(name: string): string {
@@ -75,13 +70,24 @@ function describeReferenceForCollage(reference: Pick<FrameReference, "type" | "n
 
 function buildCollageOutputPath(outputPath: string): string {
   const parsed = path.parse(outputPath);
-  return path.join(parsed.dir, `${parsed.name}_reference_collage.png`);
+  return path.join(parsed.dir, `${parsed.name}_reference_collage.jpg`);
 }
+
+const MAX_COLLAGE_CELL_PX = 512;
 
 async function createReferenceCollage(references: FrameReference[], outputPath: string): Promise<string> {
   const metadata = await Promise.all(references.map(reference => sharp(reference.path).metadata()));
-  const cellWidth = Math.max(...metadata.map(entry => entry.width ?? 1024));
-  const cellHeight = Math.max(...metadata.map(entry => entry.height ?? 1024));
+  let cellWidth = Math.max(...metadata.map(entry => entry.width ?? 1024));
+  let cellHeight = Math.max(...metadata.map(entry => entry.height ?? 1024));
+
+  // Cap cell size at MAX_COLLAGE_CELL_PX on the long edge
+  const longEdge = Math.max(cellWidth, cellHeight);
+  if (longEdge > MAX_COLLAGE_CELL_PX) {
+    const scale = MAX_COLLAGE_CELL_PX / longEdge;
+    cellWidth = Math.round(cellWidth * scale);
+    cellHeight = Math.round(cellHeight * scale);
+  }
+
   const columns = Math.ceil(Math.sqrt(references.length));
   const rows = Math.ceil(references.length / columns);
 
@@ -91,7 +97,7 @@ async function createReferenceCollage(references: FrameReference[], outputPath: 
         fit: "contain",
         background: { r: 0, g: 0, b: 0, alpha: 1 },
       })
-      .png()
+      .jpeg({ quality: 80 })
       .toBuffer(),
     left: (index % columns) * cellWidth,
     top: Math.floor(index / columns) * cellHeight,
@@ -101,33 +107,65 @@ async function createReferenceCollage(references: FrameReference[], outputPath: 
     create: {
       width: columns * cellWidth,
       height: rows * cellHeight,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
+      channels: 3,
+      background: { r: 0, g: 0, b: 0 },
     },
   })
     .composite(composites)
-    .png()
+    .jpeg({ quality: 80 })
     .toFile(outputPath);
 
   return outputPath;
 }
 
 export function buildReferenceLeadIn(referencesUsed: FrameReference[]): string {
-  return referencesUsed.map((reference, index) => {
-    const ordinal = getOrdinalWord(index);
+  const labels = referencesUsed.map((reference, index) => {
+    const n = index + 1;
     switch (reference.type) {
       case "character":
-        return `The ${ordinal} image is ${toPossessive(reference.name)} appearance reference.`;
+        return `Image ${n}: ${reference.name}.`;
       case "continuity":
-        return `The ${ordinal} image shows the previous shot for visual continuity.`;
+        return `Image ${n}: previous shot.`;
       case "location":
-        return `The ${ordinal} image is the location setting for ${reference.name}.`;
+        return `Image ${n}: ${reference.name} location.`;
       case "object":
-        return `The ${ordinal} image is the ${reference.name} prop reference.`;
+        return `Image ${n}: ${reference.name} prop.`;
       case "collage":
-        return `The ${ordinal} image is a collage of the remaining references: ${reference.name}.`;
+        return `Image ${n}: props collage.`;
     }
-  }).join(" ");
+  });
+
+  return labels.join(" ");
+}
+
+export function buildFinalFramePrompt(params: {
+  artStyle: string;
+  composition: string;
+  locationDescription: string;
+  charactersPresent: string[];
+  objectsPresent?: string[];
+  framePrompt: string;
+  cameraDirection: string;
+  hasCharacterDialogue: boolean;
+  referencesUsed: FrameReference[];
+}): string {
+  const basePrompt = buildFramePrompt({
+    artStyle: params.artStyle,
+    composition: params.composition,
+    locationDescription: params.locationDescription,
+    charactersPresent: params.charactersPresent,
+    objectsPresent: params.objectsPresent,
+    framePrompt: params.framePrompt,
+    cameraDirection: params.cameraDirection,
+    hasCharacterDialogue: params.hasCharacterDialogue,
+    hasReferenceImages: params.referencesUsed.length > 0,
+  });
+
+  const referenceLeadIn = params.referencesUsed.length > 0
+    ? buildReferenceLeadIn(params.referencesUsed)
+    : "";
+
+  return referenceLeadIn ? `${referenceLeadIn} ${basePrompt}` : basePrompt;
 }
 
 export async function buildFrameReferencePlan(params: {
@@ -242,6 +280,7 @@ export async function generateFrame(params: {
   shotNumber: number;
   startPath?: string;
   startReferences?: FrameReference[];
+  finalPrompt?: string;
 }> {
   const { shot, artStyle, assetLibrary, outputDir, dryRun = false, imageBackend, videoBackend, aspectRatio, version = 1, previousFramePath } = params;
   const shotContext = formatShotContext(shot);
@@ -279,6 +318,7 @@ export async function generateFrame(params: {
       shotNumber: shot.shotNumber,
       startPath: startFrameResult.path,
       startReferences: startFrameResult.referencesUsed,
+      finalPrompt: startFrameResult.finalPrompt,
     };
   } catch (error) {
     throw new Error(
@@ -345,18 +385,27 @@ async function generateSingleFrame(params: {
     collageOutputPath: buildCollageOutputPath(outputPath),
   });
 
-  const hasReferenceImages = referencePlan.referenceImagePaths.length > 0;
-  const framePrompt = shot.startFramePrompt;
-  const prompt = buildFramePrompt({
+  const basePrompt = buildFramePrompt({
     artStyle,
     composition: shot.composition,
     locationDescription: shot.location,
     charactersPresent: shot.charactersPresent,
     objectsPresent: shot.objectsPresent,
-    framePrompt,
+    framePrompt: shot.startFramePrompt,
     cameraDirection: shot.cameraDirection,
     hasCharacterDialogue,
-    hasReferenceImages,
+    hasReferenceImages: referencePlan.referenceImagePaths.length > 0,
+  });
+  const finalPrompt = buildFinalFramePrompt({
+    artStyle,
+    composition: shot.composition,
+    locationDescription: shot.location,
+    charactersPresent: shot.charactersPresent,
+    objectsPresent: shot.objectsPresent,
+    framePrompt: shot.startFramePrompt,
+    cameraDirection: shot.cameraDirection,
+    hasCharacterDialogue,
+    referencesUsed: referencePlan.referencesUsed,
   });
 
   console.log(`[generateFrame]   Included refs:`, referencePlan.referencesUsed.map(summarizeReference));
@@ -364,73 +413,77 @@ async function generateSingleFrame(params: {
   console.log(`[generateFrame]   Dropped refs:`, referencePlan.droppedReferences.map(summarizeReference));
 
   if (referencePlan.referenceImagePaths.length > 0) {
-    const referenceLeadIn = buildReferenceLeadIn(referencePlan.referencesUsed);
-    const remixPrompt = referenceLeadIn ? `${referenceLeadIn} ${prompt}` : prompt;
-    if (imageBackend === "reve" && remixPrompt.length > 2560) {
-      console.warn(`[generateFrame] ${shotContext}: Prompt is ${remixPrompt.length} chars (limit 2560). May be rejected by Reve.`);
+    if (imageBackend === "reve" && finalPrompt.length > 2560) {
+      console.warn(`[generateFrame] ${shotContext}: Prompt is ${finalPrompt.length} chars (limit 2560). May be rejected by Reve.`);
     }
 
     console.log(`[generateFrame]   Final reference paths (${referencePlan.referenceImagePaths.length}):`, referencePlan.referenceImagePaths);
-    console.log(`[generateFrame]   Prompt (first 200 chars): ${remixPrompt.substring(0, 200)}...`);
+    console.log(`[generateFrame]   Prompt (first 200 chars): ${finalPrompt.substring(0, 200)}...`);
 
     switch (imageBackend) {
       case "grok":
         return {
-          path: await remixImageGrok(remixPrompt, referencePlan.referenceImagePaths, {
+          path: await remixImageGrok(finalPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
           referencesUsed: referencePlan.referencesUsed,
+          finalPrompt,
         };
       case "nano-banana":
         return {
-          path: await remixImageNanoBanana(remixPrompt, referencePlan.referenceImagePaths, {
+          path: await remixImageNanoBanana(finalPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
           referencesUsed: referencePlan.referencesUsed,
+          finalPrompt,
         };
       case "reve":
         return {
-          path: await remixImage(remixPrompt, referencePlan.referenceImagePaths, {
+          path: await remixImage(finalPrompt, referencePlan.referenceImagePaths, {
             aspectRatio: aspectRatio ?? "16:9",
             outputPath,
           }),
           referencesUsed: referencePlan.referencesUsed,
+          finalPrompt,
         };
     }
   }
 
   console.log(`[generateFrame]   NO reference images found — falling back to text-to-image`);
-  console.log(`[generateFrame]   Prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
-  if (imageBackend === "reve" && prompt.length > 2560) {
-    console.warn(`[generateFrame] ${shotContext}: Prompt is ${prompt.length} chars (limit 2560). May be rejected by Reve.`);
+  console.log(`[generateFrame]   Prompt (first 200 chars): ${basePrompt.substring(0, 200)}...`);
+  if (imageBackend === "reve" && finalPrompt.length > 2560) {
+    console.warn(`[generateFrame] ${shotContext}: Prompt is ${finalPrompt.length} chars (limit 2560). May be rejected by Reve.`);
   }
 
   switch (imageBackend) {
     case "grok":
       return {
-        path: await createImageGrok(prompt, {
+        path: await createImageGrok(finalPrompt, {
           aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed: [],
+        finalPrompt,
       };
     case "nano-banana":
       return {
-        path: await createImageNanoBanana(prompt, {
+        path: await createImageNanoBanana(finalPrompt, {
           aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed: [],
+        finalPrompt,
       };
     case "reve":
       return {
-        path: await createImage(prompt, {
+        path: await createImage(finalPrompt, {
           aspectRatio: aspectRatio ?? "16:9",
           outputPath,
         }),
         referencesUsed: [],
+        finalPrompt,
       };
   }
 }
@@ -443,7 +496,7 @@ async function generateSingleFrame(params: {
  * reference images themselves. When false (rare edge-case with no refs),
  * keeps the fuller legacy format as a fallback.
  */
-function buildFramePrompt(params: {
+export function buildFramePrompt(params: {
   artStyle: string;
   composition: string;
   locationDescription: string;
@@ -468,11 +521,9 @@ function buildFramePrompt(params: {
 
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
-    const locationName = locationDescription.split(",")[0].split(".")[0].trim();
     const parts = [
       `Style: ${artStyle}.`,
       `${composition} shot, ${cameraDirection}.`,
-      `Location: ${locationName}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
       hasCharacterDialogue ? "Characters face each other, not the camera." : "",
       framePrompt,

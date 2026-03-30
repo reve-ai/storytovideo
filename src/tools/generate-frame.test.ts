@@ -5,7 +5,7 @@ import { join } from "node:path";
 import sharp from "sharp";
 
 import type { AssetLibrary, Shot } from "../types.js";
-import { buildFrameReferencePlan, buildReferenceLeadIn } from "./generate-frame.js";
+import { buildFramePrompt, buildFrameReferencePlan, buildReferenceLeadIn } from "./generate-frame.js";
 
 function makeShot(overrides: Partial<Shot> = {}): Shot {
   return {
@@ -92,9 +92,11 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
   const leadIn = buildReferenceLeadIn(plan.referencesUsed);
   const legacyTag = ["<", "img", ">"].join("");
   assert.equal(leadIn.includes(legacyTag), false);
-  assert.match(leadIn, /The first image is Alice's appearance reference\./);
-  assert.match(leadIn, /The third image shows the previous shot for visual continuity\./);
-  assert.match(leadIn, /The fifth image is a collage of the remaining references:/);
+  assert.match(leadIn, /Image 1: Alice\./);
+  assert.match(leadIn, /Image 3: previous shot\./);
+  assert.match(leadIn, /Image 5: props collage\./);
+  // No composition directive in terse format
+  assert.equal(leadIn.includes("Compose the scene"), false);
   console.log("  ✓ reference plan prioritizes characters, continuity, and collage overflow");
 }
 
@@ -125,10 +127,38 @@ async function testPreviousFrameRequiresEligibleShot(): Promise<void> {
   console.log("  ✓ previous-frame references are skipped for ineligible shots");
 }
 
+function testReferenceAwarePromptOmitsLocationLine(): void {
+  const prompt = buildFramePrompt({
+    artStyle: "photorealistic",
+    composition: "wide_establishing",
+    locationDescription: "Restaurant entrance",
+    charactersPresent: ["Liam"],
+    objectsPresent: ["tables"],
+    framePrompt: "Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff.",
+    cameraDirection: "static camera",
+    hasCharacterDialogue: false,
+    hasReferenceImages: true,
+  });
+
+  const leadIn = buildReferenceLeadIn([
+    { type: "character", name: "Liam", path: "/tmp/liam.png" },
+    { type: "location", name: "Restaurant", path: "/tmp/restaurant.png" },
+  ]);
+  const samplePrompt = `${leadIn} ${prompt}`;
+
+  assert.equal(prompt.includes("Location:"), false);
+  assert.match(leadIn, /Image 1: Liam\./);
+  assert.match(leadIn, /Image 2: Restaurant location\./);
+  assert.equal(leadIn.includes("Compose the scene"), false);
+  console.log("  sample prompt:", samplePrompt);
+  console.log("  ✓ reference-aware prompts omit redundant location lines");
+}
+
 async function main(): Promise<void> {
   console.log("Generate frame tests:");
   await testReferencePlanPrioritizesAndCollagesOverflow();
   await testPreviousFrameRequiresEligibleShot();
+  testReferenceAwarePromptOmitsLocationLine();
   console.log("\nAll tests passed ✓");
 }
 

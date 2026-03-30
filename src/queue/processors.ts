@@ -10,14 +10,14 @@ import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
 import { rateLimiters } from './rate-limiter-registry.js';
 import { PromptLogger } from './prompt-logger.js';
-import { analyzeStory } from '../tools/analyze-story.js';
-import { storyToScript } from '../tools/story-to-script.js';
+import { analyzeStory, buildAnalyzeStoryPrompt } from '../tools/analyze-story.js';
+import { storyToScript, buildStoryToScriptPrompt } from '../tools/story-to-script.js';
 import { planShotsForScene } from '../tools/plan-shots.js';
 import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
-import { analyzeVideoClip } from '../tools/analyze-video-pacing.js';
+import { analyzeVideoClip, buildAnalyzeVideoPrompt } from '../tools/analyze-video-pacing.js';
 import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -223,6 +223,7 @@ export class QueueProcessor extends EventEmitter {
   private async handleStoryToScript(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
+    this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: 'claude-opus-4-6' });
     const script = await storyToScript(storyText);
     this.queueManager.setConvertedScript(script);
     return { script };
@@ -233,7 +234,7 @@ export class QueueProcessor extends EventEmitter {
     const state = this.queueManager.getState();
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
-    this.promptLogger.log(item.itemKey, 'analyze_story', `Analyze the following story and extract characters, locations, art style, objects, and scenes.\n\nStory:\n${textToAnalyze}`, { model: 'claude-opus-4-6' });
+    this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: 'claude-opus-4-6' });
     const analysis = await analyzeStory(textToAnalyze);
     this.queueManager.setStoryAnalysis(analysis);
     return { analysis };
@@ -390,7 +391,10 @@ For this scene:
 2. ${durationGuidance}
 3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
 4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, or internal thought, include it as dialogue in the appropriate shot. Shot durations MUST be whole numbers (integers), minimum 2 seconds. Never use fractional durations like 1.5 or 2.5. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s → round up to 6s minimum.
-5. Write startFramePrompt describing COMPOSITION and ACTION only: framing, character positions, poses, gestures, expressions, spatial relationships, lighting mood, camera angle. Do NOT describe character appearance (hair, eyes, skin, clothing details) — reference images handle appearance. Do NOT describe location appearance in detail — the location reference image handles that. Use character names (e.g., "Elena") or role labels (e.g., "the woman") to identify characters rather than physical descriptions. Keep startFramePrompt concise — under 150 words. endFramePrompt must be an empty string "".
+5. Write startFramePrompt describing COMPOSITION and ACTION only: framing, character positions, poses, gestures, expressions, spatial relationships, and camera angle. Do NOT describe character appearance (hair, eyes, skin, clothing details) — reference images handle appearance. Do NOT describe location appearance in detail — the location reference image handles that. Avoid lighting, materials, architecture, and decor details already visible in the location reference. Use character names (e.g., "Elena") or role labels (e.g., "the woman") to identify characters rather than physical descriptions. Keep startFramePrompt concise — under 150 words. endFramePrompt must be an empty string "".
+   BAD startFramePrompt: "Wide shot of the restaurant entrance interior, warm ambient golden lighting, exposed brick walls visible. Liam stands alone near the entrance. Soft candlelight glows from tables in the background. Evening cityscape visible through arched windows."
+   GOOD startFramePrompt: "Wide shot, Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff. His posture is upright but tense. Tables visible in the background."
+   The bad example wastes words on lighting, materials, and architectural details that the location reference image already provides. The good example focuses on character blocking, pose, expression, and composition.
 6. Write actionPrompt describing MOVEMENT and ACTION only: what characters do, how they move, gestures, facial expressions changing, interactions with objects, environmental changes. The start frame already establishes the visual scene — actionPrompt only adds motion and change. Do NOT describe character appearance (hair, clothing, build) or object appearance (color, shape, material) — the start frame already shows all of this. Use character names ("Elena") or roles ("the woman") not physical descriptions ("the woman with dark brown hair"). Reference objects by name ("the toothpaste tube") not description ("the sleek white-and-blue toothpaste tube"). Think of actionPrompt as a director calling out blocking cues, not describing a painting.
 7. When characters are speaking to each other, include explicit gaze direction in BOTH startFramePrompt and actionPrompt. The start frame should already show the characters oriented toward each other rather than facing the camera. Characters should never look directly at the camera unless the story explicitly calls for breaking the fourth wall.
 8. In actionPrompt and startFramePrompt fields, refer to characters by name (e.g., "Elena", "Marcus") or role (e.g., "the detective", "the woman"). Do NOT describe their physical appearance — reference images provide that. Do NOT describe object appearance — the start frame already shows it. However, in the dialogue field, USE the actual character names naturally as they appear in the script.
@@ -399,11 +403,11 @@ For this scene:
 11. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
 12. Set continuousFromPrevious=true only for true hard continuity: the same composition, same subject, same angle, and same camera a beat later. First shot of the scene must be false. Different subject or different angle means false.
 
-Scene to plan:
-${JSON.stringify(scene, null, 2)}
-
 Full story analysis for context:
-${JSON.stringify(analysis, null, 2)}`;
+${JSON.stringify(analysis, null, 2)}
+
+Scene to plan:
+${JSON.stringify(scene, null, 2)}`;
 
     this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: 'claude-opus-4-6', sceneNumber });
 
@@ -461,6 +465,8 @@ ${JSON.stringify(analysis, null, 2)}`;
       aspectRatio,
       version: item.version,
     });
+
+    this.promptLogger.log(item.itemKey, 'generate_asset', result.finalPrompt, { backend: imageBackend, key: result.key });
 
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
 
@@ -532,7 +538,6 @@ ${JSON.stringify(analysis, null, 2)}`;
       : undefined;
     console.log(`[handleGenerateFrame] Previous frame lookup: key=${previousFrameKey}, found=${!!previousFramePath}, eligible=${!shot.continuousFromPrevious && shot.shotInScene > 1}`);
     console.log(`[handleGenerateFrame] Using imageBackend=${imageBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
-    this.promptLogger.log(item.itemKey, 'generate_frame', shot.startFramePrompt, { backend: imageBackend, composition: shot.composition, cameraDirection: shot.cameraDirection, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene });
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
@@ -543,6 +548,10 @@ ${JSON.stringify(analysis, null, 2)}`;
       version: item.version,
       previousFramePath: previousFramePath ? this.absolutePath(previousFramePath) : undefined,
     });
+
+    if (result.finalPrompt) {
+      this.promptLogger.log(item.itemKey, 'generate_frame', result.finalPrompt, { backend: imageBackend, composition: shot.composition, cameraDirection: shot.cameraDirection, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene, references: result.startReferences?.map(r => ({ type: r.type, name: r.name })) });
+    }
 
     if (result.startPath) {
       this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, this.relativePath(result.startPath));
@@ -561,9 +570,6 @@ ${JSON.stringify(analysis, null, 2)}`;
     const aspectRatio = state.options?.aspectRatio;
     const videoBackend = state.options?.videoBackend ?? 'grok';
     console.log(`[handleGenerateVideo] Using videoBackend=${videoBackend} (scene ${shot.sceneNumber} shot ${shot.shotInScene})`);
-
-    const promptParts = [shot.actionPrompt, shot.dialogue ? `Dialogue: ${shot.dialogue}` : "", shot.soundEffects ? `Sound effects: ${shot.soundEffects}` : "", shot.cameraDirection ? `Camera: ${shot.cameraDirection}` : ""].filter(Boolean);
-    this.promptLogger.log(item.itemKey, 'generate_video', promptParts.join(". "), { backend: videoBackend, duration: shot.durationSeconds, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene });
 
     const result = await generateVideo({
       shotNumber: shot.shotNumber,
@@ -595,13 +601,14 @@ ${JSON.stringify(analysis, null, 2)}`;
       },
     });
 
+    this.promptLogger.log(item.itemKey, 'generate_video', result.finalPrompt, { backend: videoBackend, duration: shot.durationSeconds, sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene });
+
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
 
     return {
       shotNumber: result.shotNumber,
       path: this.relativePath(result.path),
       duration: result.duration,
-      promptSent: result.promptSent,
     };
   }
 
@@ -612,7 +619,15 @@ ${JSON.stringify(analysis, null, 2)}`;
     const referenceImagePaths = (item.inputs.referenceImagePaths as string[]).map(p => this.absolutePath(p));
     const shot = item.inputs.shot as Shot;
 
-    this.promptLogger.log(item.itemKey, 'analyze_video', `Analyzing video for shot ${shotNumber}.\nAction: ${shot.actionPrompt}\nDialogue: ${shot.dialogue}\nCamera: ${shot.cameraDirection}\nStart frame prompt: ${shot.startFramePrompt}`, { model: 'gemini-2.5-flash', shotNumber, durationSeconds: shot.durationSeconds });
+    this.promptLogger.log(item.itemKey, 'analyze_video', buildAnalyzeVideoPrompt({
+      shotNumber,
+      dialogue: shot.dialogue,
+      actionPrompt: shot.actionPrompt,
+      durationSeconds: shot.durationSeconds,
+      cameraDirection: shot.cameraDirection,
+      startFramePrompt: shot.startFramePrompt,
+      referenceImagePaths,
+    }), { model: 'gemini-2.5-flash', shotNumber, durationSeconds: shot.durationSeconds });
 
     const analysis = await analyzeVideoClip({
       videoPath,

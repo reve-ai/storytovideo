@@ -14,10 +14,12 @@ function getApiKey(): string {
   return key;
 }
 
+const MAX_REF_LONG_EDGE = 1024;
+const MAX_TOTAL_BASE64_BYTES = 15 * 1024 * 1024; // 15 MB
+
 /**
- * Pad an image to match a target aspect ratio by adding black letterbox/pillarbox bars.
- * This works around the Grok /images/edits API ignoring the aspect_ratio parameter
- * when editing with reference images — the output always matches the input's aspect ratio.
+ * Pad an image to match a target aspect ratio by adding black letterbox/pillarbox bars,
+ * then cap the long edge at MAX_REF_LONG_EDGE to keep payload size down.
  */
 async function padImageToAspectRatio(imagePath: string, targetAspectRatio: string): Promise<Buffer> {
   if (!fs.existsSync(imagePath)) {
@@ -32,28 +34,34 @@ async function padImageToAspectRatio(imagePath: string, targetAspectRatio: strin
   const targetRatio = arW / arH;
   const srcRatio = srcWidth / srcHeight;
 
-  // If already correct ratio (within tolerance), just return original
+  let padWidth: number, padHeight: number;
   if (Math.abs(srcRatio - targetRatio) < 0.05) {
-    return fs.readFileSync(imagePath);
+    padWidth = srcWidth;
+    padHeight = srcHeight;
+  } else if (srcRatio > targetRatio) {
+    padWidth = srcWidth;
+    padHeight = Math.round(srcWidth / targetRatio);
+  } else {
+    padHeight = srcHeight;
+    padWidth = Math.round(srcHeight * targetRatio);
   }
 
-  let newWidth: number, newHeight: number;
-  if (srcRatio > targetRatio) {
-    // Image is wider than target — add height (letterbox)
-    newWidth = srcWidth;
-    newHeight = Math.round(srcWidth / targetRatio);
-  } else {
-    // Image is taller than target — add width (pillarbox)
-    newHeight = srcHeight;
-    newWidth = Math.round(srcHeight * targetRatio);
+  // Cap the long edge at MAX_REF_LONG_EDGE
+  const longEdge = Math.max(padWidth, padHeight);
+  let finalWidth = padWidth;
+  let finalHeight = padHeight;
+  if (longEdge > MAX_REF_LONG_EDGE) {
+    const scale = MAX_REF_LONG_EDGE / longEdge;
+    finalWidth = Math.round(padWidth * scale);
+    finalHeight = Math.round(padHeight * scale);
   }
 
   return sharp(imagePath)
-    .resize(newWidth, newHeight, {
+    .resize(finalWidth, finalHeight, {
       fit: "contain",
       background: { r: 0, g: 0, b: 0, alpha: 1 },
     })
-    .png()
+    .jpeg({ quality: 85 })
     .toBuffer();
 }
 
@@ -148,15 +156,23 @@ export async function remixImageGrok(
   const outputPath = options?.outputPath ?? "output.png";
   const aspectRatio = options?.aspectRatio ?? "16:9";
 
-  // Pad reference images to target aspect ratio so the API outputs the correct ratio.
-  // The /images/edits endpoint ignores aspect_ratio and matches the input image instead.
-  const images = [];
+  // Pad + resize reference images to target aspect ratio and cap size.
+  const images: { type: string; url: string }[] = [];
+  let totalBase64Bytes = 0;
   for (const p of referenceImagePaths) {
     const paddedBuffer = await padImageToAspectRatio(p, aspectRatio);
     const b64 = paddedBuffer.toString("base64");
+    totalBase64Bytes += b64.length;
+
+    // If adding this image would exceed the payload cap, drop it (lowest priority = last)
+    if (images.length > 0 && totalBase64Bytes > MAX_TOTAL_BASE64_BYTES) {
+      console.warn(`[grok-image] Dropping reference ${images.length + 1}/${referenceImagePaths.length} — total base64 would exceed ${Math.round(MAX_TOTAL_BASE64_BYTES / 1024 / 1024)}MB cap`);
+      break;
+    }
+
     images.push({
       type: "image_url",
-      url: `data:image/png;base64,${b64}`,
+      url: `data:image/jpeg;base64,${b64}`,
     });
   }
 
@@ -168,10 +184,9 @@ export async function remixImageGrok(
     resolution: "2k",
   };
 
-  // Always use "images" array — the "image" (singular) field ignores aspect_ratio
   body.images = images;
 
-  console.log(`[grok-image] Editing with ${images.length} reference(s), aspect_ratio=${aspectRatio}`);
+  console.log(`[grok-image] Editing with ${images.length} reference(s), aspect_ratio=${aspectRatio}, payload ~${Math.round(totalBase64Bytes / 1024)}KB`);
   const data = await requestWithRetry(`${API_BASE_URL}/images/edits`, body);
 
   const imageBuffer = Buffer.from(data.data[0].b64_json, "base64");
