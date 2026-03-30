@@ -244,7 +244,7 @@ export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt
   if (params.soundEffects) promptParts.push(`Sound effects: ${params.soundEffects}`);
   if (params.cameraDirection) promptParts.push(`Camera: ${params.cameraDirection}`);
   // Append gaze instruction to every video prompt to prevent characters looking at camera
-  promptParts.push("Characters maintain natural gaze — looking at each other, their surroundings, or their activity. No one looks directly at the camera.");
+  promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
   // Sound effects and ambient audio are intentionally kept.
   promptParts.push("No music. No soundtrack. No background music.");
