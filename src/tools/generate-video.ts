@@ -233,18 +233,7 @@ function buildDialoguePrompt(
     return `${subject} looks at ${listenerLabel} and says: "${dialogue}"`;
   }
 
-  // Solo character or no listener: add gaze direction away from camera
-  // so the video model doesn't default to the character looking at the lens.
-  const soloGazeOptions = [
-    "looking slightly off to the side",
-    "gazing into the distance",
-    "looking down thoughtfully",
-    "looking away reflectively",
-    "with eyes cast slightly downward",
-  ];
-  const gazeIndex = Math.abs(dialogue.length % soloGazeOptions.length);
-  const gaze = soloGazeOptions[gazeIndex];
-  return `${subject}, ${gaze}, says: "${dialogue}"`;
+  return `${subject} says: "${dialogue}"`;
 }
 
 export function buildVideoPrompt(params: Pick<GenerateVideoParams, "actionPrompt" | "dialogue" | "speaker" | "charactersPresent" | "characterDescriptions" | "soundEffects" | "cameraDirection">): string {
