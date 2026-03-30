@@ -351,9 +351,10 @@ SHOT PLANNING PRINCIPLES:
 - The actionPrompt describes the motion/action that unfolds from that starting point (character gestures, movement, expressions, etc.).
 - endFramePrompt must always be an empty string "" (the field is required by the schema but unused).
 - Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
-- continuousFromPrevious should be true ONLY when the next shot is literally the same camera a moment later: same composition, same subject, same camera angle, same framing.
-- The first shot in every scene must set continuousFromPrevious to false.
-- If the subject changes or the camera angle/composition changes, continuousFromPrevious must be false.
+- continuousFromPrevious controls whether the start frame is extracted from the end of the previous shot's video (true) or generated fresh from reference images (false). Continuity produces much better visual consistency and reduces hallucinations.
+- DEFAULT TO TRUE within a scene. Set continuousFromPrevious=true whenever the location is the same as the previous shot and the characters present are the same or a subset of the previous shot — even if the camera angle or composition changes (the video model handles camera changes well).
+- Set continuousFromPrevious=false ONLY when: it is the first shot in the scene, the location changes within the scene, a new character enters who was not in the previous shot (the model can't add someone who isn't in the extracted frame), or there is a significant time jump within the scene.
+- When in doubt, use continuousFromPrevious=true. Breaking continuity should be the exception, not the norm.
 
 COMPOSITION TYPES (what the camera sees and what happens):
 - wide_establishing: Wide view of the setting. Shows the environment, characters in context, spatial relationships. Action: characters move through space, enter/exit, interact with environment.
@@ -407,7 +408,7 @@ For this scene:
 9. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
 10. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
 11. NEVER describe a cut, transition, or camera change within a single shot's actionPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
-12. Set continuousFromPrevious=true only for true hard continuity: the same composition, same subject, same angle, and same camera a beat later. First shot of the scene must be false. Different subject or different angle means false.
+12. Default to continuousFromPrevious=true within a scene. The only reasons to set it false are: first shot in the scene, location change, a new character entering who wasn't in the previous shot, or a significant time jump. Camera angle and composition changes do NOT require breaking continuity.
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
