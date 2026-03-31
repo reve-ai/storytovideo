@@ -352,6 +352,12 @@ export class RunManager extends EventEmitter {
         await Promise.allSettled(existing.map(p => p.stop()));
       }
 
+      // Reset any items that were in_progress when the server was interrupted
+      const resetCount = qm.resetStuckItems();
+      if (resetCount > 0) {
+        qm.save();
+      }
+
       this.startProcessors(runId, qm);
       this.patchRun(runId, { status: "running", startedAt: new Date().toISOString() });
       return true;
@@ -430,6 +436,12 @@ export class RunManager extends EventEmitter {
           if (!existsSync(stateFile)) continue;
           const qm = QueueManager.load(stateFile);
           this.queueManagers.set(runId, qm);
+
+          // Reset any items that were in_progress when the server was interrupted
+          const resetCount = qm.resetStuckItems();
+          if (resetCount > 0) {
+            qm.save();
+          }
 
           // Mark previously-running, pausing, or completed runs as stopped (server restarted)
           if (record.status === "running" || record.status === "pausing" || record.status === "completed") {

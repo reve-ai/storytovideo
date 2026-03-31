@@ -230,6 +230,25 @@ export class QueueManager {
     return true;
   }
 
+  /** Reset all in_progress items back to pending.
+   *  Call this after a server restart to recover items that were being processed
+   *  when the server was interrupted. Returns the number of items reset. */
+  resetStuckItems(): number {
+    let count = 0;
+    for (const item of this.state.workItems) {
+      if (item.status === 'in_progress') {
+        item.status = 'pending';
+        item.startedAt = null;
+        count++;
+      }
+    }
+    if (count > 0) {
+      console.log(`[QueueManager] Reset ${count} stuck in_progress items to pending`);
+      this.touch();
+    }
+    return count;
+  }
+
   /** Manual retry — resets a failed or cancelled item to pending so it gets picked up again.
    *  Unlike redo, this does NOT create a new version or cascade to dependents.
    *  No retry limit — the user can call this as many times as they want. */
