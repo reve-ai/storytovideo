@@ -364,6 +364,7 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
             originalValues={originalValues}
             onUpdate={updateField}
             onReset={resetField}
+            isContinuityShot={!!shot?.continuousFromPrevious}
           />
         )}
 
@@ -413,9 +414,10 @@ interface EditFormProps {
   originalValues: EditFormValues;
   onUpdate: <K extends keyof EditFormValues>(key: K, value: EditFormValues[K]) => void;
   onReset: <K extends keyof EditFormValues>(key: K) => void;
+  isContinuityShot?: boolean;
 }
 
-function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormProps) {
+function EditForm({ formValues, originalValues, onUpdate, onReset, isContinuityShot }: EditFormProps) {
   return (
     <div className="analyze-edit-form">
       <EditField
@@ -426,6 +428,8 @@ function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormPro
         original={originalValues.startFramePrompt}
         onChange={(v) => onUpdate("startFramePrompt", v as string)}
         onReset={() => onReset("startFramePrompt")}
+        disabled={isContinuityShot}
+        disabledNote="Start frame is extracted from the previous shot (continuity mode)"
       />
       <EditField
         label="Video Direction"
@@ -476,26 +480,32 @@ interface EditFieldProps {
   original: string | number;
   onChange: (value: string | number) => void;
   onReset: () => void;
+  disabled?: boolean;
+  disabledNote?: string;
 }
 
-function EditField({ label, type, value, original, onChange, onReset }: EditFieldProps) {
+function EditField({ label, type, value, original, onChange, onReset, disabled, disabledNote }: EditFieldProps) {
   const changed = String(value) !== String(original);
 
   return (
-    <div className={`analyze-edit-field${changed ? " changed" : ""}`}>
+    <div className={`analyze-edit-field${changed ? " changed" : ""}${disabled ? " disabled" : ""}`}>
       <div className="analyze-edit-field-header">
         <label className="input-label">{label}</label>
-        {changed && (
+        {changed && !disabled && (
           <button type="button" className="analyze-edit-reset" onClick={onReset}>
             Reset
           </button>
         )}
       </div>
+      {disabled && disabledNote && (
+        <p className="analyze-edit-disabled-note">{disabledNote}</p>
+      )}
       {type === "textarea" ? (
         <textarea
           value={String(value)}
           onChange={(e) => onChange(e.target.value)}
           rows={3}
+          disabled={disabled}
         />
       ) : type === "number" ? (
         <input
@@ -504,12 +514,14 @@ function EditField({ label, type, value, original, onChange, onReset }: EditFiel
           min={1}
           step={1}
           onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          disabled={disabled}
         />
       ) : (
         <input
           type="text"
           value={String(value)}
           onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
         />
       )}
       {changed && (
