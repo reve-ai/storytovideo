@@ -79,6 +79,7 @@ export interface RunState {
     imageBackend?: ImageBackend;
     assetImageBackend?: ImageBackend;
     videoBackend?: VideoBackend;
+    llmProvider?: 'anthropic' | 'openai';
   };
 }
 

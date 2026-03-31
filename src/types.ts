@@ -102,6 +102,7 @@ export interface PipelineOptions {
   imageBackend?: ImageBackend;
   assetImageBackend?: ImageBackend;
   videoBackend?: VideoBackend;
+  llmProvider?: 'anthropic' | 'openai';
   aspectRatio?: "16:9" | "9:16" | "1:1";
   onToolError?: (stageName: string, toolName: string, error: string) => void;
   onProgress?: (message: string) => void;

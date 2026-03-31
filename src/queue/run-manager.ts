@@ -49,6 +49,7 @@ export interface RunOptions {
   imageBackend?: ImageBackend;
   assetImageBackend?: ImageBackend;
   videoBackend?: VideoBackend;
+  llmProvider?: 'anthropic' | 'openai';
 }
 
 // ---------------------------------------------------------------------------

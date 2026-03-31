@@ -45,6 +45,7 @@ export interface RunRecord {
     imageBackend?: ImageBackend;
     assetImageBackend?: ImageBackend;
     videoBackend?: VideoBackend;
+    llmProvider?: 'anthropic' | 'openai';
   };
 }
 
@@ -70,6 +71,7 @@ interface RunActions {
       imageBackend?: ImageBackend;
       assetImageBackend?: ImageBackend;
       videoBackend?: VideoBackend;
+      llmProvider?: 'anthropic' | 'openai';
     },
   ) => Promise<RunRecord>;
   deleteRun: (runId: string) => Promise<void>;

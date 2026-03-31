@@ -34,6 +34,7 @@ const MIME_TYPES: Record<string, string> = {
 
 const IMAGE_BACKENDS: readonly ImageBackend[] = ["grok", "reve", "nano-banana"];
 const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo", "ltx-full", "ltx-distilled"];
+const LLM_PROVIDERS = ["anthropic", "openai"] as const;
 
 function parseImageBackend(value: unknown): ImageBackend | undefined {
   return typeof value === "string" && IMAGE_BACKENDS.includes(value as ImageBackend)
@@ -522,6 +523,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         imageBackend: parseImageBackend(options.imageBackend),
         assetImageBackend: parseImageBackend(options.assetImageBackend),
         videoBackend: parseVideoBackend(options.videoBackend),
+        llmProvider: typeof options.llmProvider === 'string' && (LLM_PROVIDERS as readonly string[]).includes(options.llmProvider) ? options.llmProvider as 'anthropic' | 'openai' : undefined,
       });
       sendJson(res, 201, record);
       return;

@@ -4,7 +4,8 @@ import { mkdirSync, existsSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
 import { z } from 'zod';
-import { getLlmModel, getLlmModelName, getLlmProviderName } from '../llm-provider.js';
+import { getLlmModel, getLlmModelName, getLlmProviderName, setLlmProvider } from '../llm-provider.js';
+import type { LlmProvider } from '../llm-provider.js';
 
 import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
@@ -227,6 +228,8 @@ export class QueueProcessor extends EventEmitter {
 
   private async handleStoryToScript(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
+    const llmProvider = (this.queueManager.getState().options?.llmProvider ?? 'anthropic') as LlmProvider;
+    setLlmProvider(llmProvider);
     const storyText = item.inputs.storyText as string;
     this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: getLlmModelName('strong') });
     const script = await storyToScript(storyText);
@@ -237,6 +240,8 @@ export class QueueProcessor extends EventEmitter {
   private async handleAnalyzeStory(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const state = this.queueManager.getState();
+    const llmProvider = (state.options?.llmProvider ?? 'anthropic') as LlmProvider;
+    setLlmProvider(llmProvider);
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
     this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: getLlmModelName('strong') });
@@ -300,6 +305,8 @@ export class QueueProcessor extends EventEmitter {
 
   private async handleNameRun(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
+    const llmProvider = (this.queueManager.getState().options?.llmProvider ?? 'anthropic') as LlmProvider;
+    setLlmProvider(llmProvider);
     const storyText = item.inputs.storyText as string;
     const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
     this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: getLlmModelName('fast') });
@@ -328,6 +335,8 @@ export class QueueProcessor extends EventEmitter {
   private async handlePlanShots(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const state = this.queueManager.getState();
+    const llmProvider = (state.options?.llmProvider ?? 'anthropic') as LlmProvider;
+    setLlmProvider(llmProvider);
     const analysis = state.storyAnalysis;
     if (!analysis) throw new Error('plan_shots requires storyAnalysis');
 

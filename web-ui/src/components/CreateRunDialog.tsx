@@ -26,6 +26,11 @@ const VIDEO_BACKENDS = [
   { value: "ltx-full", label: "LTX Full" },
 ] as const;
 
+const LLM_PROVIDERS = [
+  { value: "anthropic", label: "Anthropic (Claude)" },
+  { value: "openai", label: "OpenAI (GPT-5.4)" },
+] as const;
+
 export default function CreateRunDialog({
   open,
   onClose,
@@ -36,6 +41,7 @@ export default function CreateRunDialog({
   const [assetImageBackend, setAssetImageBackend] = useState<ImageBackend>("grok");
   const [imageBackend, setImageBackend] = useState<ImageBackend>("grok");
   const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
+  const [llmProvider, setLlmProviderState] = useState<"anthropic" | "openai">("anthropic");
   const [submitting, setSubmitting] = useState(false);
   const createRun = useRunStore((s) => s.createRun);
   const navigate = useNavigate();
@@ -56,7 +62,7 @@ export default function CreateRunDialog({
 
       setSubmitting(true);
       try {
-        await createRun(text, { aspectRatio, assetImageBackend, imageBackend, videoBackend, needsConversion });
+        await createRun(text, { aspectRatio, assetImageBackend, imageBackend, videoBackend, llmProvider, needsConversion });
         navigate("/");
         setStoryText("");
         setAspectRatio("16:9");
@@ -64,6 +70,7 @@ export default function CreateRunDialog({
         setAssetImageBackend("grok");
         setImageBackend("grok");
         setVideoBackend("grok");
+        setLlmProviderState("anthropic");
         onClose();
       } catch (err) {
         console.error("Failed to create run:", err);
@@ -71,7 +78,7 @@ export default function CreateRunDialog({
         setSubmitting(false);
       }
     },
-    [storyText, aspectRatio, needsConversion, assetImageBackend, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
+    [storyText, aspectRatio, needsConversion, assetImageBackend, imageBackend, videoBackend, llmProvider, submitting, createRun, navigate, onClose],
   );
 
   if (!open) return null;
@@ -151,6 +158,19 @@ export default function CreateRunDialog({
             onChange={(e) => setVideoBackend(e.target.value as VideoBackend)}
           >
             {VIDEO_BACKENDS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="llm-provider-select">LLM Provider</label>
+          <select
+            id="llm-provider-select"
+            value={llmProvider}
+            onChange={(e) => setLlmProviderState(e.target.value as "anthropic" | "openai")}
+          >
+            {LLM_PROVIDERS.map(({ value, label }) => (
               <option key={value} value={value}>
                 {label}
               </option>

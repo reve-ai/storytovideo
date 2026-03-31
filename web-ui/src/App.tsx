@@ -7,7 +7,6 @@ import StoryView from "./views/StoryView";
 import VideoView from "./views/VideoView";
 import AnalyzeView from "./views/AnalyzeView";
 import AssetsView from "./views/AssetsView";
-import SettingsView from "./views/SettingsView";
 
 export default function App() {
   return (
@@ -20,7 +19,6 @@ export default function App() {
         <Route path="/video" element={<VideoView />} />
         <Route path="/analyze" element={<AnalyzeView />} />
         <Route path="/assets" element={<AssetsView />} />
-        <Route path="/settings" element={<SettingsView />} />
       </Route>
     </Routes>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
@@ -28,7 +28,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const deleteRun = useRunStore((s) => s.deleteRun);
   const sseStatus = usePipelineStore((s) => s.sseStatus);
   const analyzeCount = usePipelineStore((s) => s.analyzeItems.length);
-  const [llmProvider, setLlmProvider] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Load runs on mount, restore state from URL hash
@@ -66,19 +65,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
       }
     });
   }, [loadRuns, selectRun, navigate]);
-
-  const fetchSettings = useCallback(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => setLlmProvider(d.llmProvider))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetchSettings();
-    window.addEventListener("settings-changed", fetchSettings);
-    return () => window.removeEventListener("settings-changed", fetchSettings);
-  }, [fetchSettings]);
 
   const handleRunChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -139,7 +125,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
               <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
             </>
           )}
-          <span>LLM: {llmProvider ?? "anthropic"}</span>
+          <span>LLM: {activeRun?.options?.llmProvider ?? "anthropic"}</span>
         </div>
       </div>
       <div className="top-bar-right">
@@ -191,22 +177,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
 
         <button type="button" onClick={onNewRun}>
           + New Run
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate("/settings")}
-          title="Settings"
-          style={{
-            fontSize: "1.1rem",
-            padding: "0.3rem 0.6rem",
-            minWidth: 36,
-            borderRadius: 6,
-            lineHeight: 1,
-            textAlign: "center",
-          }}
-        >
-          ⚙
         </button>
 
         <span className={`sse-badge ${sseStatus}`}>{sseStatus}</span>
