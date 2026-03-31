@@ -20,7 +20,7 @@ function getItemDescription(item: WorkItem): string | null {
   if (item.type === "generate_frame")
     desc = (inp.shot as Record<string, unknown>)?.startFramePrompt as string;
   else if (item.type === "generate_video")
-    desc = (inp.shot as Record<string, unknown>)?.actionPrompt as string;
+    desc = ((inp.shot as Record<string, unknown>)?.videoPrompt ?? (inp.shot as Record<string, unknown>)?.actionPrompt) as string;
   else if (item.type === "generate_asset") desc = inp.description as string;
   else if (item.type === "artifact") {
     const at = inp.artifactType as string;

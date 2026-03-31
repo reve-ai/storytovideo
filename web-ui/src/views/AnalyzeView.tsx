@@ -180,7 +180,7 @@ interface AnalyzeCardProps {
 /** Fields that the edit form exposes. */
 interface EditFormValues {
   durationSeconds: number;
-  actionPrompt: string;
+  videoPrompt: string;
   dialogue: string;
   startFramePrompt: string;
   cameraDirection: string;
@@ -226,13 +226,13 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
 
   const composition = shot?.composition as string | undefined;
   const durationSeconds = shot?.durationSeconds as number | undefined;
-  const actionPrompt = shot?.actionPrompt as string | undefined;
+  const videoPrompt = (shot?.videoPrompt ?? shot?.actionPrompt) as string | undefined;
   const dialogue = shot?.dialogue as string | undefined;
 
   // Original values from the shot
   const originalValues: EditFormValues = useMemo(() => ({
     durationSeconds: (shot?.durationSeconds as number) ?? 8,
-    actionPrompt: (shot?.actionPrompt as string) ?? "",
+    videoPrompt: ((shot?.videoPrompt ?? shot?.actionPrompt) as string) ?? "",
     dialogue: (shot?.dialogue as string) ?? "",
     startFramePrompt: (shot?.startFramePrompt as string) ?? "",
     cameraDirection: (shot?.cameraDirection as string) ?? "",
@@ -242,7 +242,7 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
   const suggestedInputs = useMemo(() => buildSuggestedInputs(item.outputs), [item.outputs]);
   const suggestedValues: EditFormValues = useMemo(() => ({
     durationSeconds: (suggestedInputs.durationSeconds as number) ?? originalValues.durationSeconds,
-    actionPrompt: (suggestedInputs.actionPrompt as string) ?? originalValues.actionPrompt,
+    videoPrompt: ((suggestedInputs.videoPrompt ?? suggestedInputs.actionPrompt) as string) ?? originalValues.videoPrompt,
     dialogue: (suggestedInputs.dialogue as string) ?? originalValues.dialogue,
     startFramePrompt: (suggestedInputs.startFramePrompt as string) ?? originalValues.startFramePrompt,
     cameraDirection: (suggestedInputs.cameraDirection as string) ?? originalValues.cameraDirection,
@@ -280,7 +280,7 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
     await onAccept(runId, item.id, {
       shot: editedShot,
       durationSeconds: formValues.durationSeconds,
-      actionPrompt: formValues.actionPrompt,
+      videoPrompt: formValues.videoPrompt,
       dialogue: formValues.dialogue,
       startFramePrompt: formValues.startFramePrompt,
       cameraDirection: formValues.cameraDirection,
@@ -339,7 +339,7 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
 
         {!editing && (
           <>
-            {actionPrompt && <div className="analyze-detail"><strong>Action:</strong> {actionPrompt}</div>}
+            {videoPrompt && <div className="analyze-detail"><strong>Video Direction:</strong> {videoPrompt}</div>}
             {dialogue && <div className="analyze-detail"><strong>Dialogue:</strong> {dialogue}</div>}
 
             {issues.length > 0 && (
@@ -428,13 +428,13 @@ function EditForm({ formValues, originalValues, onUpdate, onReset }: EditFormPro
         onReset={() => onReset("startFramePrompt")}
       />
       <EditField
-        label="Action prompt"
-        fieldKey="actionPrompt"
+        label="Video Direction"
+        fieldKey="videoPrompt"
         type="textarea"
-        value={formValues.actionPrompt}
-        original={originalValues.actionPrompt}
-        onChange={(v) => onUpdate("actionPrompt", v as string)}
-        onReset={() => onReset("actionPrompt")}
+        value={formValues.videoPrompt}
+        original={originalValues.videoPrompt}
+        onChange={(v) => onUpdate("videoPrompt", v as string)}
+        onReset={() => onReset("videoPrompt")}
       />
       <EditField
         label="Dialogue"

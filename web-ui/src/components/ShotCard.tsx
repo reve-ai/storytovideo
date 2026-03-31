@@ -69,7 +69,7 @@ export default function ShotCard({
     videoItem?.status ?? frameItem?.status ?? ("pending" as string);
   const composition = shot.composition as string | undefined;
   const durationSeconds = shot.durationSeconds as number | undefined;
-  const actionPrompt = shot.actionPrompt as string | undefined;
+  const videoPrompt = (shot.videoPrompt ?? shot.actionPrompt) as string | undefined;
   const sceneNumber = shot.sceneNumber as number | undefined;
   const shotInScene = shot.shotInScene as number | undefined;
   const continuityEnabled = Boolean(shot.continuousFromPrevious);
@@ -81,9 +81,9 @@ export default function ShotCard({
     shotInScene > 1;
   const continuityDisabled = !canToggleContinuity || continuityBusy;
   const truncatedAction =
-    actionPrompt && actionPrompt.length > 100
-      ? actionPrompt.slice(0, 100) + "…"
-      : actionPrompt;
+    videoPrompt && videoPrompt.length > 100
+      ? videoPrompt.slice(0, 100) + "…"
+      : videoPrompt;
 
   const handleToggleContinuity = useCallback(
     async (e: React.MouseEvent<HTMLButtonElement>) => {
