@@ -117,7 +117,7 @@ export async function generateAsset(params: {
   if (isEditing) {
     console.log(`[generateAsset] Editing reference image for ${assetType}: ${assetName} (${angleType})`);
   } else {
-    console.log(`[generateAsset] Generating new ${assetType}: ${assetName}`);
+    console.log(`[generateAsset] Generating new ${assetType}: ${assetName}\n  Prompt: ${prompt}`);
   }
 
   // Call the selected image API with retry logic

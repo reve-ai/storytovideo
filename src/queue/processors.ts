@@ -18,7 +18,7 @@ import {
   SHOT_PLANNING_PRINCIPLES,
   SHOT_PLANNING_RULES,
 } from '../prompts.js';
-import { generateAsset } from '../tools/generate-asset.js';
+import { generateAsset, buildAssetPrompt } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
@@ -397,6 +397,13 @@ ${JSON.stringify(scene, null, 2)}`;
     const aspectRatio = state.options?.aspectRatio;
     const imageBackend = state.options?.assetImageBackend ?? state.options?.imageBackend ?? 'grok';
     console.log(`[handleGenerateAsset] Using imageBackend=${imageBackend} (${item.itemKey})`);
+
+    // Log the prompt BEFORE the call so it's captured even if generation fails
+    const assetType = item.inputs.characterName ? "character" : item.inputs.locationName ? "location" : "object";
+    const isEditing = Boolean(item.inputs.referenceImagePath);
+    const prompt = buildAssetPrompt({ assetType, description: item.inputs.description as string, artStyle: item.inputs.artStyle as string, isEditing });
+    this.promptLogger.log(item.itemKey, 'generate_asset', prompt, { backend: imageBackend });
+
     const result = await generateAsset({
       characterName: item.inputs.characterName as string | undefined,
       locationName: item.inputs.locationName as string | undefined,
@@ -409,8 +416,6 @@ ${JSON.stringify(scene, null, 2)}`;
       aspectRatio,
       version: item.version,
     });
-
-    this.promptLogger.log(item.itemKey, 'generate_asset', result.finalPrompt, { backend: imageBackend, key: result.key });
 
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
 
