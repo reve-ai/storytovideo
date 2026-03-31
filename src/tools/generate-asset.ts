@@ -37,14 +37,12 @@ export function buildAssetPrompt(params: {
 
   let prompt: string;
   if (assetType === "character") {
-    prompt = `A ${CHARACTER_ASSET_PROMPT_TEMPLATE}${description}`;
+    prompt = `Art style: ${artStyle}. A ${CHARACTER_ASSET_PROMPT_TEMPLATE}${description}`;
   } else if (assetType === "object") {
-    prompt = `An ${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
+    prompt = `Art style: ${artStyle}. An ${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
   } else {
-    prompt = `A ${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
+    prompt = `Art style: ${artStyle}. A ${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
   }
-
-  prompt += `\n\nArt style: ${artStyle}`;
 
   return prompt;
 }

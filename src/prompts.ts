@@ -153,7 +153,7 @@ export const FRAME_GAZE_SOLO_NO_DIALOGUE = "Character's gaze is directed at thei
 
 export const ANALYZE_STORY_PROMPT_PREFIX = `Analyze the following story and extract:
 1. Title
-2. Visual art style (describe the visual aesthetic)
+2. Visual art style in 1-2 short phrases only (e.g. 'photorealistic, warm cinematic lighting' or 'dark fantasy illustration, muted earth tones'). Describe rendering style and color palette only — do NOT include mood, atmosphere, narrative tone, or scene-specific details.
 3. Characters (name, detailed physical description, personality, age range)
 4. Locations (name, visual description with architecture, lighting, colors, atmosphere)
 5. Objects (name, visual description — products, props, key items, vehicles, or any notable physical object that appears repeatedly or is important to the story)
