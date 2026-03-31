@@ -809,6 +809,21 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           if (directorsNote) newInputs.directorsNote = directorsNote;
         }
 
+        // Persist the updated description into storyAnalysis so the UI reflects it
+        if (newDescription !== undefined && qm.getState().storyAnalysis) {
+          const parts = assetKey.split(':');
+          const type = parts[0]; // character, location, object
+          const name = parts.slice(1, -1).join(':'); // handle names with colons
+
+          if (type === 'character') {
+            qm.updateCharacter(name, { physicalDescription: newDescription });
+          } else if (type === 'location') {
+            qm.updateLocation(name, { visualDescription: newDescription });
+          } else if (type === 'object') {
+            qm.updateObject(name, { visualDescription: newDescription });
+          }
+        }
+
         try {
           const newItem = runManager.redoItem(runId, activeItem.id, newInputs);
           if (!newItem) { sendJson(res, 500, { error: `Failed to redo asset: ${lookupKey}` }); return; }
