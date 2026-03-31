@@ -1,9 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
+import { generateText } from "ai";
 import { rateLimiters } from "./queue/rate-limiter-registry.js";
+import { getLlmModel, getLlmProviderName } from "./llm-provider.js";
 
 const API_BASE_URL = "https://api.reve.com/v1";
 const MAX_RETRIES = 3;
+const CONTENT_VIOLATION_MAX_RETRIES = 3;
 
 function getApiKey(): string {
   const key = process.env.REVE_API_KEY;
@@ -32,13 +35,37 @@ interface RateLimitError {
   params?: { retry_after?: string; requested_amount?: number; available_amount?: number };
 }
 
+/**
+ * Revises a prompt using the LLM to avoid content filter violations.
+ */
+async function revisePromptForContentViolation(currentPrompt: string): Promise<string> {
+  const limiter = rateLimiters.get(getLlmProviderName());
+  await limiter.acquire();
+  try {
+    const { text } = await generateText({
+      model: getLlmModel('fast'),
+      prompt: `This image generation prompt was rejected by a content filter. Rewrite it to describe the same visual scene while avoiding anything that could trigger content moderation. Keep the same artistic intent, composition, and subject matter but use safer language. Return ONLY the revised prompt, nothing else.\n\nOriginal prompt:\n${currentPrompt}`,
+      maxTokens: 1024,
+    } as any);
+    return text.trim();
+  } finally {
+    limiter.release();
+  }
+}
+
+function truncatePrompt(prompt: string, maxLen = 200): string {
+  return prompt.length > maxLen ? prompt.slice(0, maxLen) + "..." : prompt;
+}
+
 async function requestWithRetry(
   url: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  promptKey?: string
 ): Promise<ArrayBuffer> {
   const apiKey = getApiKey();
   const limiter = rateLimiters.get('reve');
   let attempt = 0;
+  let contentViolationAttempts = 0;
 
   while (attempt < MAX_RETRIES) {
     await limiter.acquire();
@@ -55,19 +82,30 @@ async function requestWithRetry(
 
       if (response.ok) {
         if (response.headers.get("X-Reve-Content-Violation")) {
+          contentViolationAttempts++;
           // On first violation, dump all headers so we can discover the request ID header name
-          if (attempt === 0) {
+          if (contentViolationAttempts === 1) {
             console.warn("[reve] Content violation — response headers:", Object.fromEntries(response.headers.entries()));
           }
           const requestId = response.headers.get("x-request-id") ?? response.headers.get("x-reve-request-id") ?? "unknown";
-          const prompt = typeof body.prompt === "string" ? body.prompt : JSON.stringify(body.prompt);
-          const truncatedPrompt = prompt && prompt.length > 200 ? prompt.slice(0, 200) + "..." : prompt;
-          if (attempt < MAX_RETRIES - 1) {
-            console.warn(`[reve] Content violation (request: ${requestId}), prompt: ${truncatedPrompt}. Retrying (attempt ${attempt + 1}/${MAX_RETRIES})`);
-            attempt++;
-            continue;
+          const currentPrompt = promptKey && typeof body[promptKey] === "string" ? body[promptKey] as string : undefined;
+
+          if (contentViolationAttempts >= CONTENT_VIOLATION_MAX_RETRIES) {
+            const truncated = currentPrompt ? truncatePrompt(currentPrompt) : "(no prompt)";
+            throw new Error(`Reve API: content violation on all ${CONTENT_VIOLATION_MAX_RETRIES} attempts after LLM revision (request: ${requestId}), prompt: ${truncated} — prompt may need manual revision`);
           }
-          throw new Error(`Reve API: content violation on all ${MAX_RETRIES} attempts (request: ${requestId}), prompt: ${truncatedPrompt} — prompt may need revision`);
+
+          // Use LLM to revise the prompt before retrying
+          if (currentPrompt && promptKey) {
+            console.warn(`[reve] Content violation on attempt ${contentViolationAttempts}/${CONTENT_VIOLATION_MAX_RETRIES} (request: ${requestId}). Original prompt: ${truncatePrompt(currentPrompt)}. Requesting LLM revision...`);
+            const revisedPrompt = await revisePromptForContentViolation(currentPrompt);
+            body[promptKey] = revisedPrompt;
+            console.warn(`[reve] Revised prompt: ${truncatePrompt(revisedPrompt)}. Retrying...`);
+          } else {
+            console.warn(`[reve] Content violation on attempt ${contentViolationAttempts}/${CONTENT_VIOLATION_MAX_RETRIES} (request: ${requestId}), no prompt key to revise. Retrying...`);
+          }
+          attempt++;
+          continue;
         }
         return response.arrayBuffer();
       }
@@ -127,7 +165,7 @@ export async function createImage(
     prompt,
     aspect_ratio: aspectRatio,
     version,
-  });
+  }, "prompt");
 
   ensureDir(outputPath);
   fs.writeFileSync(outputPath, Buffer.from(imageBuffer));
@@ -147,7 +185,7 @@ export async function editImage(
     reference_image: imageBase64,
     edit_instruction: editInstruction,
     version,
-  });
+  }, "edit_instruction");
 
   ensureDir(outputPath);
   fs.writeFileSync(outputPath, Buffer.from(imageBuffer));
@@ -171,7 +209,7 @@ export async function remixImage(
     prompt,
     reference_images: referenceImages,
     aspect_ratio: aspectRatio,
-  });
+  }, "prompt");
 
   ensureDir(outputPath);
   fs.writeFileSync(outputPath, Buffer.from(imageBuffer));
