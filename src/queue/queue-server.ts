@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 
 import { RunManager, resolveOutputDir } from "./run-manager.js";
+import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -1425,6 +1426,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       }
     }
 
+    // GET /api/settings
+    if (method === "GET" && url.pathname === "/api/settings") {
+      sendJson(res, 200, getSettings());
+      return;
+    }
+
+    // POST /api/settings — partial update
+    if (method === "POST" && url.pathname === "/api/settings") {
+      const body = await readJsonBody(req) as Record<string, unknown>;
+      const updated = updateSettings(body);
+      sendJson(res, 200, updated);
+      return;
+    }
+
     sendJson(res, 404, { error: "Not found" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal server error";
@@ -1499,6 +1514,10 @@ process.on("unhandledRejection", (reason) => {
 });
 
 async function start(): Promise<void> {
+  // Load persisted settings and apply LLM provider
+  const settings = loadSettings();
+  setLlmProvider(settings.llmProvider);
+
   await setupViteDevServer();
   server.listen(PORT, () => {
     console.log(`Queue server listening on http://localhost:${PORT}`);
