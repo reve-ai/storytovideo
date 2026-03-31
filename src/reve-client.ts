@@ -81,7 +81,7 @@ async function requestWithRetry(
       });
 
       if (response.ok) {
-        if (response.headers.get("X-Reve-Content-Violation")) {
+        if (response.headers.get("X-Reve-Content-Violation") === "true") {
           contentViolationAttempts++;
           // On first violation, dump all headers so we can discover the request ID header name
           if (contentViolationAttempts === 1) {
