@@ -54,6 +54,14 @@ async function requestWithRetry(
       });
 
       if (response.ok) {
+        if (response.headers.get("X-Reve-Content-Violation")) {
+          if (attempt < MAX_RETRIES - 1) {
+            console.warn(`[reve] Content violation detected, retrying... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+            attempt++;
+            continue;
+          }
+          throw new Error(`Reve API: content violation on all ${MAX_RETRIES} attempts — prompt may need revision`);
+        }
         return response.arrayBuffer();
       }
 
