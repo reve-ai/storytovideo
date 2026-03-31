@@ -63,7 +63,7 @@ async function testAssetDryRunReturnsFinalPrompt(): Promise<void> {
     dryRun: true,
   });
 
-  assert.equal(result.finalPrompt, "Generate a photorealistic style reference image of an object/product: A brass lantern with etched glass panels. Show the object clearly against a neutral background for reference.");
+  assert.equal(result.finalPrompt, "An object/product: A brass lantern with etched glass panels. Show the object clearly against a neutral background for reference.\n\nArt style: photorealistic");
   console.log("  ✓ asset dry-run returns the final prompt text");
 }
 

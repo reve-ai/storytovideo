@@ -35,14 +35,16 @@ export function buildAssetPrompt(params: {
     return `${ASSET_EDIT_PROMPT_PREFIX}${description}`;
   }
 
-  let prompt = `Generate a ${artStyle} style reference image of `;
+  let prompt: string;
   if (assetType === "character") {
-    prompt += `${CHARACTER_ASSET_PROMPT_TEMPLATE}${description}`;
+    prompt = `A ${CHARACTER_ASSET_PROMPT_TEMPLATE}${description}`;
   } else if (assetType === "object") {
-    prompt += `${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
+    prompt = `An ${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
   } else {
-    prompt += `${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
+    prompt = `A ${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
   }
+
+  prompt += `\n\nArt style: ${artStyle}`;
 
   return prompt;
 }
