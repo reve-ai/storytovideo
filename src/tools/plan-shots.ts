@@ -2,12 +2,6 @@ import { z } from "zod";
 import type { StoryAnalysis, Shot } from "../types";
 
 // ---------------------------------------------------------------------------
-// Cinematic rules — re-exported from centralized prompts module
-// ---------------------------------------------------------------------------
-
-export { CINEMATIC_RULES } from "../prompts.js";
-
-// ---------------------------------------------------------------------------
 // Per-scene shot schema (no shotNumber or sceneNumber — auto-assigned)
 // ---------------------------------------------------------------------------
 

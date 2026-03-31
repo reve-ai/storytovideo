@@ -20,117 +20,12 @@ Character scale: The video model cannot maintain character identity for small or
 
 Scene persistence: The video model cannot introduce new visual elements mid-shot that were not established in the start frame. New characters walking in will have invented appearances. Environmental changes must be subtle extensions of what the start frame shows.`;
 
-// ---- CINEMATIC_RULES (from plan-shots.ts) ----
-
-export const CINEMATIC_RULES = `
-FIXED CAMERA RULE (MOST IMPORTANT):
-A shot is what a single, stationary camera sees. The camera does not move, pan, or change its target during a shot.
-- The start frame describes what this camera sees at the beginning of the shot.
-- If the start frame is pointed at Person A, the shot stays on Person A. You CANNOT switch to Person B.
-- If the start frame shows a wide view of a room, the shot shows the SAME wide view of the SAME room.
-- If you need to show a different person or a different angle: that is a DIFFERENT SHOT. Use a cut.
-- To switch focus to a different person, END the current shot and START a new shot on that person. This is how real films work — cut to the new subject.
-- Example: Shot 3 = close-up of Alice speaking. Shot 4 = close-up of Bob reacting. Two shots, one cut.
-
-NO CUTS WITHIN A SHOT:
-A single shot NEVER contains a cut, transition, or camera angle change. Phrases like "Cut to...", "We then see...", "Switch to...", or "The camera moves to show..." within a shot's videoPrompt are WRONG.
-- If you need a different angle, framing, or subject — that is a NEW SHOT.
-- Each shot's videoPrompt describes continuous action from ONE camera position.
-- Bad: "He picks up the glass. Cut to a medium angle showing him drinking." → This is TWO shots.
-- Good: Shot 1: "He picks up the glass and lifts it." Shot 2: "Medium angle — he drinks in measured sips."
-
-START FRAME CONSTRAINTS:
-Each shot has a START FRAME (an image) and a VIDEO PROMPT (what happens). A video model generates the clip from the start frame guided by the video prompt.
-- The start frame describes the visual setup: composition, characters, setting, lighting, camera angle.
-- The video prompt describes what happens during the shot.
-- If you need a different camera angle or different character focus, that is a NEW SHOT (cut to it).
-
-CONTINUITY FLAG (continuousFromPrevious):
-- Default to continuousFromPrevious=true whenever the camera stays on the same subject from the same angle. When true, the start frame is extracted from the end of the previous video clip, giving seamless visual continuity. When false, a fresh start frame is generated.
-- Only set continuousFromPrevious=false for an actual CUT: new camera angle, new subject, new location, or a different composition type.
-- The first shot of every scene MUST set continuousFromPrevious=false.
-- Examples: same medium shot of a person doing two consecutive actions = true. Switching from medium shot to close-up = false. Same close-up on a face, continuing to talk = true. Cutting from one character to another = false.
-
-COMPOSITION TYPES:
-- wide_establishing: Wide view of the setting. Characters in context, spatial relationships.
-- over_the_shoulder: Camera behind ONE character's shoulder, focused on the person they're facing.
-- two_shot: Both characters framed together.
-- close_up: Tight on ONE face. NEVER switch to a different person's face within a shot.
-- medium_shot: Waist-up of ONE character.
-- tracking: Camera follows ONE subject through space.
-- pov: First-person view of what a character sees.
-- insert_cutaway: Close detail of an object or prop.
-- low_angle: Dramatic upward angle on ONE subject.
-- high_angle: Dramatic downward angle on ONE subject.
-
-DIALOGUE GAZE:
-- Characters speaking to each other should look at the person they are addressing, not at the camera.
-- Only have a character look directly at the camera if the story explicitly calls for breaking the fourth wall.
-- In over_the_shoulder and two_shot compositions, describe the eye line and eye contact between characters.
-
-COMMON MISTAKES TO AVOID:
-- Do NOT write a close_up that switches from Character A to Character B — that is two shots.
-- Do NOT write an over_the_shoulder that changes which character's shoulder we're behind — that is two shots.
-- If dialogue passes from A to B during a shot, keep the CAMERA on whoever the shot is framed on. The other character's dialogue happens off-screen or in the next shot.
-- Want to show B's reaction to what A said? Great — make that the NEXT shot (a new close_up on B). Don't try to cram both into one shot.
-
-Typical dialogue scene pattern (2 characters, ~26s):
-1. Wide two-shot establishing (8s) — both characters visible. Start: standing apart. End: facing each other.
-2. Close-up on Character A (6s) — A speaks. Only expression/mouth changes between start and end.
-3. Close-up on Character B (6s) — B reacts. Only expression changes between start and end.
-4. OTS on A from behind B's shoulder (6s) — A continues speaking, small gesture between start and end.
-
-SHOT DURATION:
-- Shots can be 0.5-10 seconds long. Default to 8s unless a shorter/longer duration better fits the action.
-- When using Veo backend, all shots are rendered as 8s regardless of the specified duration.
-- When using ComfyUI backend, the actual duration is used (supports fractional seconds).
-- Very short shots (0.5-2s) work well for: flash cuts, inserts, whip pans, rapid montage.
-- Short shots (2-4s) work well for: quick reaction shots, insert cutaways, snappy dialogue.
-- Medium shots (4-8s) work well for: establishing shots, dialogue, tracking shots, emotional beats.
-- Long shots (8-10s) work well for: slow reveals, extended action, lingering moments.
-
-DIALOGUE PACING:
-- ~2.5 words/second in film
-- 8s clip: ~15-20 words
-- 6s clip: ~10-12 words
-- 4s clip: ~6-8 words
-- 2s clip: ~3-5 words
-- Not every shot needs dialogue — silence and reactions are valid
-
-DIALOGUE FORMATTING:
-- NEVER use ALL CAPS for normal words in dialogue — TTS engines will spell them out letter by letter (e.g. "STOP" becomes "S-T-O-P")
-- Only use ALL CAPS for actual acronyms (FBI, CIA, DNA, NASA, etc.)
-- For emphasis, use the word normally — the TTS will handle natural stress from context
-- Wrong: "We NEED to go NOW!" / Right: "We need to go now!"
-- Wrong: "STOP right there!" / Right: "Stop right there!"
-
-SCENE TRANSITIONS:
-- Scene 1 always uses "cut" (no transition before the first scene)
-- "cut" for immediate cuts between scenes (default, most common)
-- "fade_black" for dramatic mood shifts, time jumps, or emotional beats — quick fade out to black then fade in
-- Keep transitions SHORT (0.5-0.75 second) — they shouldn't distract
-
-PROMPT WRITING STYLE:
-- startFramePrompt should read like a director's shot description, NOT a character sheet or casting call.
-- Focus on blocking (where characters stand/sit), action (what they're doing), camera angle, and composition.
-- Reference images provide all character and location appearance — the prompt provides DIRECTION.
-- Refer to characters by name (e.g., "Elena") or role (e.g., "the detective"). Do NOT describe hair color, eye color, skin tone, clothing details, or other physical attributes.
-- Do NOT describe location visuals in detail — the location reference image handles that. Just name the location.
-- BAD startFramePrompt: "Wide shot of the restaurant entrance interior, warm ambient golden lighting, exposed brick walls visible. Liam stands alone near the entrance. Soft candlelight glows from tables in the background. Evening cityscape visible through arched windows."
-- GOOD startFramePrompt: "Wide shot, Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff. His posture is upright but tense. Tables visible in the background."
-- The bad example wastes words on lighting, materials, and architectural details that the location reference image already provides. The good example focuses on character blocking, pose, expression, and composition.
-- Keep startFramePrompt concise: under 150 words. Every word should describe composition or action, not appearance.
-
-NO UNNAMED HUMANS:
-NEVER mention ANY human figure who is not listed in charactersPresent for that shot. This includes waiters, servers, bartenders, hosts, background diners, couples at nearby tables, passersby, staff, or any unnamed person. The video model will hallucinate random people into the scene. If the story involves a waiter serving food, describe the food appearing on the table or show only disembodied hands — never describe a waiter as a person. If the scene is in a restaurant, describe empty tables, not tables with diners. Do NOT use phrases like 'other diners', 'background patrons', 'couples at nearby tables', 'the crowd', etc. The ONLY humans visible in any shot must be those listed in charactersPresent.
-
-`;
 
 
 // ---- Shot planning (from processors.ts) ----
 
-export const DURATION_GUIDANCE = `Shots can be 1-15 seconds long. Choose the duration that best fits the action:
-- Very short (1-2s): flash cuts, inserts, whip pans, rapid montage
+export const DURATION_GUIDANCE = `Shots can be 2-15 seconds long. Choose the duration that best fits the action:
+- Very short (2-3s): flash cuts, inserts, whip pans, rapid montage
 - Short (2-4s): quick reactions, insert cutaways, snappy dialogue
 - Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
 - Long (8-15s): slow reveals, extended action, lingering moments`;
@@ -146,7 +41,7 @@ SHOT PLANNING PRINCIPLES:
 - Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
 - continuousFromPrevious controls whether the start frame is extracted from the end of the previous shot's video (true) or generated fresh from reference images (false). Continuity produces much better visual consistency and reduces hallucinations.
 - DEFAULT TO TRUE within a scene. Set continuousFromPrevious=true whenever the location is the same as the previous shot and the characters present are the same or a subset of the previous shot — even if the camera angle or composition changes (the video model handles camera changes well).
-- Set continuousFromPrevious=false ONLY when: it is the first shot in the scene, the location changes within the scene, a new character enters who was not in the previous shot (the model can't add someone who isn't in the extracted frame), or there is a significant time jump within the scene.
+- Set continuousFromPrevious=false ONLY when: it is the first shot in the scene, the location changes within the scene, a new character enters who was not in the previous shot (the model can't add someone who isn't in the extracted frame), a character's face needs to be visible but wasn't clearly shown in the previous shot (e.g. after an over-the-shoulder or behind-the-subject shot), or there is a significant time jump within the scene.
 - When in doubt, use continuousFromPrevious=true. Breaking continuity should be the exception, not the norm.
 
 COMPOSITION TYPES (what the camera sees and what happens):
@@ -196,7 +91,7 @@ For this scene:
    BAD: "Medium shot of Elena standing in the kitchen"
    GOOD: "Medium shot of Elena looking down at the cutting board, her focus on the vegetables she is chopping"
    For dialogue shots: characters look at each other, not the camera. For solo shots: character looks at their activity, another character off-screen, or into the middle distance. For wide/establishing shots: characters are engaged in their environment, unaware of the camera.
-7. In startFramePrompt, refer to characters by name (e.g., "Elena", "Marcus") — the image model has reference images and can map names to faces. In videoPrompt, NEVER use character names — the video model only sees pixels and cannot map names. Instead use short visual descriptors: "the man", "the woman", "the man in the dark suit". Use character descriptions from the story analysis to pick distinguishing visual features when two characters of the same gender are in the shot. In the dialogue field, USE the actual character names naturally as they appear in the script — dialogue goes to TTS, not the video model.
+7. In startFramePrompt, refer to characters by name (e.g., "Elena", "Marcus") for clarity — the attached reference images provide their visual identity. In videoPrompt, NEVER use character names — the video model only sees pixels and cannot map names. Instead use short visual descriptors: "the man", "the woman", "the man in the dark suit". Use character descriptions from the story analysis to pick distinguishing visual features when two characters of the same gender are in the shot. In the dialogue field, USE the actual character names naturally as they appear in the script — dialogue goes to TTS, not the video model.
 8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
 9. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.{OBJECTS_NOTE}
 10. NEVER describe a cut, transition, or camera change within a single shot's videoPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
