@@ -1,9 +1,9 @@
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { StoryAnalysis } from "../types";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import { ANALYZE_STORY_PROMPT_PREFIX } from "../prompts.js";
+import { getLlmModel, getLlmProviderName, getLlmProviderOptions } from "../llm-provider.js";
 
 // Zod schema for story analysis (without shots)
 const sceneSchema = z.object({
@@ -46,16 +46,15 @@ export function buildAnalyzeStoryPrompt(storyText: string): string {
 export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
   const prompt = buildAnalyzeStoryPrompt(storyText);
 
-  const limiter = rateLimiters.get('anthropic');
+  const limiter = rateLimiters.get(getLlmProviderName());
   await limiter.acquire();
   try {
+    const providerOptions = getLlmProviderOptions();
     const { object } = await generateObject({
-      model: anthropic("claude-opus-4-6"),
+      model: getLlmModel('strong'),
       schema: storyAnalysisSchema,
       prompt,
-      providerOptions: {
-        anthropic: { cacheControl: { type: 'ephemeral' } },
-      },
+      ...(providerOptions ? { providerOptions } : {}),
     } as any);
 
     const result = object as any;
@@ -71,7 +70,7 @@ export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {
       const retryMs = 5000;
-      console.warn(`[analyzeStory] 429 rate limited — backing off all anthropic workers for ${retryMs}ms`);
+      console.warn(`[analyzeStory] 429 rate limited — backing off all ${getLlmProviderName()} workers for ${retryMs}ms`);
       limiter.backoff(retryMs);
     }
     console.error("Error in analyzeStory:", error);

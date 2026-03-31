@@ -3,8 +3,8 @@ import { execFileSync } from 'child_process';
 import { mkdirSync, existsSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
+import { getLlmModel, getLlmModelName, getLlmProviderName } from '../llm-provider.js';
 
 import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
@@ -228,7 +228,7 @@ export class QueueProcessor extends EventEmitter {
   private async handleStoryToScript(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
-    this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: 'claude-opus-4-6' });
+    this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: getLlmModelName('strong') });
     const script = await storyToScript(storyText);
     this.queueManager.setConvertedScript(script);
     return { script };
@@ -239,7 +239,7 @@ export class QueueProcessor extends EventEmitter {
     const state = this.queueManager.getState();
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
-    this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: 'claude-opus-4-6' });
+    this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: getLlmModelName('strong') });
     const analysis = await analyzeStory(textToAnalyze);
     this.queueManager.setStoryAnalysis(analysis);
     return { analysis };
@@ -302,12 +302,12 @@ export class QueueProcessor extends EventEmitter {
     signal.throwIfAborted();
     const storyText = item.inputs.storyText as string;
     const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
-    this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: 'claude-sonnet-4-20250514' });
-    const limiter = rateLimiters.get('anthropic');
+    this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: getLlmModelName('fast') });
+    const limiter = rateLimiters.get(getLlmProviderName());
     await limiter.acquire();
     try {
       const { text } = await generateText({
-        model: anthropic('claude-sonnet-4-20250514'),
+        model: getLlmModel('fast'),
         prompt: namePrompt,
         maxTokens: 30,
       } as any);
@@ -316,7 +316,7 @@ export class QueueProcessor extends EventEmitter {
       return { name };
     } catch (error: any) {
       if (error?.status === 429 || error?.message?.includes('429')) {
-        console.warn('[handleNameRun] 429 rate limited — backing off all anthropic workers for 5s');
+        console.warn(`[handleNameRun] 429 rate limited — backing off all ${getLlmProviderName()} workers for 5s`);
         limiter.backoff(5000);
       }
       throw error;
@@ -353,20 +353,20 @@ ${JSON.stringify(analysis, null, 2)}
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}`;
 
-    this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: 'claude-opus-4-6', sceneNumber });
+    this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: getLlmModelName('strong'), sceneNumber });
 
-    const limiter = rateLimiters.get('anthropic');
+    const limiter = rateLimiters.get(getLlmProviderName());
     await limiter.acquire();
     let planResult;
     try {
     planResult = await (generateObject as any)({
-      model: anthropic('claude-opus-4-6'),
+      model: getLlmModel('strong'),
       schema: sceneShotsSchema,
       prompt: planShotsPrompt,
     });
     } catch (error: any) {
       if (error?.status === 429 || error?.message?.includes('429')) {
-        console.warn('[handlePlanShots] 429 rate limited — backing off all anthropic workers for 5s');
+        console.warn(`[handlePlanShots] 429 rate limited — backing off all ${getLlmProviderName()} workers for 5s`);
         limiter.backoff(5000);
       }
       throw error;

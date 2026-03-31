@@ -8,6 +8,7 @@ export type ProviderName =
   | 'grok-image'
   | 'nano-banana'
   | 'anthropic'
+  | 'openai'
   | 'gemini'
   | 'veo'
   | 'ltx'
@@ -24,6 +25,7 @@ const DEFAULT_CONFIGS: Record<ProviderName, Pick<RateLimiterConfig, 'maxRPS' | '
   'grok-image':  { maxRPS: 2,     maxConcurrent: 3 },
   'nano-banana': { maxRPS: 2,     maxConcurrent: 3 },
   'anthropic':   { maxRPS: 3,     maxConcurrent: 4 },
+  'openai':      { maxRPS: 3,     maxConcurrent: 4 },
   'gemini':      { maxRPS: 5,     maxConcurrent: 5 },
   'veo':         { maxRPS: 0.033, maxConcurrent: 1 },  // ~1 per 30s
   'ltx':         { maxRPS: 1,     maxConcurrent: 1 },  // queue-based, one at a time

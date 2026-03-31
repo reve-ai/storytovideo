@@ -1,8 +1,8 @@
 import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import { STORY_TO_SCRIPT_PROMPT_PREFIX } from "../prompts.js";
+import { getLlmModel, getLlmProviderName, getLlmProviderOptions } from "../llm-provider.js";
 
 /**
  * Converts a raw story into a fleshed-out visual script using Claude Opus 4.6.
@@ -18,23 +18,22 @@ export function buildStoryToScriptPrompt(storyText: string): string {
 export async function storyToScript(storyText: string): Promise<string> {
   const prompt = buildStoryToScriptPrompt(storyText);
 
-  const limiter = rateLimiters.get('anthropic');
+  const limiter = rateLimiters.get(getLlmProviderName());
   await limiter.acquire();
   try {
+    const providerOptions = getLlmProviderOptions();
     const { text } = await generateText({
-      model: anthropic("claude-opus-4-6"),
+      model: getLlmModel('strong'),
       prompt,
       maxTokens: 16384,
-      providerOptions: {
-        anthropic: { cacheControl: { type: 'ephemeral' } },
-      },
+      ...(providerOptions ? { providerOptions } : {}),
     } as any);
 
     return text;
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {
       const retryMs = 5000;
-      console.warn(`[storyToScript] 429 rate limited — backing off all anthropic workers for ${retryMs}ms`);
+      console.warn(`[storyToScript] 429 rate limited — backing off all ${getLlmProviderName()} workers for ${retryMs}ms`);
       limiter.backoff(retryMs);
     }
     console.error("Error in storyToScript:", error);
