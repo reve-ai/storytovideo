@@ -1230,9 +1230,28 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           }
 
           const targetItem = qm.getItem(targetItemId);
-          const mergedInputs = Object.keys(suggestedInputs).length > 0
-            ? { ...targetItem?.inputs, ...suggestedInputs }
-            : undefined;
+          let mergedInputs: Record<string, unknown> | undefined = undefined;
+          if (Object.keys(suggestedInputs).length > 0) {
+            const shotFields = ['videoPrompt', 'startFramePrompt', 'dialogue', 'durationSeconds', 'cameraDirection'];
+            const shotOverrides: Record<string, unknown> = {};
+            const topLevelOverrides: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(suggestedInputs)) {
+              if (shotFields.includes(key)) {
+                shotOverrides[key] = value;
+              } else {
+                topLevelOverrides[key] = value;
+              }
+            }
+
+            const existingShot = (targetItem?.inputs as Record<string, unknown> | undefined)?.shot as Record<string, unknown> | undefined;
+            mergedInputs = {
+              ...targetItem?.inputs,
+              ...topLevelOverrides,
+            };
+            if (existingShot) {
+              mergedInputs.shot = { ...existingShot, ...shotOverrides };
+            }
+          }
 
           const newItem = runManager.redoItem(runId, targetItemId, mergedInputs);
           if (!newItem) {
