@@ -67,12 +67,18 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     });
   }, [loadRuns, selectRun, navigate]);
 
-  useEffect(() => {
+  const fetchSettings = useCallback(() => {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d) => setLlmProvider(d.llmProvider))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetchSettings();
+    window.addEventListener("settings-changed", fetchSettings);
+    return () => window.removeEventListener("settings-changed", fetchSettings);
+  }, [fetchSettings]);
 
   const handleRunChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {

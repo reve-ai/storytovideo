@@ -38,6 +38,7 @@ export default function SettingsView() {
         if (!res.ok) throw new Error("Save failed");
         const updated: AppSettings = await res.json();
         setSettings(updated);
+        window.dispatchEvent(new Event("settings-changed"));
       } catch {
         setError("Failed to save settings");
       } finally {
