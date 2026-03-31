@@ -244,4 +244,4 @@ export const OBJECT_ASSET_PROMPT_TEMPLATE = "an object/product: ";
 
 export const OBJECT_ASSET_PROMPT_SUFFIX = ". Show the object clearly against a neutral background for reference.";
 
-export const LOCATION_ASSET_PROMPT_PREFIX = "a location: ";
+export const LOCATION_ASSET_PROMPT_PREFIX = "a location, no people or figures present: ";
