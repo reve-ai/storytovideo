@@ -779,6 +779,43 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/assets/:assetKey/redo — Redo a generate_asset item with optional description override
+      if (method === "POST" && action === "assets" && pathParts.length >= 6 && pathParts[5] === "redo") {
+        const assetKey = decodeURIComponent(pathParts[4]);
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const newDescription = body.description as string | undefined;
+
+        // Asset queue keys have an "asset:" prefix, e.g. "asset:character:Sir Edric Valdane:front"
+        const lookupKey = assetKey.startsWith("asset:") ? assetKey : `asset:${assetKey}`;
+        const items = qm.getItemsByKey(lookupKey);
+        const activeItem = items.filter(i => i.status !== "superseded" && i.status !== "cancelled").pop();
+
+        if (!activeItem) {
+          sendJson(res, 404, { error: `No active generate_asset item found for key: ${lookupKey}` });
+          return;
+        }
+
+        const newInputs = newDescription !== undefined
+          ? { ...activeItem.inputs, description: newDescription }
+          : undefined;
+
+        try {
+          const newItem = runManager.redoItem(runId, activeItem.id, newInputs);
+          if (!newItem) { sendJson(res, 500, { error: `Failed to redo asset: ${lookupKey}` }); return; }
+          qm.save();
+          await runManager.resumeRun(runId);
+          emitEvent(runId, "item_redo", { oldItemId: activeItem.id, newItem });
+          sendJson(res, 200, { newItem });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
+        return;
+      }
+
       // POST /api/runs/:id/items/:itemId/continuity
       if (method === "POST" && action === "items" && pathParts.length >= 6 && pathParts[5] === "continuity") {
         const itemId = decodeURIComponent(pathParts[4]);

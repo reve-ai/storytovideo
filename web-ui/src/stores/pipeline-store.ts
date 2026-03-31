@@ -137,6 +137,7 @@ interface PipelineActions {
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
   replaceAsset: (runId: string, assetKey: string, file: File) => Promise<{ framesRequeued: number } | null>;
+  redoAsset: (runId: string, assetKey: string, description?: string) => Promise<boolean>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
@@ -405,6 +406,28 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     } catch (e) {
       console.error("replaceAsset:", e);
       return null;
+    }
+  },
+
+  redoAsset: async (runId: string, assetKey: string, description?: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/assets/${encodeURIComponent(assetKey)}/redo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(description !== undefined ? { description } : {}),
+      });
+      if (!res.ok) {
+        console.error("redoAsset failed:", await res.text());
+        return false;
+      }
+      await Promise.all([
+        get().fetchQueues(runId),
+        get().fetchAssets(runId),
+      ]);
+      return true;
+    } catch (e) {
+      console.error("redoAsset:", e);
+      return false;
     }
   },
 

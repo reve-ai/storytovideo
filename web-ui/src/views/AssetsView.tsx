@@ -6,7 +6,11 @@ import { mediaUrl } from "../utils/media-url";
 
 function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDesc, setEditDesc] = useState(asset.description);
+  const [loading, setLoading] = useState(false);
   const fetchAssets = usePipelineStore((s) => s.fetchAssets);
+  const redoAsset = usePipelineStore((s) => s.redoAsset);
   const imgSrc = asset.imagePath
     ? mediaUrl(runId, asset.imagePath)
     : null;
@@ -14,6 +18,30 @@ function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
   const handleUploaded = useCallback(() => {
     fetchAssets(runId);
   }, [fetchAssets, runId]);
+
+  const handleRegenerate = useCallback(async () => {
+    setLoading(true);
+    try {
+      await redoAsset(runId, asset.assetKey);
+    } finally {
+      setLoading(false);
+    }
+  }, [redoAsset, runId, asset.assetKey]);
+
+  const handleSaveAndRegenerate = useCallback(async () => {
+    setLoading(true);
+    try {
+      const ok = await redoAsset(runId, asset.assetKey, editDesc);
+      if (ok) setEditing(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [redoAsset, runId, asset.assetKey, editDesc]);
+
+  const handleStartEdit = useCallback(() => {
+    setEditDesc(asset.description);
+    setEditing(true);
+  }, [asset.description]);
 
   const desc = asset.description;
   const truncated = desc.length > 120 && !expanded;
@@ -48,15 +76,74 @@ function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
       </div>
       <div style={{ padding: "0.75rem" }}>
         <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{asset.name}</div>
-        {desc && (
-          <div
-            style={{ fontSize: "0.8rem", color: "var(--muted)", cursor: desc.length > 120 ? "pointer" : "default" }}
-            onClick={() => desc.length > 120 && setExpanded(!expanded)}
-          >
-            {truncated ? desc.slice(0, 120) + "…" : desc}
+        {editing ? (
+          <div style={{ marginBottom: "0.5rem" }}>
+            <textarea
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              rows={4}
+              style={{
+                width: "100%",
+                fontSize: "0.8rem",
+                padding: "0.4rem",
+                borderRadius: "4px",
+                border: "1px solid var(--border)",
+                background: "var(--surface2)",
+                color: "var(--text)",
+                resize: "vertical",
+                fontFamily: "inherit",
+              }}
+            />
+            <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.25rem" }}>
+              <button
+                className="btn btn-xs btn-primary"
+                onClick={handleSaveAndRegenerate}
+                disabled={loading}
+              >
+                {loading ? "Saving…" : "Save & Regenerate"}
+              </button>
+              <button
+                className="btn btn-xs"
+                onClick={() => setEditing(false)}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
+        ) : (
+          <>
+            {desc && (
+              <div
+                style={{ fontSize: "0.8rem", color: "var(--muted)", cursor: desc.length > 120 ? "pointer" : "default" }}
+                onClick={() => desc.length > 120 && setExpanded(!expanded)}
+              >
+                {truncated ? desc.slice(0, 120) + "…" : desc}
+              </div>
+            )}
+          </>
         )}
-        <AssetReplace assetKey={asset.assetKey} label={asset.name} onSuccess={handleUploaded} />
+        <div style={{ display: "flex", gap: "0.25rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            className="btn btn-xs"
+            onClick={handleRegenerate}
+            disabled={loading || editing}
+            title="Regenerate this asset image"
+          >
+            {loading && !editing ? "Regenerating…" : "🔄 Regenerate"}
+          </button>
+          {!editing && (
+            <button
+              className="btn btn-xs"
+              onClick={handleStartEdit}
+              disabled={loading}
+              title="Edit description and regenerate"
+            >
+              ✏️ Edit
+            </button>
+          )}
+          <AssetReplace assetKey={asset.assetKey} label={asset.name} onSuccess={handleUploaded} />
+        </div>
       </div>
     </div>
   );
