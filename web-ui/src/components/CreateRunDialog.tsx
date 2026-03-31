@@ -32,6 +32,7 @@ export default function CreateRunDialog({
 }: CreateRunDialogProps) {
   const [storyText, setStoryText] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [needsConversion, setNeedsConversion] = useState(true);
   const [imageBackend, setImageBackend] = useState<ImageBackend>("grok");
   const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
   const [submitting, setSubmitting] = useState(false);
@@ -54,10 +55,11 @@ export default function CreateRunDialog({
 
       setSubmitting(true);
       try {
-        await createRun(text, { aspectRatio, imageBackend, videoBackend });
+        await createRun(text, { aspectRatio, imageBackend, videoBackend, needsConversion });
         navigate("/");
         setStoryText("");
         setAspectRatio("16:9");
+        setNeedsConversion(true);
         setImageBackend("grok");
         setVideoBackend("grok");
         onClose();
@@ -67,7 +69,7 @@ export default function CreateRunDialog({
         setSubmitting(false);
       }
     },
-    [storyText, aspectRatio, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
+    [storyText, aspectRatio, needsConversion, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
   );
 
   if (!open) return null;
@@ -91,6 +93,15 @@ export default function CreateRunDialog({
             value={storyText}
             onChange={(e) => setStoryText(e.target.value)}
           />
+
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={needsConversion}
+              onChange={(e) => setNeedsConversion(e.target.checked)}
+            />
+            Convert to visual script first
+          </label>
 
           <label htmlFor="aspect-ratio-select">Aspect ratio</label>
           <select

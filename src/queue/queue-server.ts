@@ -1274,6 +1274,110 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // GET /api/runs/:id/script
+      if (method === "GET" && action === "script" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const qm = runManager.getQueueManager(runId);
+        const state = qm?.getState();
+        const scenes = (state?.storyAnalysis?.scenes ?? []).map((s: { sceneNumber: number; title: string; narrativeSummary: string; location: string; charactersPresent: string[] }) => ({
+          sceneNumber: s.sceneNumber,
+          title: s.title,
+          narrativeSummary: s.narrativeSummary,
+          location: s.location,
+          charactersPresent: s.charactersPresent,
+        }));
+        sendJson(res, 200, {
+          convertedScript: state?.convertedScript ?? null,
+          storyText: run.storyText,
+          scenes,
+        });
+        return;
+      }
+
+      // PUT /api/runs/:id/script
+      if (method === "PUT" && action === "script" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or not initialized: ${runId}` }); return; }
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const script = body.script;
+        if (typeof script !== "string" || script.trim().length === 0) {
+          sendJson(res, 400, { error: "script is required and must be a non-empty string" });
+          return;
+        }
+        qm.setConvertedScript(script);
+
+        // Find the active analyze_story item
+        const analyzeItems = qm.getItemsByKey("analyze_story")
+          .filter(i => i.status !== "superseded" && i.status !== "cancelled");
+        let supersededCount = 0;
+        if (analyzeItems.length > 0) {
+          const latestAnalyze = analyzeItems[analyzeItems.length - 1];
+          try {
+            const newItem = runManager.redoItem(runId, latestAnalyze.id, { storyText: script });
+            if (newItem) {
+              supersededCount = 1;
+              // Count cascaded superseded items
+              const state = qm.getState();
+              supersededCount = state.workItems.filter(i => i.supersededBy === latestAnalyze.id || i.supersededBy === newItem.id).length + 1;
+              emitEvent(runId, "item_redo", { oldItemId: latestAnalyze.id, newItem });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            sendJson(res, 409, { error: msg });
+            return;
+          }
+        }
+
+        qm.save();
+        await runManager.resumeRun(runId);
+        sendJson(res, 200, { ok: true, supersededCount });
+        return;
+      }
+
+      // POST /api/runs/:id/scenes/:sceneNumber/redo
+      if (method === "POST" && action === "scenes" && pathParts.length >= 6 && pathParts[5] === "redo") {
+        const sceneNumber = parseInt(pathParts[4], 10);
+        if (isNaN(sceneNumber)) {
+          sendJson(res, 400, { error: "Invalid scene number" });
+          return;
+        }
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or not initialized: ${runId}` }); return; }
+
+        const planShotsKey = `plan_shots:scene:${sceneNumber}`;
+        const planItems = qm.getItemsByKey(planShotsKey)
+          .filter(i => i.status !== "superseded" && i.status !== "cancelled");
+
+        if (planItems.length === 0) {
+          sendJson(res, 404, { error: `No plan_shots item found for scene ${sceneNumber}` });
+          return;
+        }
+
+        const latestPlan = planItems[planItems.length - 1];
+        try {
+          const newItem = runManager.redoItem(runId, latestPlan.id);
+          if (!newItem) {
+            sendJson(res, 500, { error: `Failed to redo plan_shots for scene ${sceneNumber}` });
+            return;
+          }
+
+          qm.save();
+          await runManager.resumeRun(runId);
+          emitEvent(runId, "item_redo", { oldItemId: latestPlan.id, newItem });
+
+          const state = qm.getState();
+          const cascadeCount = state.workItems.filter(i => i.supersededBy !== null && i.itemKey.includes(`scene:${sceneNumber}`)).length;
+          sendJson(res, 200, { ok: true, redoneItemId: newItem.id, cascadeCount });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 409, { error: msg });
+        }
+        return;
+      }
+
       // POST /api/runs/:id/stop
       if (method === "POST" && action === "stop") {
         const stopped = await runManager.stopRun(runId);

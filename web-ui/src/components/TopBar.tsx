@@ -10,6 +10,7 @@ interface TopBarProps {
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
+  { to: "/script", label: "Script", end: false },
   { to: "/graph", label: "Graph", end: false },
   { to: "/story", label: "Story", end: false },
   { to: "/video", label: "Video", end: false },
@@ -36,6 +37,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     if (urlState.view) {
       const viewMap: Record<string, { route: string; view: ViewName }> = {
         queue: { route: "/", view: "queue" },
+        script: { route: "/script", view: "script" },
         graph: { route: "/graph", view: "graph" },
         story: { route: "/story", view: "story" },
         video: { route: "/video", view: "video" },

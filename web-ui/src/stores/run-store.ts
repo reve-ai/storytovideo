@@ -65,6 +65,7 @@ interface RunActions {
     storyText: string,
     options?: {
       aspectRatio?: string;
+      needsConversion?: boolean;
       imageBackend?: ImageBackend;
       videoBackend?: VideoBackend;
     },

@@ -100,11 +100,26 @@ export interface AssetsData {
 
 // --- Store ---
 
+export interface ScriptScene {
+  sceneNumber: number;
+  title: string;
+  narrativeSummary: string;
+  location: string;
+  charactersPresent: string[];
+}
+
+export interface ScriptData {
+  convertedScript: string | null;
+  storyText: string;
+  scenes: ScriptScene[];
+}
+
 interface PipelineState {
   queues: Record<QueueName, QueueSnapshot | null>;
   graph: DependencyGraph | null;
   analyzeItems: WorkItem[];
   assets: AssetsData | null;
+  scriptData: ScriptData | null;
   /** Live progress info for in-progress items, keyed by item ID. Cleared when item completes/fails. */
   itemProgress: Record<string, ItemProgress>;
   sseStatus: SSEStatus;
@@ -115,6 +130,9 @@ interface PipelineActions {
   fetchGraph: (runId: string) => Promise<void>;
   fetchAnalyzeItems: (runId: string) => Promise<void>;
   fetchAssets: (runId: string) => Promise<void>;
+  fetchScript: (runId: string) => Promise<void>;
+  updateScript: (runId: string, script: string) => Promise<boolean>;
+  redoScene: (runId: string, sceneNumber: number) => Promise<boolean>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
@@ -133,6 +151,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   graph: null,
   analyzeItems: [],
   assets: null,
+  scriptData: null,
   itemProgress: {},
   sseStatus: "disconnected",
 
@@ -264,6 +283,60 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       set({ assets: { characters, locations, objects } });
     } catch (e) {
       console.error("fetchAssets:", e);
+    }
+  },
+
+  fetchScript: async (runId: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/script`);
+      if (!res.ok) return;
+      const data: ScriptData = await res.json();
+      set({ scriptData: data });
+    } catch (e) {
+      console.error("fetchScript:", e);
+    }
+  },
+
+  updateScript: async (runId: string, script: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/script`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script }),
+      });
+      if (!res.ok) {
+        console.error("updateScript failed:", await res.text());
+        return false;
+      }
+      await Promise.all([
+        get().fetchQueues(runId),
+        get().fetchGraph(runId),
+        get().fetchScript(runId),
+      ]);
+      return true;
+    } catch (e) {
+      console.error("updateScript:", e);
+      return false;
+    }
+  },
+
+  redoScene: async (runId: string, sceneNumber: number) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/scenes/${sceneNumber}/redo`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        console.error("redoScene failed:", await res.text());
+        return false;
+      }
+      await Promise.all([
+        get().fetchQueues(runId),
+        get().fetchGraph(runId),
+      ]);
+      return true;
+    } catch (e) {
+      console.error("redoScene:", e);
+      return false;
     }
   },
 
