@@ -175,6 +175,22 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           + New Run
         </button>
 
+        <button
+          type="button"
+          onClick={() => navigate("/settings")}
+          title="Settings"
+          style={{
+            fontSize: "1.1rem",
+            padding: "0.3rem 0.6rem",
+            minWidth: 36,
+            borderRadius: 6,
+            lineHeight: 1,
+            textAlign: "center",
+          }}
+        >
+          ⚙
+        </button>
+
         <span className={`sse-badge ${sseStatus}`}>{sseStatus}</span>
       </div>
     </header>

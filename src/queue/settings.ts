@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
+import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -113,4 +114,5 @@ function saveSettingsToDisk(): void {
 
 function applySettings(): void {
   setLlmProvider(currentSettings.llmProvider);
+  setLlmProviderImpl(currentSettings.llmProvider);
 }

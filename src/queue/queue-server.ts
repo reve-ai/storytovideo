@@ -14,6 +14,7 @@ import sharp from "sharp";
 
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
+import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -1517,6 +1518,7 @@ async function start(): Promise<void> {
   // Load persisted settings and apply LLM provider
   const settings = loadSettings();
   setLlmProvider(settings.llmProvider);
+  setLlmProviderImpl(settings.llmProvider);
 
   await setupViteDevServer();
   server.listen(PORT, () => {
