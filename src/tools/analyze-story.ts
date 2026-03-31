@@ -31,7 +31,7 @@ const storyAnalysisSchema = z.object({
   objects: z.array(z.object({
     name: z.string(),
     visualDescription: z.string(),
-  })).default([]),
+  })),
   scenes: z.array(sceneSchema),
 });
 
