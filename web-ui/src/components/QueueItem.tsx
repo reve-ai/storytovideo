@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { WorkItem, ItemProgress } from "../stores/pipeline-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
@@ -70,6 +71,14 @@ export default function QueueItem({ item }: QueueItemProps) {
   const openDetail = useUIStore((s) => s.openDetail);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
   const progress = usePipelineStore((s) => s.itemProgress[item.id]);
+
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (item.status !== "in_progress" || !item.startedAt) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [item.status, item.startedAt]);
 
   const statusBorderColor = STATUS_BORDER_COLORS[item.status] || "var(--border)";
   const isDimmed = item.status === "superseded" || item.status === "cancelled";
@@ -155,7 +164,7 @@ export default function QueueItem({ item }: QueueItemProps) {
         {(item.status === "completed" || item.status === "failed" || item.status === "in_progress") && item.startedAt && (
           <span className="ml-auto text-xs text-[--muted]">
             {item.status === "in_progress" ? "⏱ " : ""}
-            {formatDuration(item.startedAt, item.completedAt)}
+            {formatDuration(item.startedAt, item.status === "in_progress" ? new Date(now).toISOString() : item.completedAt)}
           </span>
         )}
       </div>
