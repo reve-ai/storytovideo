@@ -41,9 +41,9 @@ const perSceneShotSchema = z.object({
   cameraDirection: z.string(),
   videoPrompt: z.string(),
   charactersPresent: z.array(z.string()),
-  objectsPresent: z.array(z.string()).optional(),
+  objectsPresent: z.array(z.string()).default([]),
   location: z.string(),
-  continuousFromPrevious: z.boolean().optional(),
+  continuousFromPrevious: z.boolean().default(false),
 });
 
 const sceneShotsSchema = z.object({

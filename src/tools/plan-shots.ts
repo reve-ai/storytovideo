@@ -17,9 +17,9 @@ const perSceneShotSchema = z.object({
   cameraDirection: z.string(),
   videoPrompt: z.string().describe("Complete video direction as natural prose: action, dialogue with visual attribution, gaze, sound effects, camera movement. Use visual descriptors (not character names) since the video model only sees pixels."),
   charactersPresent: z.array(z.string()),
-  objectsPresent: z.array(z.string()).optional(),
+  objectsPresent: z.array(z.string()).default([]),
   location: z.string(),
-  continuousFromPrevious: z.boolean().optional(),
+  continuousFromPrevious: z.boolean().default(false),
 });
 
 // ---------------------------------------------------------------------------
