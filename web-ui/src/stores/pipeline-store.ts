@@ -259,7 +259,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
 
       const locations: AssetEntry[] = (analysis.locations ?? []).map(
         (l: { name: string; visualDescription?: string }) => {
-          const key = `location:${l.name}:establish`;
+          const key = `location:${l.name}:front`;
           return {
             name: l.name,
             description: l.visualDescription ?? "",
@@ -271,7 +271,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
 
       const objects: AssetEntry[] = (analysis.objects ?? []).map(
         (o: { name: string; visualDescription?: string }) => {
-          const key = `object:${o.name}:detail`;
+          const key = `object:${o.name}:front`;
           return {
             name: o.name,
             description: o.visualDescription ?? "",
