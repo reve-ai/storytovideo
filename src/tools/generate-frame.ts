@@ -6,6 +6,14 @@ import { createImageNanoBanana, remixImageNanoBanana } from "../nano-banana-imag
 import type { Shot, AssetLibrary, FrameReference, ImageBackend, VideoBackend } from "../types";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  FRAME_PROMPT_STYLE_PREFIX,
+  FRAME_GAZE_WIDE,
+  FRAME_GAZE_MULTI_DIALOGUE,
+  FRAME_GAZE_MULTI_NO_DIALOGUE,
+  FRAME_GAZE_SOLO_DIALOGUE,
+  FRAME_GAZE_SOLO_NO_DIALOGUE,
+} from "../prompts.js";
 
 type LegacyImageBackend = VideoBackend | "comfy";
 
@@ -484,27 +492,27 @@ function buildGazeInstruction(params: {
 
   // Wide/establishing shots: characters engaged in environment
   if (comp.includes("wide") || comp.includes("establishing")) {
-    return "Characters are engaged in their environment, not aware of the camera. No one looks at the camera.";
+    return FRAME_GAZE_WIDE;
   }
 
   // Multi-character dialogue shots
   if (charCount >= 2 && hasCharacterDialogue) {
-    return "Characters look at each other, NOT at the camera. No eye contact with the camera.";
+    return FRAME_GAZE_MULTI_DIALOGUE;
   }
 
   // Multi-character non-dialogue (reaction, group activity)
   if (charCount >= 2) {
-    return "Characters look at each other or at their activity, NOT at the camera. No eye contact with the camera.";
+    return FRAME_GAZE_MULTI_NO_DIALOGUE;
   }
 
   // Solo character with dialogue (speaking to someone off-screen)
   if (charCount === 1 && hasCharacterDialogue) {
-    return "Character looks slightly off-camera, as if speaking to someone just out of frame. NOT looking at the camera.";
+    return FRAME_GAZE_SOLO_DIALOGUE;
   }
 
   // Solo character, no dialogue (thinking, reacting, doing something)
   if (charCount === 1) {
-    return "Character's gaze is directed at their activity or into the middle distance, NOT at the camera.";
+    return FRAME_GAZE_SOLO_NO_DIALOGUE;
   }
 
   // No characters (object shots, empty scenes)
@@ -552,7 +560,7 @@ export function buildFramePrompt(params: {
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
     const parts = [
-      "Cinematic narrative film still. Candid, fly-on-the-wall cinematography. Characters are unaware of the camera.",
+      FRAME_PROMPT_STYLE_PREFIX,
       `Style: ${artStyle}.`,
       `${composition} shot, ${cameraDirection}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
@@ -565,7 +573,7 @@ export function buildFramePrompt(params: {
 
   // Fallback — no reference images, include full descriptions
   const parts = [
-    "Cinematic narrative film still. Candid, fly-on-the-wall cinematography. Characters are unaware of the camera.",
+    FRAME_PROMPT_STYLE_PREFIX,
     `Style: ${artStyle}.`,
     `${composition} shot, ${cameraDirection}.`,
     `Location: ${locationDescription}.`,

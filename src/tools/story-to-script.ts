@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
+import { STORY_TO_SCRIPT_PROMPT_PREFIX } from "../prompts.js";
 
 /**
  * Converts a raw story into a fleshed-out visual script using Claude Opus 4.6.
@@ -11,22 +12,7 @@ import { rateLimiters } from "../queue/rate-limiter-registry.js";
  * dialogue — so the downstream analyzeStory step has richer material to work with.
  */
 export function buildStoryToScriptPrompt(storyText: string): string {
-  return `You are a screenwriter adapting a story into a visual script. Your job is to convert narration-heavy prose into vivid, filmable scenes.
-
-Rules:
-- "Show, don't tell." If the story says "she was nervous," describe her fidgeting, avoiding eye contact, tapping her fingers.
-- If the story says "they had been friends for years," show a brief flashback or have dialogue that implies their history.
-- Expand thin scenes into proper dramatic beats with setting, action, and emotion.
-- Add dialogue where the story only summarizes conversations. Make it sound natural and character-appropriate.
-- Maintain the story's tone, themes, and pacing. Don't change the plot.
-- Keep it grounded — don't add spectacle or events that weren't implied by the original.
-- Write in prose script format (not screenplay format). Describe what we SEE and HEAR.
-- Each scene should have a clear visual setting, character actions, and sensory details.
-- Preserve all important plot points, characters, and narrative beats from the original.
-
-Convert the following story into a visual prose script:
-
-${storyText}`;
+  return `${STORY_TO_SCRIPT_PROMPT_PREFIX}${storyText}`;
 }
 
 export async function storyToScript(storyText: string): Promise<string> {

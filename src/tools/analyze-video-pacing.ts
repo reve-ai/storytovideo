@@ -3,6 +3,12 @@ import type { Part } from "@google/genai";
 import * as fs from "fs";
 import * as path from "path";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
+import {
+  ANALYZE_VIDEO_CRITERIA,
+  ANALYZE_VIDEO_ADDITIONAL_CHECKS,
+  ANALYZE_VIDEO_REPLACEMENT_RULES,
+  ANALYZE_VIDEO_RESPONSE_FORMAT,
+} from "../prompts.js";
 
 // --- Structured video analysis (used by analyze_video work items) ---
 
@@ -49,48 +55,13 @@ ${opts.hasStartFrame
     : "No start frame available for comparison — it was missing at analysis time."}
 ${opts.referenceImagePaths.length > 0 ? "Reference images are character/location/object reference sheets from the asset library." : ""}
 
-Evaluate:
-1. How well does the generated video match the intended direction and start frame?
-2. Are there visual artifacts, glitches, or quality issues?
-3. Do characters/objects match their reference images?
-4. Is the pacing appropriate for the content?
-5. Are there static/frozen frames or unnecessary repetition?
+${ANALYZE_VIDEO_CRITERIA}
 
-For each recommendation, provide a structured object with:
-- "type": "redo_video" if only the video prompt needs changing, "redo_frame" if the start frame prompt needs changing, "no_change" if the shot is good
-- "commentary": explain what you're changing and why
-- "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: videoPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
+${ANALYZE_VIDEO_ADDITIONAL_CHECKS}
 
-Additional checks:
-6. Are there any people visible who are NOT in the reference images? Flag unwanted humans (waiters, background diners, staff, extras).
-7. Is there audible music or soundtrack in the video? There should be none — only ambient sounds and dialogue.
-8. Do characters look directly at the camera? They should never appear aware of the camera.
-9. Do any faces appear mid-shot that were not visible in the start frame? The video model cannot generate correct faces from scratch.
+${ANALYZE_VIDEO_REPLACEMENT_RULES}
 
-IMPORTANT: When suggesting changes to videoPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
-
-CRITICAL RULES FOR REPLACEMENT PROMPTS: When writing suggestedInputs for videoPrompt or startFramePrompt:
-- NEVER mention any human figure not in the reference images (no waiters, background diners, staff, extras)
-- NEVER mention music, jazz, soundtrack, or any musical element — only non-musical ambient sounds
-- NEVER describe a character's face being revealed if it was not visible in the start frame (no turning around, no walking into frame face-first)
-- Characters must NEVER look at the camera
-- Use visual descriptors ('the man', 'the woman') not character names in videoPrompt
-
-Return JSON:
-{
-  "matchScore": <0-100>,
-  "issues": ["<specific issue 1>", "<specific issue 2>"],
-  "recommendations": [
-    {
-      "type": "redo_video" | "redo_frame" | "no_change",
-      "commentary": "<explanation of the change>",
-      "suggestedInputs": {
-        "videoPrompt": "<complete rewritten video prompt if changing>",
-        "startFramePrompt": "<complete rewritten frame prompt if changing>"
-      }
-    }
-  ]
-}`;
+${ANALYZE_VIDEO_RESPONSE_FORMAT}`;
 }
 
 export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<VideoClipAnalysis> {

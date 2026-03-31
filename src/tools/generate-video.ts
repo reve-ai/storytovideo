@@ -7,6 +7,14 @@ import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
 import { generateVideoLtx as ltxGenerateVideo, type LtxProgressInfo } from "../ltx-client";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import type { VideoBackend } from "../types";
+import {
+  VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS,
+  VIDEO_PROMPT_GAZE_WARNING,
+  VIDEO_PROMPT_NO_UNNAMED_HUMANS,
+  VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS,
+  VIDEO_PROMPT_NO_PEOPLE,
+  VIDEO_PROMPT_SUFFIX,
+} from "../prompts.js";
 
 // Custom error for RAI celebrity filter rejections — allows orchestrator to
 // catch this specific failure and regenerate frames before retrying.
@@ -75,18 +83,18 @@ export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt"
   // Only include character-awareness instructions when characters are actually present;
   // otherwise the video model reads "characters" and hallucinates people into the scene.
   if (hasCharacters) {
-    promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
-    promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
-    promptParts.push("ONLY these characters are in the scene. No other people should appear — no waiters, no background diners, no staff, no unnamed figures.");
+    promptParts.push(VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS);
+    promptParts.push(VIDEO_PROMPT_GAZE_WARNING);
+    promptParts.push(VIDEO_PROMPT_NO_UNNAMED_HUMANS);
   } else {
-    promptParts.push("Cinematic narrative film.");
-    promptParts.push("No people should appear in this video. No humans should be visible.");
+    promptParts.push(VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS);
+    promptParts.push(VIDEO_PROMPT_NO_PEOPLE);
   }
   // The planner writes the complete video direction as natural prose
   if (params.videoPrompt) promptParts.push(params.videoPrompt);
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
   // Sound effects and ambient audio are intentionally kept.
-  promptParts.push("No music. No soundtrack. No background music.");
+  promptParts.push(VIDEO_PROMPT_SUFFIX);
   return promptParts.join(". ");
 }
 
