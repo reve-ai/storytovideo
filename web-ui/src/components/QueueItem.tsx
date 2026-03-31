@@ -3,6 +3,7 @@ import { usePipelineStore } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
 import VideoThumbnail from "./VideoThumbnail";
+import { mediaUrl } from "../utils/media-url";
 
 function getMediaPath(item: WorkItem): string | null {
   if (!item.outputs) return null;
@@ -72,7 +73,7 @@ export default function QueueItem({ item }: QueueItemProps) {
   const mediaPath = item.status === "completed" ? getMediaPath(item) : null;
   const mediaSrc =
     mediaPath && activeRunId
-      ? `/api/runs/${activeRunId}/media/${mediaPath}`
+      ? mediaUrl(activeRunId, mediaPath)
       : null;
 
   const isVideo = item.type === "generate_video" || item.type === "assemble";
@@ -82,7 +83,7 @@ export default function QueueItem({ item }: QueueItemProps) {
       : null;
   const thumbSrc =
     thumbPath && activeRunId
-      ? `/api/runs/${activeRunId}/media/${thumbPath}`
+      ? mediaUrl(activeRunId, thumbPath)
       : undefined;
 
   const handleAction = async (action: "retry" | "redo" | "cancel") => {

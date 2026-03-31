@@ -2,12 +2,13 @@ import { useEffect, useState, useCallback } from "react";
 import { usePipelineStore, type AssetEntry } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import AssetReplace from "../components/AssetReplace";
+import { mediaUrl } from "../utils/media-url";
 
 function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
   const [expanded, setExpanded] = useState(false);
   const fetchAssets = usePipelineStore((s) => s.fetchAssets);
   const imgSrc = asset.imagePath
-    ? `/api/runs/${runId}/media/${asset.imagePath}`
+    ? mediaUrl(runId, asset.imagePath)
     : null;
 
   const handleUploaded = useCallback(() => {

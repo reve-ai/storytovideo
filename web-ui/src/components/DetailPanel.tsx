@@ -5,6 +5,7 @@ import { useRunStore } from "../stores/run-store";
 import InputForm from "./InputForm";
 import ImageUpload from "./ImageUpload";
 import AssetReplace from "./AssetReplace";
+import { mediaUrl } from "../utils/media-url";
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -265,12 +266,12 @@ function DetailOutputs({
   let mediaEl: React.ReactNode = null;
 
   if (mediaPath && activeRunId) {
-    const src = `/api/runs/${activeRunId}/media/${mediaPath}`;
+    const src = mediaUrl(activeRunId, mediaPath);
     if (item.type === "generate_video" || item.type === "assemble") {
+      const startFrame = (item.inputs as Record<string, string>)?.startFramePath;
       const thumbUrl =
-        item.type === "generate_video" &&
-        (item.inputs as Record<string, string>)?.startFramePath
-          ? `/api/runs/${activeRunId}/media/${(item.inputs as Record<string, string>).startFramePath}`
+        item.type === "generate_video" && startFrame
+          ? mediaUrl(activeRunId, startFrame)
           : "";
       if (thumbUrl) {
         mediaEl = (

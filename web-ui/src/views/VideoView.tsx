@@ -2,6 +2,7 @@ import type { QueueName } from "../stores/pipeline-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import VideoThumbnail from "../components/VideoThumbnail";
+import { mediaUrl } from "../utils/media-url";
 
 const QUEUE_NAMES: QueueName[] = ["llm", "image", "video"];
 
@@ -40,7 +41,7 @@ export default function VideoView() {
   }
 
   const path = (assemblyItem.outputs as Record<string, unknown>).path as string;
-  const src = `/api/runs/${activeRunId}/media/${path}`;
+  const src = mediaUrl(activeRunId, path);
   const run = runs.find((r) => r.id === activeRunId);
   const aspectRatio = (run?.options?.aspectRatio || "16:9").replace(":", "/");
 

@@ -3,6 +3,7 @@ import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
 import ImageUpload from "./ImageUpload";
+import { mediaUrl } from "../utils/media-url";
 
 interface ShotCardProps {
   shotNum: number;
@@ -40,12 +41,12 @@ export default function ShotCard({
   const videoPath = videoItem?.outputs?.path as string | undefined;
 
   const frameSrc =
-    frameCompleted && startPath
-      ? `/api/runs/${activeRunId}/media/${startPath}`
+    frameCompleted && startPath && activeRunId
+      ? mediaUrl(activeRunId, startPath)
       : null;
   const videoSrc =
-    videoCompleted && videoPath
-      ? `/api/runs/${activeRunId}/media/${videoPath}`
+    videoCompleted && videoPath && activeRunId
+      ? mediaUrl(activeRunId, videoPath)
       : null;
 
   const handleCardClick = useCallback(() => {

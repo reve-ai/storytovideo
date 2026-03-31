@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import VideoThumbnail from "../components/VideoThumbnail";
+import { mediaUrl } from "../utils/media-url";
 
 function ReviewAllButton({ runId }: { runId: string }) {
   const [loading, setLoading] = useState(false);
@@ -128,8 +129,8 @@ function AnalyzeStatusCard({
   const durationSeconds = shot?.durationSeconds as number | undefined;
   const shotLabel = sceneNumber != null && shotInScene != null ? `S${sceneNumber}.${shotInScene}` : `Item ${item.id.slice(0, 8)}`;
 
-  const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
-  const frameSrc = startFramePath ? `/api/runs/${runId}/media/${startFramePath}` : null;
+  const videoSrc = videoPath ? mediaUrl(runId, videoPath) : null;
+  const frameSrc = startFramePath ? mediaUrl(runId, startFramePath) : null;
 
   return (
     <div className="analyze-card" style={{ opacity: status === "queued" ? 0.7 : 1 }}>
@@ -221,8 +222,8 @@ const AnalyzeCard = React.memo(function AnalyzeCard({ item, runId, aspectRatio, 
     typeof r === "string" ? r : (r as { commentary?: string; type?: string }).commentary ?? (r as { type?: string }).type ?? JSON.stringify(r),
   );
 
-  const videoSrc = videoPath ? `/api/runs/${runId}/media/${videoPath}` : null;
-  const frameSrc = startFramePath ? `/api/runs/${runId}/media/${startFramePath}` : null;
+  const videoSrc = videoPath ? mediaUrl(runId, videoPath) : null;
+  const frameSrc = startFramePath ? mediaUrl(runId, startFramePath) : null;
 
   const composition = shot?.composition as string | undefined;
   const durationSeconds = shot?.durationSeconds as number | undefined;
