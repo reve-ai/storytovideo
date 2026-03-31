@@ -55,12 +55,19 @@ async function requestWithRetry(
 
       if (response.ok) {
         if (response.headers.get("X-Reve-Content-Violation")) {
+          // On first violation, dump all headers so we can discover the request ID header name
+          if (attempt === 0) {
+            console.warn("[reve] Content violation — response headers:", Object.fromEntries(response.headers.entries()));
+          }
+          const requestId = response.headers.get("x-request-id") ?? response.headers.get("x-reve-request-id") ?? "unknown";
+          const prompt = typeof body.prompt === "string" ? body.prompt : JSON.stringify(body.prompt);
+          const truncatedPrompt = prompt && prompt.length > 200 ? prompt.slice(0, 200) + "..." : prompt;
           if (attempt < MAX_RETRIES - 1) {
-            console.warn(`[reve] Content violation detected, retrying... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+            console.warn(`[reve] Content violation (request: ${requestId}), prompt: ${truncatedPrompt}. Retrying (attempt ${attempt + 1}/${MAX_RETRIES})`);
             attempt++;
             continue;
           }
-          throw new Error(`Reve API: content violation on all ${MAX_RETRIES} attempts — prompt may need revision`);
+          throw new Error(`Reve API: content violation on all ${MAX_RETRIES} attempts (request: ${requestId}), prompt: ${truncatedPrompt} — prompt may need revision`);
         }
         return response.arrayBuffer();
       }
