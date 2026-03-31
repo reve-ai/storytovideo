@@ -127,11 +127,12 @@ export async function generateAsset(params: {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       // Ensure output directory exists
-      const assetDir = path.join(outputDir, "assets", `${assetType}s`);
+      const assetDir = path.join(outputDir, `${assetType}s`);
       fs.mkdirSync(assetDir, { recursive: true });
 
       // Save image
-      const filename = `${assetName.toLowerCase()}_${angleType}_v${version}.png`;
+      const sanitizedName = assetName.toLowerCase().replace(/\//g, '-').replace(/\s+/g, ' ').trim();
+      const filename = `${sanitizedName}_${angleType}_v${version}.png`;
       const filePath = path.join(assetDir, filename);
       // Characters and objects use 1:1 (reference images); locations use the run's aspect ratio
       const assetAspectRatio = (assetType === "character" || assetType === "object") ? "1:1" : (params.aspectRatio ?? "16:9");
