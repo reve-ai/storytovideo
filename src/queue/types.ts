@@ -77,6 +77,7 @@ export interface RunState {
     needsConversion?: boolean;
     dryRun?: boolean;
     imageBackend?: ImageBackend;
+    assetImageBackend?: ImageBackend;
     videoBackend?: VideoBackend;
   };
 }

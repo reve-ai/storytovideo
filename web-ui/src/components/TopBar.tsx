@@ -128,7 +128,8 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         >
           {activeRun && (
             <>
-              <span>Image: {activeRun.options.imageBackend ?? "grok"}</span>
+              <span>Assets: {activeRun.options.assetImageBackend ?? activeRun.options.imageBackend ?? "grok"}</span>
+              <span>Frames: {activeRun.options.imageBackend ?? "grok"}</span>
               <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
             </>
           )}

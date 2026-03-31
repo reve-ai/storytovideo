@@ -520,6 +520,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         aspectRatio: typeof options.aspectRatio === "string" ? options.aspectRatio : undefined,
         dryRun: Boolean(options.dryRun),
         imageBackend: parseImageBackend(options.imageBackend),
+        assetImageBackend: parseImageBackend(options.assetImageBackend),
         videoBackend: parseVideoBackend(options.videoBackend),
       });
       sendJson(res, 201, record);

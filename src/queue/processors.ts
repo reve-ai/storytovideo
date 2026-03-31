@@ -395,7 +395,7 @@ ${JSON.stringify(scene, null, 2)}`;
     signal.throwIfAborted();
     const state = this.queueManager.getState();
     const aspectRatio = state.options?.aspectRatio;
-    const imageBackend = state.options?.imageBackend ?? 'grok';
+    const imageBackend = state.options?.assetImageBackend ?? state.options?.imageBackend ?? 'grok';
     console.log(`[handleGenerateAsset] Using imageBackend=${imageBackend} (${item.itemKey})`);
     const result = await generateAsset({
       characterName: item.inputs.characterName as string | undefined,

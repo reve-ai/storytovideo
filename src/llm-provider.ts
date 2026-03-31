@@ -10,7 +10,7 @@ export type LlmProvider = 'anthropic' | 'openai';
 const MODELS: Record<LlmProvider, Record<'strong' | 'fast', string>> = {
   anthropic: {
     strong: 'claude-opus-4-6',
-    fast: 'claude-sonnet-4-20250514',
+    fast: 'claude-sonnet-4-6',
   },
   openai: {
     strong: 'gpt-5.4',

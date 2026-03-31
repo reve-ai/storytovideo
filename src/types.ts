@@ -100,6 +100,7 @@ export interface PipelineOptions {
   resume: boolean;
   verbose: boolean;
   imageBackend?: ImageBackend;
+  assetImageBackend?: ImageBackend;
   videoBackend?: VideoBackend;
   aspectRatio?: "16:9" | "9:16" | "1:1";
   onToolError?: (stageName: string, toolName: string, error: string) => void;

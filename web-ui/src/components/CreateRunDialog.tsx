@@ -33,6 +33,7 @@ export default function CreateRunDialog({
   const [storyText, setStoryText] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [needsConversion, setNeedsConversion] = useState(true);
+  const [assetImageBackend, setAssetImageBackend] = useState<ImageBackend>("grok");
   const [imageBackend, setImageBackend] = useState<ImageBackend>("grok");
   const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
   const [submitting, setSubmitting] = useState(false);
@@ -55,11 +56,12 @@ export default function CreateRunDialog({
 
       setSubmitting(true);
       try {
-        await createRun(text, { aspectRatio, imageBackend, videoBackend, needsConversion });
+        await createRun(text, { aspectRatio, assetImageBackend, imageBackend, videoBackend, needsConversion });
         navigate("/");
         setStoryText("");
         setAspectRatio("16:9");
         setNeedsConversion(true);
+        setAssetImageBackend("grok");
         setImageBackend("grok");
         setVideoBackend("grok");
         onClose();
@@ -69,7 +71,7 @@ export default function CreateRunDialog({
         setSubmitting(false);
       }
     },
-    [storyText, aspectRatio, needsConversion, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
+    [storyText, aspectRatio, needsConversion, assetImageBackend, imageBackend, videoBackend, submitting, createRun, navigate, onClose],
   );
 
   if (!open) return null;
@@ -116,7 +118,20 @@ export default function CreateRunDialog({
             ))}
           </select>
 
-          <label htmlFor="image-backend-select">Image generator</label>
+          <label htmlFor="asset-image-backend-select">Asset image generator</label>
+          <select
+            id="asset-image-backend-select"
+            value={assetImageBackend}
+            onChange={(e) => setAssetImageBackend(e.target.value as ImageBackend)}
+          >
+            {IMAGE_BACKENDS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="image-backend-select">Frame image generator</label>
           <select
             id="image-backend-select"
             value={imageBackend}

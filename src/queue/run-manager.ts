@@ -47,6 +47,7 @@ export interface RunOptions {
   aspectRatio?: string;        // e.g. "16:9"
   dryRun?: boolean;
   imageBackend?: ImageBackend;
+  assetImageBackend?: ImageBackend;
   videoBackend?: VideoBackend;
 }
 

@@ -43,6 +43,7 @@ export interface RunRecord {
     aspectRatio?: string;
     dryRun?: boolean;
     imageBackend?: ImageBackend;
+    assetImageBackend?: ImageBackend;
     videoBackend?: VideoBackend;
   };
 }
@@ -67,6 +68,7 @@ interface RunActions {
       aspectRatio?: string;
       needsConversion?: boolean;
       imageBackend?: ImageBackend;
+      assetImageBackend?: ImageBackend;
       videoBackend?: VideoBackend;
     },
   ) => Promise<RunRecord>;
