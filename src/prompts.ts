@@ -238,7 +238,7 @@ Convert the following story into a visual prose script:
 
 export const ASSET_EDIT_PROMPT_PREFIX = "Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ";
 
-export const CHARACTER_ASSET_PROMPT_TEMPLATE = "a character reference sheet with 4 views arranged in a 2x2 grid on a plain white background. All four panels show the SAME character with identical appearance, clothing, and features. The character must have a completely original appearance (NOT resembling any real celebrity or public figure). Top-left: close-up of the face, front-facing, detailed facial features clearly visible. Top-right: close-up of the face, 3/4 angle, detailed facial features clearly visible. Bottom-left: close-up of the face, side profile, detailed facial features clearly visible. Bottom-right: full body shot showing head to toe. Character description: ";
+export const CHARACTER_ASSET_PROMPT_TEMPLATE = "character reference sheet, 4-up grid on white background. Top-left: front face. Top-right: 3/4 face. Bottom-left: side profile. Bottom-right: full body front view. Character description: ";
 
 export const OBJECT_ASSET_PROMPT_TEMPLATE = "an object/product: ";
 
