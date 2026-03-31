@@ -544,6 +544,11 @@ export function buildFramePrompt(params: {
 
   const gazeInstruction = buildGazeInstruction({ composition, charactersPresent, hasCharacterDialogue });
 
+  // Defensive instruction: only named characters should appear, no unnamed humans
+  const humanPresenceInstruction = charactersPresent.length > 0
+    ? `ONLY the following characters should appear in this image: ${charactersPresent.join(", ")}. No other people, no background figures, no staff, no unnamed humans.`
+    : "No people should appear in this image. No humans, no staff, no background figures.";
+
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
     const parts = [
@@ -552,6 +557,7 @@ export function buildFramePrompt(params: {
       `${composition} shot, ${cameraDirection}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
       gazeInstruction,
+      humanPresenceInstruction,
       framePrompt,
     ].filter(Boolean);
     return parts.join(" ");
@@ -566,6 +572,7 @@ export function buildFramePrompt(params: {
     charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
     (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
     gazeInstruction,
+    humanPresenceInstruction,
     framePrompt,
   ].filter(Boolean);
 

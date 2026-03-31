@@ -53,6 +53,7 @@ For each location, describe the visual mood, lighting, and key objects.
 For each object, describe its shape, color, size, material, and distinguishing visual features. Objects are products, props, vehicles, or key items that appear repeatedly or are important to the story. Only include objects that would benefit from having a consistent reference image.
 Estimate scene duration based on action density and dialogue length.
 Unless the story explicitly specifies an art style, default to "photorealistic" for the visual art style.
+In scene narrativeSummary, do NOT include actions by unnamed characters like waiters, servers, or background extras. Only describe actions by the named characters. Instead of 'A waiter pours wine', write 'Wine is poured into their glasses'.
 
 Story:
 ${storyText}`;

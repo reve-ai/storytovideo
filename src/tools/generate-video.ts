@@ -77,8 +77,10 @@ export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt"
   if (hasCharacters) {
     promptParts.push("Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.");
     promptParts.push("CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.");
+    promptParts.push("ONLY these characters are in the scene. No other people should appear — no waiters, no background diners, no staff, no unnamed figures.");
   } else {
     promptParts.push("Cinematic narrative film.");
+    promptParts.push("No people should appear in this video. No humans should be visible.");
   }
   // The planner writes the complete video direction as natural prose
   if (params.videoPrompt) promptParts.push(params.videoPrompt);
