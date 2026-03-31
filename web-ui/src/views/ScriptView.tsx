@@ -55,8 +55,10 @@ export default function ScriptView() {
 
   const handleRedoScene = useCallback(async (sceneNumber: number) => {
     if (!activeRunId || redoingScene !== null) return;
+    const note = window.prompt("Director's note (optional — leave blank to proceed without):");
+    if (note === null) return; // user cancelled
     setRedoingScene(sceneNumber);
-    const ok = await redoScene(activeRunId, sceneNumber);
+    const ok = await redoScene(activeRunId, sceneNumber, note || undefined);
     setRedoingScene(null);
     if (ok) {
       showToast(`Scene ${sceneNumber} redo started`, "info");

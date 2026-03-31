@@ -83,7 +83,21 @@ export default function DetailPanel() {
                 ? `${base}/cancel`
                 : null;
         if (!endpoint) return;
-        const res = await fetch(endpoint, { method: "POST" });
+
+        let fetchOptions: RequestInit = { method: "POST" };
+        if (action === "redo") {
+          const note = window.prompt("Director's note (optional — leave blank to proceed without):");
+          if (note === null) return; // user cancelled
+          if (note) {
+            fetchOptions = {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ directorsNote: note }),
+            };
+          }
+        }
+
+        const res = await fetch(endpoint, fetchOptions);
         if (!res.ok) console.error(`${action} failed:`, await res.text());
         await Promise.all([fetchQueues(activeRunId), fetchGraph(activeRunId)]);
         closeDetail();

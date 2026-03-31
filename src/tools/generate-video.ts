@@ -61,6 +61,8 @@ type GenerateVideoParams = {
   version?: number;
   /** Queue priority — forwarded to backends that support it (e.g. LTX). */
   priority?: "normal" | "high";
+  /** Optional director's note appended to the video prompt. */
+  directorsNote?: string;
   /** Progress callback for LTX backend — reports queue position and generation progress. */
   onLtxProgress?: (info: LtxProgressInfo) => void;
 };
@@ -76,7 +78,7 @@ function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sce
   return `scene ${params.sceneNumber} shot ${params.shotInScene} (shot ${params.shotNumber})`;
 }
 
-export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt" | "charactersPresent">): string {
+export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt" | "charactersPresent" | "directorsNote">): string {
   const promptParts: string[] = [];
   const hasCharacters = params.charactersPresent && params.charactersPresent.length > 0;
   // Cinematic framing + gaze instruction at the very start — shifts the model away from YouTube/vlog/portrait training data
@@ -95,7 +97,11 @@ export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt"
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
   // Sound effects and ambient audio are intentionally kept.
   promptParts.push(VIDEO_PROMPT_SUFFIX);
-  return promptParts.join(". ");
+  let prompt = promptParts.join(". ");
+  if (params.directorsNote) {
+    prompt += `\n\nDirector's note: ${params.directorsNote}`;
+  }
+  return prompt;
 }
 
 

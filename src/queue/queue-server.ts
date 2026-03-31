@@ -788,6 +788,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
         const body = await readJsonBody(req) as Record<string, unknown>;
         const newDescription = body.description as string | undefined;
+        const directorsNote = body.directorsNote as string | undefined;
 
         // Asset queue keys have an "asset:" prefix, e.g. "asset:character:Sir Edric Valdane:front"
         const lookupKey = assetKey.startsWith("asset:") ? assetKey : `asset:${assetKey}`;
@@ -799,9 +800,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
 
-        const newInputs = newDescription !== undefined
-          ? { ...activeItem.inputs, description: newDescription }
-          : undefined;
+        let newInputs: Record<string, unknown> | undefined;
+        if (newDescription !== undefined || directorsNote) {
+          newInputs = { ...activeItem.inputs };
+          if (newDescription !== undefined) newInputs.description = newDescription;
+          if (directorsNote) newInputs.directorsNote = directorsNote;
+        }
 
         try {
           const newItem = runManager.redoItem(runId, activeItem.id, newInputs);
@@ -896,8 +900,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const itemId = decodeURIComponent(pathParts[4]);
         console.log(`[queue-server] Redo request: runId=${runId}, itemId=${itemId}`);
         const body = await readJsonBody(req) as Record<string, unknown>;
-        const newInputs = body.inputs ? { ...(body.inputs as Record<string, unknown>) } : undefined;
+        let newInputs = body.inputs ? { ...(body.inputs as Record<string, unknown>) } : undefined;
         const durationOverride = body.durationOverride as number | undefined;
+        const directorsNote = body.directorsNote as string | undefined;
+        if (directorsNote) {
+          newInputs = { ...(newInputs ?? {}), directorsNote };
+        }
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
         const originalItem = qm.getItem(itemId);
@@ -1407,6 +1415,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or not initialized: ${runId}` }); return; }
 
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const directorsNote = body.directorsNote as string | undefined;
+
         const planShotsKey = `plan_shots:scene:${sceneNumber}`;
         const planItems = qm.getItemsByKey(planShotsKey)
           .filter(i => i.status !== "superseded" && i.status !== "cancelled");
@@ -1417,8 +1428,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
 
         const latestPlan = planItems[planItems.length - 1];
+        const sceneNewInputs = directorsNote ? { ...latestPlan.inputs, directorsNote } : undefined;
         try {
-          const newItem = runManager.redoItem(runId, latestPlan.id);
+          const newItem = runManager.redoItem(runId, latestPlan.id, sceneNewInputs);
           if (!newItem) {
             sendJson(res, 500, { error: `Failed to redo plan_shots for scene ${sceneNumber}` });
             return;

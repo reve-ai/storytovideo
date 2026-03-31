@@ -20,18 +20,22 @@ function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
   }, [fetchAssets, runId]);
 
   const handleRegenerate = useCallback(async () => {
+    const note = window.prompt("Director's note (optional — leave blank to proceed without):");
+    if (note === null) return; // user cancelled
     setLoading(true);
     try {
-      await redoAsset(runId, asset.assetKey);
+      await redoAsset(runId, asset.assetKey, undefined, note || undefined);
     } finally {
       setLoading(false);
     }
   }, [redoAsset, runId, asset.assetKey]);
 
   const handleSaveAndRegenerate = useCallback(async () => {
+    const note = window.prompt("Director's note (optional — leave blank to proceed without):");
+    if (note === null) return; // user cancelled
     setLoading(true);
     try {
-      const ok = await redoAsset(runId, asset.assetKey, editDesc);
+      const ok = await redoAsset(runId, asset.assetKey, editDesc, note || undefined);
       if (ok) setEditing(false);
     } finally {
       setLoading(false);

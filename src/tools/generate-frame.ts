@@ -156,6 +156,7 @@ export function buildFinalFramePrompt(params: {
   cameraDirection: string;
   hasCharacterDialogue: boolean;
   referencesUsed: FrameReference[];
+  directorsNote?: string;
 }): string {
   const basePrompt = buildFramePrompt({
     artStyle: params.artStyle,
@@ -173,7 +174,11 @@ export function buildFinalFramePrompt(params: {
     ? buildReferenceLeadIn(params.referencesUsed)
     : "";
 
-  return referenceLeadIn ? `${referenceLeadIn} ${basePrompt}` : basePrompt;
+  let prompt = referenceLeadIn ? `${referenceLeadIn} ${basePrompt}` : basePrompt;
+  if (params.directorsNote) {
+    prompt += `\n\nDirector's note: ${params.directorsNote}`;
+  }
+  return prompt;
 }
 
 export async function buildFrameReferencePlan(params: {
@@ -271,6 +276,7 @@ export async function generateFrame(params: {
   videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
+  directorsNote?: string;
 }): Promise<{
   shotNumber: number;
   startPath?: string;
@@ -306,6 +312,7 @@ export async function generateFrame(params: {
       outputPath: startPath,
       imageBackend: resolvedImageBackend,
       aspectRatio,
+      directorsNote: params.directorsNote,
     });
 
     return {
@@ -331,6 +338,7 @@ async function generateSingleFrame(params: {
   outputPath: string;
   imageBackend: ImageBackend;
   aspectRatio?: string;
+  directorsNote?: string;
 }): Promise<GeneratedSingleFrameResult> {
   const {
     shot,
@@ -395,6 +403,7 @@ async function generateSingleFrame(params: {
     cameraDirection: shot.cameraDirection,
     hasCharacterDialogue,
     referencesUsed: referencePlan.referencesUsed,
+    directorsNote: params.directorsNote,
   });
 
   console.log(`[generateFrame]   Included refs:`, referencePlan.referencesUsed.map(summarizeReference));

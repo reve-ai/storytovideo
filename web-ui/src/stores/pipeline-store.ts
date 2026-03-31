@@ -132,12 +132,12 @@ interface PipelineActions {
   fetchAssets: (runId: string) => Promise<void>;
   fetchScript: (runId: string) => Promise<void>;
   updateScript: (runId: string, script: string) => Promise<boolean>;
-  redoScene: (runId: string, sceneNumber: number) => Promise<boolean>;
+  redoScene: (runId: string, sceneNumber: number, directorsNote?: string) => Promise<boolean>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
   replaceAsset: (runId: string, assetKey: string, file: File) => Promise<{ framesRequeued: number } | null>;
-  redoAsset: (runId: string, assetKey: string, description?: string) => Promise<boolean>;
+  redoAsset: (runId: string, assetKey: string, description?: string, directorsNote?: string) => Promise<boolean>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
@@ -321,10 +321,12 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     }
   },
 
-  redoScene: async (runId: string, sceneNumber: number) => {
+  redoScene: async (runId: string, sceneNumber: number, directorsNote?: string) => {
     try {
       const res = await fetch(`/api/runs/${runId}/scenes/${sceneNumber}/redo`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(directorsNote ? { directorsNote } : {}) }),
       });
       if (!res.ok) {
         console.error("redoScene failed:", await res.text());
@@ -409,12 +411,12 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     }
   },
 
-  redoAsset: async (runId: string, assetKey: string, description?: string) => {
+  redoAsset: async (runId: string, assetKey: string, description?: string, directorsNote?: string) => {
     try {
       const res = await fetch(`/api/runs/${runId}/assets/${encodeURIComponent(assetKey)}/redo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(description !== undefined ? { description } : {}),
+        body: JSON.stringify({ ...(description !== undefined ? { description } : {}), ...(directorsNote ? { directorsNote } : {}) }),
       });
       if (!res.ok) {
         console.error("redoAsset failed:", await res.text());

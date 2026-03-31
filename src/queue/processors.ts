@@ -401,7 +401,7 @@ ${JSON.stringify(scene, null, 2)}`;
     // Log the prompt BEFORE the call so it's captured even if generation fails
     const assetType = item.inputs.characterName ? "character" : item.inputs.locationName ? "location" : "object";
     const isEditing = Boolean(item.inputs.referenceImagePath);
-    const prompt = buildAssetPrompt({ assetType, description: item.inputs.description as string, artStyle: item.inputs.artStyle as string, isEditing });
+    const prompt = buildAssetPrompt({ assetType, description: item.inputs.description as string, artStyle: item.inputs.artStyle as string, isEditing, directorsNote: item.inputs.directorsNote as string | undefined });
     this.promptLogger.log(item.itemKey, 'generate_asset', prompt, { backend: imageBackend });
 
     const result = await generateAsset({
@@ -415,6 +415,7 @@ ${JSON.stringify(scene, null, 2)}`;
       imageBackend,
       aspectRatio,
       version: item.version,
+      directorsNote: item.inputs.directorsNote as string | undefined,
     });
 
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
@@ -490,6 +491,7 @@ ${JSON.stringify(scene, null, 2)}`;
       imageBackend,
       aspectRatio,
       version: item.version,
+      directorsNote: item.inputs.directorsNote as string | undefined,
     });
 
     if (result.finalPrompt) {
@@ -533,6 +535,7 @@ ${JSON.stringify(scene, null, 2)}`;
       abortSignal: signal,
       version: item.version,
       priority: item.priority,
+      directorsNote: item.inputs.directorsNote as string | undefined,
       onLtxProgress: (info) => {
         this.emit('item:progress', {
           runId: this.runId,

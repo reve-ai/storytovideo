@@ -28,11 +28,13 @@ export function buildAssetPrompt(params: {
   description: string;
   artStyle: string;
   isEditing: boolean;
+  directorsNote?: string;
 }): string {
-  const { assetType, description, artStyle, isEditing } = params;
+  const { assetType, description, artStyle, isEditing, directorsNote } = params;
 
   if (isEditing) {
-    return `${ASSET_EDIT_PROMPT_PREFIX}${description}`;
+    const base = `${ASSET_EDIT_PROMPT_PREFIX}${description}`;
+    return directorsNote ? `${base}\n\nDirector's note: ${directorsNote}` : base;
   }
 
   let prompt: string;
@@ -42,6 +44,10 @@ export function buildAssetPrompt(params: {
     prompt = `Art style: ${artStyle}. An ${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
   } else {
     prompt = `Art style: ${artStyle}. A ${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
+  }
+
+  if (directorsNote) {
+    prompt += `\n\nDirector's note: ${directorsNote}`;
   }
 
   return prompt;
@@ -64,6 +70,7 @@ export async function generateAsset(params: {
   videoBackend?: LegacyImageBackend;
   aspectRatio?: string;
   version?: number;
+  directorsNote?: string;
 }): Promise<{ key: string; path: string; finalPrompt: string }> {
   const {
     characterName,
@@ -104,6 +111,7 @@ export async function generateAsset(params: {
     description,
     artStyle,
     isEditing,
+    directorsNote: params.directorsNote,
   });
   const imageBackend = resolveImageBackend(params.imageBackend, params.videoBackend);
 
