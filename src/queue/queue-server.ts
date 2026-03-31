@@ -956,6 +956,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         try {
           const item = qm.retryItem(itemId);
           qm.save();
+          await runManager.resumeRun(runId);
           emitEvent(runId, "item_retried", { itemId: item.id, type: item.type, queue: item.queue, itemKey: item.itemKey, retryCount: item.retryCount });
           sendJson(res, 200, { item });
         } catch (err) {
