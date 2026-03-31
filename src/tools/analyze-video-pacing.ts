@@ -61,7 +61,20 @@ For each recommendation, provide a structured object with:
 - "commentary": explain what you're changing and why
 - "suggestedInputs": an object with the COMPLETE REWRITTEN values for any fields you want to change. Only include fields that need changes. Available fields: videoPrompt, dialogue, startFramePrompt, durationSeconds, cameraDirection.
 
+Additional checks:
+6. Are there any people visible who are NOT in the reference images? Flag unwanted humans (waiters, background diners, staff, extras).
+7. Is there audible music or soundtrack in the video? There should be none — only ambient sounds and dialogue.
+8. Do characters look directly at the camera? They should never appear aware of the camera.
+9. Do any faces appear mid-shot that were not visible in the start frame? The video model cannot generate correct faces from scratch.
+
 IMPORTANT: When suggesting changes to videoPrompt or startFramePrompt, provide the FULL rewritten prompt, not just a description of what to change.
+
+CRITICAL RULES FOR REPLACEMENT PROMPTS: When writing suggestedInputs for videoPrompt or startFramePrompt:
+- NEVER mention any human figure not in the reference images (no waiters, background diners, staff, extras)
+- NEVER mention music, jazz, soundtrack, or any musical element — only non-musical ambient sounds
+- NEVER describe a character's face being revealed if it was not visible in the start frame (no turning around, no walking into frame face-first)
+- Characters must NEVER look at the camera
+- Use visual descriptors ('the man', 'the woman') not character names in videoPrompt
 
 Return JSON:
 {
@@ -137,7 +150,7 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
   await limiter.acquire();
   try {
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-pro-preview",
       contents: [{ role: "user", parts }],
       config: {
         responseMimeType: "application/json",
