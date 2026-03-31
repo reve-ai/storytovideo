@@ -356,10 +356,6 @@ export class QueueManager {
     return item.dependencies.every(depRef => {
       const dep = this.resolveDependencyRef(depRef);
       const met = dep !== undefined && dep.status === 'completed';
-      // Log continuity-related dependency resolution
-      if (depRef.startsWith('video:')) {
-        console.log(`[deps] ${item.itemKey} dep "${depRef}" -> ${dep ? `${dep.itemKey} v${dep.version} (${dep.status})` : 'NOT FOUND'} => ${met ? 'MET' : 'NOT MET'}`);
-      }
       return met;
     });
   }
