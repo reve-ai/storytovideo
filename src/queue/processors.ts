@@ -13,6 +13,11 @@ import { PromptLogger } from './prompt-logger.js';
 import { analyzeStory, buildAnalyzeStoryPrompt } from '../tools/analyze-story.js';
 import { storyToScript, buildStoryToScriptPrompt } from '../tools/story-to-script.js';
 import { planShotsForScene } from '../tools/plan-shots.js';
+import {
+  VIDEO_MODEL_LIMITATIONS,
+  SHOT_PLANNING_PRINCIPLES,
+  SHOT_PLANNING_RULES,
+} from '../prompts.js';
 import { generateAsset } from '../tools/generate-asset.js';
 import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
@@ -334,104 +339,13 @@ export class QueueProcessor extends EventEmitter {
       ? ` Known objects: ${(analysis.objects ?? []).map(o => o.name).join(', ')}.`
       : '';
 
-    const durationGuidance = `Shots can be 1-15 seconds long. Choose the duration that best fits the action:
-- Very short (1-2s): flash cuts, inserts, whip pans, rapid montage
-- Short (2-4s): quick reactions, insert cutaways, snappy dialogue
-- Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
-- Long (8-15s): slow reveals, extended action, lingering moments`;
-
     const planShotsPrompt = `You are a cinematic shot planner for Grok video generation. Plan shots for scene ${sceneNumber} of this story.
 
-HOW GROK VIDEO GENERATION WORKS:
-Each shot has a START FRAME (an image prompt describing the visual setup) and a VIDEO PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the video prompt. There are no end frames — Grok controls where the shot ends based on the video direction.
+${VIDEO_MODEL_LIMITATIONS}
 
-SHOT PLANNING PRINCIPLES:
-- Each shot = one camera setup on one subject. To change camera angle or subject, make a new shot.
-- The startFramePrompt describes the complete visual scene: composition, characters, setting, lighting, camera angle.
-- The videoPrompt describes the motion/action that unfolds from that starting point as complete natural prose direction for the video model.
-- endFramePrompt must always be an empty string "" (the field is required by the schema but unused).
-- Camera movement IS possible — cameraDirection can include pans, zooms, dollies, tracking moves. The camera is not fixed.
-- continuousFromPrevious controls whether the start frame is extracted from the end of the previous shot's video (true) or generated fresh from reference images (false). Continuity produces much better visual consistency and reduces hallucinations.
-- DEFAULT TO TRUE within a scene. Set continuousFromPrevious=true whenever the location is the same as the previous shot and the characters present are the same or a subset of the previous shot — even if the camera angle or composition changes (the video model handles camera changes well).
-- Set continuousFromPrevious=false ONLY when: it is the first shot in the scene, the location changes within the scene, a new character enters who was not in the previous shot (the model can't add someone who isn't in the extracted frame), or there is a significant time jump within the scene.
-- When in doubt, use continuousFromPrevious=true. Breaking continuity should be the exception, not the norm.
+${SHOT_PLANNING_PRINCIPLES}
 
-COMPOSITION TYPES (what the camera sees and what happens):
-- wide_establishing: Wide view of the setting. Shows the environment, characters in context, spatial relationships. Action: characters move through space, enter/exit, interact with environment.
-- over_the_shoulder: Camera behind one character's shoulder, focused on the person they're facing. Action: the facing character speaks, reacts, gestures.
-- two_shot: Both characters framed together. Action: characters interact, exchange dialogue, react to each other.
-- close_up: Tight on one face or detail. Action: expressions change, character speaks, emotional reactions play out.
-- medium_shot: Waist-up framing of one character. Action: character speaks, gestures, shifts posture.
-- tracking: Camera follows a subject through space. Action: subject walks, runs, moves through environment.
-- pov: First-person view of what a character sees. Action: hands interact with objects, environment changes, reveals unfold.
-- insert_cutaway: Close detail of an object or prop. Action: hand picks up object, screen displays change, liquid pours, etc.
-- low_angle: Dramatic upward angle on a subject. Action: character looms, speaks powerfully, stands up.
-- high_angle: Dramatic downward angle on a subject. Action: character looks small, vulnerable, or surveyed from above.
-
-DIALOGUE PACING:
-- ~2.5 words/second in film
-- Calculate minimum duration from dialogue: word_count / 2.5 + 0.5s buffer, rounded up to nearest integer.
-- Not every shot needs dialogue — silence and reactions are valid.
-
-DIALOGUE FORMATTING:
-- NEVER use ALL CAPS for normal words — TTS engines spell them out letter by letter.
-- Only use ALL CAPS for actual acronyms (FBI, CIA, DNA, NASA, etc.).
-- For emphasis, use the word normally — TTS handles natural stress from context.
-
-SCENE TRANSITIONS:
-- Scene 1 always uses "cut"
-- "cut" for immediate cuts (default, most common)
-- "fade_black" for dramatic mood shifts, time jumps, or emotional beats
-
-Plan shots for this scene with:
-- transition: the transition type into this scene
-- shots: an array of shot objects with all required fields
-
-For this scene:
-1. Choose a transition type (Scene 1 is always "cut")
-2. ${durationGuidance}
-3. Assign cinematic composition types (use underscore format: wide_establishing, over_the_shoulder, etc.)
-4. Distribute dialogue across shots. "Dialogue" includes ALL spoken content: character speech, narration, voiceover, inner monologue, and any text that should be heard by the viewer. If the scene description mentions a voice, narrator, or internal thought, include it as dialogue in the appropriate shot. Shot durations MUST be whole numbers (integers), minimum 2 seconds. Never use fractional durations like 1.5 or 2.5. CRITICAL: calculate the minimum duration for each shot from its dialogue word count at ~2.5 words/second, then add 0.5s buffer. The shot's durationSeconds must NEVER be less than this minimum. Example: 12 words of dialogue = 12/2.5 + 0.5 = 5.3s → round up to 6s minimum.
-5. Write startFramePrompt describing COMPOSITION and ACTION only: framing, character positions, poses, gestures, expressions, spatial relationships, and camera angle. Do NOT describe character appearance (hair, eyes, skin, clothing details) — reference images handle appearance. Do NOT describe location appearance in detail — the location reference image handles that. Avoid lighting, materials, architecture, and decor details already visible in the location reference. Use character names (e.g., "Elena") or role labels (e.g., "the woman") to identify characters rather than physical descriptions. Keep startFramePrompt concise — under 150 words. endFramePrompt must be an empty string "".
-   BAD startFramePrompt: "Wide shot of the restaurant entrance interior, warm ambient golden lighting, exposed brick walls visible. Liam stands alone near the entrance. Soft candlelight glows from tables in the background. Evening cityscape visible through arched windows."
-   GOOD startFramePrompt: "Wide shot, Liam stands alone near the restaurant entrance, slightly off-center right, one hand adjusting his shirt cuff. His posture is upright but tense. Tables visible in the background."
-   The bad example wastes words on lighting, materials, and architectural details that the location reference image already provides. The good example focuses on character blocking, pose, expression, and composition.
-6. EVERY startFramePrompt and videoPrompt MUST specify where each character is looking. Default to looking at another character, an object, or into the middle distance. Characters should NEVER look directly at the camera unless the story explicitly requires breaking the fourth wall. If you don't specify gaze, the model will default to the character staring at the camera.
-   Examples of good gaze direction: "Elena looks at Marcus across the table" / "Liam gazes down at the menu" / "the woman glances toward the window"
-   BAD: "Close-up on Liam as he smiles"
-   GOOD: "Close-up on Liam looking slightly off-camera left toward Sophie, a warm smile spreading across his face"
-   BAD: "Medium shot of Elena standing in the kitchen"
-   GOOD: "Medium shot of Elena looking down at the cutting board, her focus on the vegetables she is chopping"
-   For dialogue shots: characters look at each other, not the camera. For solo shots: character looks at their activity, another character off-screen, or into the middle distance. For wide/establishing shots: characters are engaged in their environment, unaware of the camera.
-7. In startFramePrompt, refer to characters by name (e.g., "Elena", "Marcus") — the image model has reference images and can map names to faces. In videoPrompt, NEVER use character names — the video model only sees pixels and cannot map names. Instead use short visual descriptors: "the man", "the woman", "the man in the dark suit". Use character descriptions from the story analysis to pick distinguishing visual features when two characters of the same gender are in the shot. In the dialogue field, USE the actual character names naturally as they appear in the script — dialogue goes to TTS, not the video model.
-8. Include ALL spoken/heard content as dialogue: character speech, narration, voiceover, inner monologue. If the scene has narration or a voice giving instructions, those words go in the dialogue field. For each shot with dialogue, set the speaker field to identify WHO is speaking — use the character's name (e.g. "Nate", "Sarah"), "narrator", "voiceover", "inner monologue", etc. Leave speaker empty if the shot has no dialogue.
-9. For each shot, populate objectsPresent with the names of any key objects/products/props that appear in that shot.${objectsNote}
-10. NEVER describe a cut, transition, or camera change within a single shot's videoPrompt. "Cut to..." means you need a NEW shot. Each shot is one continuous take from one camera position.
-11. Default to continuousFromPrevious=true within a scene. The only reasons to set it false are: first shot in the scene, location change, a new character entering who wasn't in the previous shot, a character's face needs to be visible but wasn't in the previous shot (e.g. after an over-the-shoulder or behind-the-subject shot), or a significant time jump. Camera angle and composition changes do NOT require breaking continuity.
-12. BEHIND-THE-SUBJECT SHOTS: When describing a shot from behind a character, use explicit physical descriptions the image model cannot misinterpret. Do NOT write "following from behind" or "tracking from behind" — the image model will still generate the character facing the camera. Instead describe what is physically VISIBLE (back, shoulders, back of head) rather than the camera's position relative to the character.
-   BAD: "Tracking shot following Marcus from behind as he walks down the hallway"
-   BAD: "Over-the-shoulder from behind Elena as she approaches the door"
-   GOOD: "Back of Marcus's head and shoulders visible, he faces away from camera, walking down the hallway ahead"
-   GOOD: "Rear view of Elena, her back to the camera, she looks ahead at the door in front of her"
-   Use descriptors like: "back of the head visible", "character facing away from camera", "seen from behind showing their back and shoulders", "rear view of the character walking away", "character's back to the camera".
-13. CHARACTER PROMINENCE IN START FRAMES: Every character who speaks or performs an action in the shot MUST be prominently visible in the startFramePrompt — at minimum a medium shot size (waist up). Do NOT place important characters in the background or distance of the start frame expecting the camera to move toward them. The video model cannot maintain character identity or detail from tiny distant figures. If the shot involves approaching a character, start the frame close enough that they are clearly visible and identifiable.
-   BAD: "Wide shot of the restaurant. In the far background, Ethan is visible seated at a table near the window."
-   GOOD: "Medium shot of Ethan seated at the candlelit table, looking up expectantly. The restaurant interior is visible around him."
-   The video model animates what it can see in the start frame. If a character is too small or distant, the video model will hallucinate their appearance.
-14. Write videoPrompt as a COMPLETE, SELF-CONTAINED description of what happens in the shot from the video model's perspective. This is the primary direction sent to the video model — it must contain EVERYTHING the video model needs in natural prose:
-   - Character actions and blocking: describe MOVEMENT and ACTION only — what characters do, how they move, gestures, facial expressions changing, interactions with objects, environmental changes. The start frame already establishes the visual scene — videoPrompt only adds motion and change. Do NOT describe object appearance (color, shape, material) — the start frame already shows all of this. Reference objects by name ("the toothpaste tube") not description ("the sleek white-and-blue toothpaste tube"). Think of videoPrompt as a director calling out blocking cues, not describing a painting.
-   - Use visual descriptors, NOT character names — the video model can't read names. Describe characters by their visual appearance using the shortest descriptor that uniquely identifies them in the frame: "the man", "the woman", "the man in the dark suit". If there is only one person of a given gender in the shot, just use "the man" or "the woman". Use character descriptions from the story analysis to pick distinguishing visual features when two characters share the same gender.
-   - Dialogue with natural visual attribution: "the man turns to the woman and says '...'"
-   - Where each character is looking (gaze direction) — NEVER at the camera
-   - Sound effects and ambient audio woven naturally into the description. NEVER mention music, jazz, soundtrack, score, or any musical element — the video model will generate audible music if you mention it. Only describe non-musical sounds: speech, footsteps, clinking glasses, wind, traffic, etc.
-   - Camera movement
-   Write it as a flowing paragraph of direction, not a list. The existing structured fields (dialogue, speaker, soundEffects, cameraDirection) are still required — they're used for TTS, subtitles, and metadata. But videoPrompt is what goes to the video model and must be self-contained.
-   Example videoPrompt: "The woman looks across the table at the man and says 'I never thought we'd end up here.' She reaches for her glass, her eyes staying on him. The man shifts in his seat, glancing down at his hands before meeting her gaze. Ambient restaurant chatter and soft clinking of glasses. Camera slowly pushes in on a slight dolly."
-   CRITICAL — ABSENT CHARACTERS: The videoPrompt must NEVER reference any character who is NOT in charactersPresent for that shot — not in action, not in gaze direction, not in blocking, not in dialogue, not anywhere. The video model will hallucinate people into the scene if they are mentioned in any context. Instead of 'she looks off-screen right toward the older man', write 'she looks off-screen right.' Instead of 'he waves goodbye to Sarah', write 'he waves goodbye off-screen.' Instead of 'the man says Sophie called me yesterday', write 'Only the man is visible in the frame. He says Sophie called me yesterday.' If a character is not in charactersPresent, they do not exist in the videoPrompt — not even as someone being looked at, spoken to, or referenced by name. Use directional cues ('off-screen right', 'toward something off-camera') instead of naming the absent person.
-15. NO UNNAMED HUMANS: NEVER mention ANY human figure who is not listed in charactersPresent for that shot. This includes waiters, servers, bartenders, hosts, background diners, couples at nearby tables, passersby, staff, or any unnamed person. The video model will hallucinate random people into the scene. If the story involves a waiter serving food, describe the food appearing on the table or show only disembodied hands — never describe a waiter as a person. If the scene is in a restaurant, describe empty tables, not tables with diners. Do NOT use phrases like 'other diners', 'background patrons', 'couples at nearby tables', 'the crowd', etc. The ONLY humans visible in any shot must be those listed in charactersPresent.
-16. NEVER include music, jazz, songs, score, soundtrack, or any musical terms in videoPrompt or soundEffects. The video model generates audio and will produce music if prompted. Only reference non-musical ambient sounds (chatter, footsteps, wind, clinking, engine noise, etc). Music is added in post-production.
-17. FACE VISIBILITY RULE: When planning a shot with continuousFromPrevious=true, consider whether every character whose face needs to be visible in this shot also had their face clearly visible in the previous shot. If the previous shot was an over-the-shoulder, behind-the-subject, or insert shot where a character's face was NOT visible (back of head, side profile, or off-screen), and the current shot needs to show that character's face, set continuousFromPrevious=false so a fresh start frame is generated with the correct reference image. The video model cannot generate a correct face from scratch — it will hallucinate a random face that doesn't match the character. Only faces that were clearly visible in the previous shot's frame will be rendered correctly in a continuous shot.
-18. MID-SHOT FACE REVEAL BAN: The video model CANNOT generate a correct face that is not already visible in the start frame. If a character is facing away, shown from behind, or otherwise has their face hidden in the startFramePrompt, the videoPrompt MUST NOT describe them turning around, looking over their shoulder toward camera, or otherwise revealing their face during the shot. The resulting face will be randomly generated and will not match the character. If you need to show a character's face after a behind-the-subject shot, create a NEW shot with continuousFromPrevious=false so the start frame is generated fresh from reference images with the character's face visible. Similarly, if a character enters the shot during the video (walks into frame), do NOT describe their face becoming visible — either start the shot with them already in frame (face visible in startFramePrompt) or keep them out of frame entirely and show them in the next shot.
+${SHOT_PLANNING_RULES.replace('{OBJECTS_NOTE}', objectsNote)}
 
 Full story analysis for context:
 ${JSON.stringify(analysis, null, 2)}
@@ -698,38 +612,28 @@ ${JSON.stringify(scene, null, 2)}`;
       return { path: null, message: 'No videos to assemble' };
     }
 
-    // Build transitions
+    // Build transitions — one entry per clip-to-clip join (N-1 for N clips).
+    // Within-scene joins are always hard cuts; scene boundaries use the scene's declared transition.
     const transitions: Array<{ type: 'cut' | 'fade_black'; durationMs: number }> = [];
-    let prevSceneNumber = -1;
-    for (const shot of sortedShots) {
-      if (shot.sceneNumber !== prevSceneNumber && prevSceneNumber !== -1) {
-        const scene = state.storyAnalysis.scenes.find(s => s.sceneNumber === shot.sceneNumber);
+    for (let i = 1; i < sortedShots.length; i++) {
+      if (sortedShots[i].sceneNumber !== sortedShots[i - 1].sceneNumber) {
+        // Scene boundary — use the scene's declared transition
+        const scene = state.storyAnalysis!.scenes.find(s => s.sceneNumber === sortedShots[i].sceneNumber);
         const transType = scene?.transition ?? 'cut';
         transitions.push({
           type: transType,
           durationMs: transType === 'fade_black' ? 750 : 0,
         });
+      } else {
+        // Same scene — always a hard cut
+        transitions.push({ type: 'cut', durationMs: 0 });
       }
-      prevSceneNumber = shot.sceneNumber;
     }
 
     // Get actual clip durations via ffprobe
     const actualDurations: number[] = [];
     for (const vp of videoPaths) {
       actualDurations.push(await getVideoDuration(vp));
-    }
-
-    // Build a per-shot transition lookup: transitions[i] applies between shot i and shot i+1
-    // transitions array has one entry per scene boundary (in order), so map them to shot indices
-    const shotTransitions: Array<{ type: 'cut' | 'fade_black'; durationMs: number } | null> = [];
-    let transIdx = 0;
-    for (let i = 0; i < sortedShots.length - 1; i++) {
-      if (sortedShots[i].sceneNumber !== sortedShots[i + 1].sceneNumber) {
-        shotTransitions.push(transitions[transIdx] || null);
-        transIdx++;
-      } else {
-        shotTransitions.push(null); // no transition between shots in same scene
-      }
     }
 
     // Build subtitles using actual durations and accounting for xfade overlap
@@ -749,10 +653,12 @@ ${JSON.stringify(scene, null, 2)}`;
 
       cumulativeTime += clipDuration;
 
-      // Subtract xfade overlap at scene boundaries (the xfade causes clips to overlap)
-      const trans = shotTransitions[i];
-      if (trans && trans.type !== 'cut' && trans.durationMs > 0) {
-        cumulativeTime -= trans.durationMs / 1000;
+      // Subtract xfade overlap (the xfade causes clips to overlap)
+      if (i < transitions.length) {
+        const trans = transitions[i];
+        if (trans.type !== 'cut' && trans.durationMs > 0) {
+          cumulativeTime -= trans.durationMs / 1000;
+        }
       }
     }
 
@@ -1041,13 +947,10 @@ ${JSON.stringify(scene, null, 2)}`;
     const videoPath = outputs.path as string;
     const startFramePath = item.inputs.startFramePath as string;
     const shot = item.inputs.shot as Shot;
-    let analyzeShot = shot;
 
+    let analyzeShot = shot;
     if (shot.continuousFromPrevious && shot.shotInScene > 1) {
-      analyzeShot = {
-        ...shot,
-        startFramePrompt: `Continuity shot: The start frame is the last frame extracted from the previous shot (scene ${shot.sceneNumber} shot ${shot.shotInScene - 1}). It should show visual continuity with the end of that shot. The action described should flow naturally from that starting point.`,
-      };
+      analyzeShot = { ...shot, startFramePrompt: 'Start frame is the previous clip end frame.' };
     }
 
     this.seedContinuityFrameAfterGenerateVideo(item, analysis, shot);

@@ -5,6 +5,13 @@ import { createImageNanoBanana, remixImageNanoBanana } from "../nano-banana-imag
 import type { ImageBackend, VideoBackend } from "../types";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  ASSET_EDIT_PROMPT_PREFIX,
+  CHARACTER_ASSET_PROMPT_TEMPLATE,
+  OBJECT_ASSET_PROMPT_TEMPLATE,
+  OBJECT_ASSET_PROMPT_SUFFIX,
+  LOCATION_ASSET_PROMPT_PREFIX,
+} from "../prompts.js";
 
 type LegacyImageBackend = VideoBackend | "comfy";
 
@@ -25,20 +32,16 @@ export function buildAssetPrompt(params: {
   const { assetType, description, artStyle, isEditing } = params;
 
   if (isEditing) {
-    if (assetType === "character") {
-      return `Edit this image to show the same character from a different angle/perspective. Keep their exact appearance, clothing, facial features, body proportions, and color palette identical. Only change the viewing angle to a 3/4 perspective. The character must have a completely original appearance (NOT resembling any real celebrity or public figure). Character details: ${description}`;
-    }
-
-    return `Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ${description}`;
+    return `${ASSET_EDIT_PROMPT_PREFIX}${description}`;
   }
 
   let prompt = `Generate a ${artStyle} style reference image of `;
   if (assetType === "character") {
-    prompt += `a character with a completely original appearance (NOT resembling any real celebrity or public figure): ${description}`;
+    prompt += `${CHARACTER_ASSET_PROMPT_TEMPLATE}${description}`;
   } else if (assetType === "object") {
-    prompt += `an object/product: ${description}. Show the object clearly against a neutral background for reference.`;
+    prompt += `${OBJECT_ASSET_PROMPT_TEMPLATE}${description}${OBJECT_ASSET_PROMPT_SUFFIX}`;
   } else {
-    prompt += `a location: ${description}`;
+    prompt += `${LOCATION_ASSET_PROMPT_PREFIX}${description}`;
   }
 
   return prompt;
@@ -77,15 +80,11 @@ export async function generateAsset(params: {
   // Determine asset type and key
   let assetType: "character" | "location" | "object";
   let assetName: string;
-  let angleType: "front" | "angle" = "front";
+  const angleType = "front";
 
   if (characterName) {
     assetType = "character";
     assetName = characterName;
-    // If reference image provided, this is an angle shot
-    if (referenceImagePath) {
-      angleType = "angle";
-    }
   } else if (locationName) {
     assetType = "location";
     assetName = locationName;
