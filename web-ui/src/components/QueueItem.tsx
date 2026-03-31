@@ -5,6 +5,17 @@ import { useUIStore } from "../stores/ui-store";
 import VideoThumbnail from "./VideoThumbnail";
 import { mediaUrl } from "../utils/media-url";
 
+function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const seconds = Math.round((end - start) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
 function getMediaPath(item: WorkItem): string | null {
   if (!item.outputs) return null;
   const out = item.outputs as Record<string, unknown>;
@@ -141,6 +152,12 @@ export default function QueueItem({ item }: QueueItemProps) {
         )}
         {retryBadge}
         {pacingBadge}
+        {(item.status === "completed" || item.status === "failed" || item.status === "in_progress") && item.startedAt && (
+          <span className="ml-auto text-xs text-[--muted]">
+            {item.status === "in_progress" ? "⏱ " : ""}
+            {formatDuration(item.startedAt, item.completedAt)}
+          </span>
+        )}
       </div>
 
       {/* Item key */}
