@@ -639,7 +639,7 @@ ${JSON.stringify(scene, null, 2)}`;
     const shotNumber = item.inputs.shotNumber as number;
     const videoPath = this.absolutePath(item.inputs.videoPath as string);
     const startFramePath = this.absolutePath(item.inputs.startFramePath as string);
-    const referenceImagePaths = (item.inputs.referenceImagePaths as string[]).map(p => this.absolutePath(p));
+    const referenceImagePaths = ((item.inputs.referenceImagePaths as string[] | undefined) ?? []).map(p => this.absolutePath(p));
     const shot = item.inputs.shot as Shot;
 
     const startFrameExists = existsSync(startFramePath);
