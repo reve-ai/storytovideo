@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
@@ -28,6 +28,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const deleteRun = useRunStore((s) => s.deleteRun);
   const sseStatus = usePipelineStore((s) => s.sseStatus);
   const analyzeCount = usePipelineStore((s) => s.analyzeItems.length);
+  const [llmProvider, setLlmProvider] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Load runs on mount, restore state from URL hash
@@ -65,6 +66,13 @@ export default function TopBar({ onNewRun }: TopBarProps) {
       }
     });
   }, [loadRuns, selectRun, navigate]);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => setLlmProvider(d.llmProvider))
+      .catch(() => {});
+  }, []);
 
   const handleRunChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -108,21 +116,24 @@ export default function TopBar({ onNewRun }: TopBarProps) {
             </NavLink>
           ))}
         </nav>
-        {activeRun && (
-          <div
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              marginTop: "0.5rem",
-              fontSize: "0.75rem",
-              color: "var(--muted)",
-              flexWrap: "wrap",
-            }}
-          >
-            <span>Image: {activeRun.options.imageBackend ?? "grok"}</span>
-            <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
-          </div>
-        )}
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            marginTop: "0.5rem",
+            fontSize: "0.75rem",
+            color: "var(--muted)",
+            flexWrap: "wrap",
+          }}
+        >
+          {activeRun && (
+            <>
+              <span>Image: {activeRun.options.imageBackend ?? "grok"}</span>
+              <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
+            </>
+          )}
+          <span>LLM: {llmProvider ?? "anthropic"}</span>
+        </div>
       </div>
       <div className="top-bar-right">
         <select
