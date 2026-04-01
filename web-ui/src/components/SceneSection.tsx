@@ -47,6 +47,8 @@ export default function SceneSection({
           const isSkipped = Boolean(shot?.skipped);
           const activeRunId = useRunStore.getState().activeRunId;
 
+          console.log('[SceneSection] shot', shotNum, { shot: !!shot, activeRunId, sceneNumber: shot?.sceneNumber, shotInScene: shot?.shotInScene });
+
           return (
             <div key={shotNum} className={`shot-wrapper${isSkipped ? " shot-skipped" : ""}`}>
               <ShotCard
@@ -57,16 +59,33 @@ export default function SceneSection({
               />
               {activeRunId && shot && (
                 <button
+                  data-opens-detail
                   className={`skip-shot-btn${isSkipped ? " active" : ""}`}
                   onClick={async (e) => {
                     e.stopPropagation();
-                    await fetch(`/api/runs/${activeRunId}/shots/${shot.sceneNumber}/${shot.shotInScene}/skip`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ skipped: !isSkipped }),
-                    });
-                    const { fetchQueues } = usePipelineStore.getState();
-                    await fetchQueues(activeRunId);
+                    const sceneNumber = shot?.sceneNumber;
+                    const shotInScene = shot?.shotInScene;
+                    console.log('[skip] clicked', { activeRunId, sceneNumber, shotInScene, isSkipped });
+                    if (!sceneNumber || !shotInScene) {
+                      console.error('[skip] Missing sceneNumber or shotInScene', shot);
+                      return;
+                    }
+                    try {
+                      const res = await fetch(`/api/runs/${activeRunId}/shots/${sceneNumber}/${shotInScene}/skip`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ skipped: !isSkipped }),
+                      });
+                      console.log('[skip] response', res.status, await res.clone().text());
+                      if (!res.ok) {
+                        console.error('[skip] failed', await res.text());
+                        return;
+                      }
+                      const { fetchQueues } = usePipelineStore.getState();
+                      await fetchQueues(activeRunId);
+                    } catch (err) {
+                      console.error('[skip] error', err);
+                    }
                   }}
                 >
                   {isSkipped ? "Unskip" : "Skip"}
