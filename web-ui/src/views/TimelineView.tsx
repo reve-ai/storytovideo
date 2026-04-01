@@ -4,6 +4,7 @@ import { useTimelineStore } from "../stores/timeline-store";
 import { useVideoEditorStore, type MediaAsset } from "../stores/video-editor-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { CanvasTimeline } from "../components/timeline/canvas-timeline";
+import { VideoPreview } from "../components/timeline/VideoPreview";
 
 /**
  * Bridge timeline-store data into video-editor-store so CanvasTimeline
@@ -59,6 +60,7 @@ export default function TimelineView() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <VideoPreview />
       <CanvasTimeline />
     </div>
   );
