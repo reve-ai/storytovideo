@@ -859,6 +859,21 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
 
         qm.updateShotSkipped(sceneNumber, shotInScene, skipped);
+
+        // Also update the work item inputs so the frontend reflects the change
+        const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+        const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
+        for (const key of [frameKey, videoKey]) {
+          const items = qm.getItemsByKey(key);
+          for (const item of items) {
+            if (item.status === 'superseded' || item.status === 'cancelled') continue;
+            const shot = item.inputs.shot as Record<string, unknown> | undefined;
+            if (shot) {
+              shot.skipped = skipped;
+            }
+          }
+        }
+
         qm.save();
         sendJson(res, 200, { sceneNumber, shotInScene, skipped });
         return;
