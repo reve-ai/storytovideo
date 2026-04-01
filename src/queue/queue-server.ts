@@ -1419,6 +1419,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         qm.setConvertedScript(script);
 
+        // Clear stale analysis data so the UI doesn't show old scenes
+        const currentAnalysis = qm.getState().storyAnalysis;
+        if (currentAnalysis) {
+          qm.clearAnalysisScenes();
+        }
+
         // Find the active analyze_story item
         const analyzeItems = qm.getItemsByKey("analyze_story")
           .filter(i => i.status !== "superseded" && i.status !== "cancelled");

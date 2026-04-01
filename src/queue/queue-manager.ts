@@ -533,6 +533,13 @@ export class QueueManager {
 
   // --- Scoped state mutation helpers ---
 
+  /** Clear scenes from storyAnalysis so the UI shows empty/loading state. */
+  clearAnalysisScenes(): void {
+    if (!this.state.storyAnalysis) return;
+    this.state.storyAnalysis.scenes = [];
+    this.touch();
+  }
+
   /** Set initial story analysis (run-once, safe to replace). */
   setStoryAnalysis(analysis: StoryAnalysis): void {
     this.state.storyAnalysis = analysis;
