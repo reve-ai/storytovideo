@@ -356,8 +356,17 @@ async function assembleWithConcat(videoPaths: string[], outputPath: string): Pro
   const videoLabels = videoPaths.map((_, i) => `[v${i}]`).join("");
   filterComplex += `${videoLabels}concat=n=${videoPaths.length}:v=1:a=0[vout];`;
 
-  // Concat all audio streams
-  const audioLabels = videoPaths.map((_, i) => `[${i}:a]`).join("");
+  // Apply short fade-in/fade-out to each audio stream to prevent clicks/pops at cut points.
+  // 50ms is short enough to be imperceptible but eliminates waveform discontinuities.
+  // afade with enable='gte(t,TID)' for fade-out would be complex, so we use
+  // aeval to zero the first/last ~2200 samples (50ms at 44100Hz) via a simple ramp.
+  // Simpler: just use afade in + areverse+afade in+areverse for fade-out.
+  for (let i = 0; i < videoPaths.length; i++) {
+    filterComplex += `[${i}:a]afade=t=in:d=0.05,areverse,afade=t=in:d=0.05,areverse[a${i}];`;
+  }
+
+  // Concat all faded audio streams
+  const audioLabels = videoPaths.map((_, i) => `[a${i}]`).join("");
   filterComplex += `${audioLabels}concat=n=${videoPaths.length}:v=0:a=1[aout]`;
 
   const ffmpegArgs = [
