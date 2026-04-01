@@ -237,6 +237,8 @@ body {
   transition: border-color 0.15s;
 }
 .story-shot-card:hover { border-color: var(--accent); }
+.story-shot-card.skipped { opacity: 0.4; }
+.story-shot-card.skipped .story-shot-media { filter: grayscale(0.8); }
 
 .story-shot-media {
   width: 100%;

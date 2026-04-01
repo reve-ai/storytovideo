@@ -636,6 +636,18 @@ export class QueueManager {
     this.touch();
   }
 
+  /** Update one shot's skipped flag by scene number and shot-in-scene index. */
+  updateShotSkipped(sceneNumber: number, shotInScene: number, skipped: boolean): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) return;
+    const scene = analysis.scenes?.find(s => s.sceneNumber === sceneNumber);
+    if (!scene?.shots) return;
+    const shot = scene.shots.find(s => s.shotInScene === shotInScene);
+    if (!shot) return;
+    shot.skipped = skipped;
+    this.touch();
+  }
+
   /** Update one shot's continuity flag by scene number and shot-in-scene index. */
   updateShotContinuity(sceneNumber: number, shotInScene: number, enabled: boolean): void {
     const analysis = this.state.storyAnalysis;
