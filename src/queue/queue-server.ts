@@ -979,6 +979,28 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           }
         }
 
+        // Persist shot field changes (e.g. durationSeconds) to the shot plan data
+        // so that when items are re-seeded from storyAnalysis, the new values survive
+        if (newInputs && (originalItem.type === 'generate_video' || originalItem.type === 'generate_frame')) {
+          const newShot = newInputs.shot as Record<string, unknown> | undefined;
+          const oldShot = originalItem.inputs.shot as Record<string, unknown> | undefined;
+          if (newShot && oldShot) {
+            const sceneNumber = (newShot.sceneNumber ?? oldShot.sceneNumber) as number;
+            const shotInScene = (newShot.shotInScene ?? oldShot.shotInScene) as number;
+            if (typeof sceneNumber === 'number' && typeof shotInScene === 'number') {
+              const updateFields: Record<string, unknown> = {};
+              for (const key of ['durationSeconds', 'videoPrompt', 'dialogue', 'speaker', 'soundEffects', 'cameraDirection', 'startFramePrompt', 'endFramePrompt']) {
+                if (key in newShot && newShot[key] !== oldShot[key]) {
+                  updateFields[key] = newShot[key];
+                }
+              }
+              if (Object.keys(updateFields).length > 0) {
+                qm.updateShotFields(sceneNumber, shotInScene, updateFields);
+              }
+            }
+          }
+        }
+
         const targetItem = qm.getItem(targetItemId);
         if (!targetItem) { sendJson(res, 404, { error: `Item not found: ${targetItemId}` }); return; }
         if (targetItem.status === 'in_progress') {

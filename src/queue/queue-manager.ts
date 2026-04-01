@@ -641,6 +641,18 @@ export class QueueManager {
     this.touch();
   }
 
+  /** Update arbitrary fields on a shot in storyAnalysis by scene number and shot-in-scene index. */
+  updateShotFields(sceneNumber: number, shotInScene: number, fields: Record<string, unknown>): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) return;
+    const scene = analysis.scenes?.find(s => s.sceneNumber === sceneNumber);
+    if (!scene?.shots) return;
+    const shot = scene.shots.find(s => s.shotInScene === shotInScene);
+    if (!shot) return;
+    Object.assign(shot, fields);
+    this.touch();
+  }
+
   /** Set a single generated output path by key. */
   setGeneratedOutput(key: string, path: string): void {
     this.state.generatedOutputs[key] = path;
