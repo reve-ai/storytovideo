@@ -364,6 +364,13 @@ body {
   background: rgba(255, 100, 100, 0.3);
   border-color: rgba(255, 100, 100, 0.5);
 }
+.shot-skipped .story-shot-card {
+  opacity: 0.35;
+  filter: grayscale(0.6);
+}
+.shot-skipped .skip-shot-btn {
+  opacity: 1;
+}
 
 @media (max-width: 900px) {
   .story-shots-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
