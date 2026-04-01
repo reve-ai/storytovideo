@@ -88,7 +88,6 @@ export default function VideoView() {
       .then((r) => {
         if (r.ok) {
           setHasMusicVersion(true);
-          setShowMusicVersion(true);
         }
       })
       .catch(() => {});
