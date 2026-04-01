@@ -36,6 +36,7 @@ export default function VideoView() {
   const [musicError, setMusicError] = useState<string | null>(null);
   const [hasMusicVersion, setHasMusicVersion] = useState(false);
   const [showMusicVersion, setShowMusicVersion] = useState(false);
+  const [musicCacheBust, setMusicCacheBust] = useState("");
 
   // Check capabilities on mount
   useEffect(() => {
@@ -45,8 +46,13 @@ export default function VideoView() {
       .catch(() => setElevenLabsAvailable(false));
   }, []);
 
-  // Check if final-music.mp4 already exists when assembly is ready
+  // Reset music state when run changes, then check if final-music.mp4 already exists
   useEffect(() => {
+    setHasMusicVersion(false);
+    setShowMusicVersion(false);
+    setMusicError(null);
+    setMusicCacheBust("");
+
     if (!activeRunId || !assemblyItem) return;
     const musicSrc = mediaUrl(activeRunId, "final-music.mp4");
     fetch(musicSrc, { method: "HEAD" })
@@ -69,6 +75,7 @@ export default function VideoView() {
       if (!resp.ok) {
         throw new Error(data.error || "Failed to add music");
       }
+      setMusicCacheBust(`?t=${Date.now()}`);
       setHasMusicVersion(true);
       setShowMusicVersion(true);
     } catch (err) {
@@ -89,8 +96,9 @@ export default function VideoView() {
   }
 
   const originalPath = (assemblyItem.outputs as Record<string, unknown>).path as string;
-  const videoFile = showMusicVersion && hasMusicVersion ? "final-music.mp4" : originalPath;
-  const src = mediaUrl(activeRunId, videoFile);
+  const isMusicView = showMusicVersion && hasMusicVersion;
+  const videoFile = isMusicView ? "final-music.mp4" : originalPath;
+  const src = mediaUrl(activeRunId, videoFile) + (isMusicView ? musicCacheBust : "");
   const run = runs.find((r) => r.id === activeRunId);
   const aspectRatio = (run?.options?.aspectRatio || "16:9").replace(":", "/");
 
@@ -104,6 +112,7 @@ export default function VideoView() {
           )}
         </h3>
         <VideoThumbnail
+          key={src}
           videoSrc={src}
           aspectRatio={aspectRatio}
           className="max-h-[calc(100vh-12rem)] rounded-lg"
