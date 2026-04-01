@@ -340,11 +340,15 @@ body {
   cursor: not-allowed;
 }
 
+.shot-wrapper {
+  position: relative;
+}
+
 .skip-shot-btn {
   position: absolute;
   top: 4px;
   right: 4px;
-  z-index: 5;
+  z-index: 10;
   padding: 2px 8px;
   font-size: 0.7rem;
   border-radius: 4px;
@@ -354,9 +358,11 @@ body {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
+  pointer-events: auto;
 }
-.story-shot-card:hover + .skip-shot-btn,
-.skip-shot-btn:hover,
+
+/* Parent wrapper hover reveals the button */
+.shot-wrapper:hover .skip-shot-btn,
 .skip-shot-btn.active {
   opacity: 1;
 }

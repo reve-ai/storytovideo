@@ -48,7 +48,7 @@ export default function SceneSection({
           const activeRunId = useRunStore.getState().activeRunId;
 
           return (
-            <div key={shotNum} style={{ position: "relative" }} className={isSkipped ? "shot-skipped" : ""}>
+            <div key={shotNum} className={`shot-wrapper${isSkipped ? " shot-skipped" : ""}`}>
               <ShotCard
                 shotNum={shotNum}
                 frameItem={frameItem}
