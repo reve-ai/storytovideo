@@ -50,17 +50,25 @@ echo "Video duration: ${DURATION}s"
 MUSIC_DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MUSIC_OUTPUT")
 echo "Music duration: ${MUSIC_DURATION}s"
 
-# Mix: keep original audio (dialogue/SFX) at full volume, add music underneath at lower volume.
-# apad pads the music with silence if it's shorter than the video.
-# Use shortest=1 on amix so output matches the original audio length exactly.
-ffmpeg -y -i "$INPUT_VIDEO" -i "$MUSIC_OUTPUT" \
+# Step 2a: Decode music mp3 to wav first to eliminate mp3 frame padding/delay drift
+MUSIC_WAV="$RUN_DIR/generated-music.wav"
+ffmpeg -y -i "$MUSIC_OUTPUT" -ar 44100 -ac 2 -sample_fmt s16 "$MUSIC_WAV"
+echo "Converted music to WAV: $(du -h "$MUSIC_WAV" | cut -f1)"
+
+# Step 2b: Mix original audio with music.
+# Both streams forced to exact same sample rate/format to prevent drift.
+# Using amerge for sample-accurate interleaving instead of amix (which can drift).
+ffmpeg -y -i "$INPUT_VIDEO" -i "$MUSIC_WAV" \
   -filter_complex "\
-    [0:a]asetpts=PTS-STARTPTS[orig];\
-    [1:a]asetpts=PTS-STARTPTS,volume=0.3,apad[music];\
-    [orig][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]" \
+    [0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[orig];\
+    [1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=0.3,apad[music];\
+    [orig][music]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[out]" \
   -map 0:v -map "[out]" \
   -c:v copy -c:a aac -b:a 192k \
+  -shortest \
   "$FINAL_OUTPUT"
+
+rm -f "$MUSIC_WAV"
 
 echo ""
 echo "=== Done ==="
