@@ -26,10 +26,39 @@ function useAssemblyItem() {
   return null;
 }
 
+/** Find the first shot's frame path (scene 1, shot 1) for use as poster thumbnail. */
+function useFirstFramePath() {
+  const queues = usePipelineStore((s) => s.queues);
+  let best: string | null = null;
+  let bestScene = Infinity;
+  let bestShot = Infinity;
+  for (const qName of QUEUE_NAMES) {
+    const q = queues[qName];
+    if (!q) continue;
+    for (const item of q.completed || []) {
+      if (item.type !== "generate_frame" || !item.outputs) continue;
+      const out = item.outputs as Record<string, unknown>;
+      const startPath = out.startPath as string | undefined;
+      if (!startPath) continue;
+      const inputs = item.inputs as Record<string, unknown>;
+      const shot = inputs.shot as { sceneNumber?: number; shotInScene?: number } | undefined;
+      const sc = shot?.sceneNumber ?? Infinity;
+      const sh = shot?.shotInScene ?? Infinity;
+      if (sc < bestScene || (sc === bestScene && sh < bestShot)) {
+        bestScene = sc;
+        bestShot = sh;
+        best = startPath;
+      }
+    }
+  }
+  return best;
+}
+
 export default function VideoView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const runs = useRunStore((s) => s.runs);
   const assemblyItem = useAssemblyItem();
+  const firstFramePath = useFirstFramePath();
 
   const [elevenLabsAvailable, setElevenLabsAvailable] = useState(false);
   const [musicLoading, setMusicLoading] = useState(false);
@@ -101,6 +130,7 @@ export default function VideoView() {
   const src = mediaUrl(activeRunId, videoFile) + (isMusicView ? musicCacheBust : "");
   const run = runs.find((r) => r.id === activeRunId);
   const aspectRatio = (run?.options?.aspectRatio || "16:9").replace(":", "/");
+  const posterSrc = firstFramePath && activeRunId ? mediaUrl(activeRunId, firstFramePath) : undefined;
 
   return (
     <div className="flex h-full items-center justify-center p-8">
@@ -114,6 +144,7 @@ export default function VideoView() {
         <VideoThumbnail
           key={src}
           videoSrc={src}
+          thumbnailSrc={posterSrc}
           aspectRatio={aspectRatio}
           className="max-h-[calc(100vh-12rem)] rounded-lg"
         />
