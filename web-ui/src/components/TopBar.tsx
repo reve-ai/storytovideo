@@ -84,7 +84,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const showPlayPause =
     runStatus === "running" ||
     runStatus === "stopped" ||
-    runStatus === "pausing";
+    runStatus === "stopping";
   const activeRun = runs.find((run) => run.id === activeRunId);
 
   return (
@@ -152,7 +152,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
             className={`play-pause-btn ${runStatus === "running" ? "running" : "stopped"}`}
             onClick={togglePlayPause}
             title={
-              runStatus === "running" ? "Pause pipeline" : "Resume pipeline"
+              runStatus === "running" ? "Stop pipeline" : "Resume pipeline"
             }
           >
             {runStatus === "running" ? "⏸" : "▶"}

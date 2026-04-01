@@ -27,7 +27,7 @@ export function resolveOutputDir(outputDir: string): string {
 // Run record persisted to queue-runs.json
 // ---------------------------------------------------------------------------
 
-export type QueueRunStatus = "running" | "pausing" | "stopped" | "completed" | "failed";
+export type QueueRunStatus = "running" | "stopping" | "stopped" | "completed" | "failed";
 
 export interface QueueRunRecord {
   id: string;
@@ -235,7 +235,7 @@ export class RunManager extends EventEmitter {
       proc.on("item:progress", (data) => this.emit("item:progress", data));
       proc.on("pipeline:pause", (data) => {
         this.emit("pipeline:pause", data);
-        // Auto-pause: stop all processors for this run
+        // Auto-stop: stop all processors for this run
         this.stopRun(runId);
       });
       proc.start();
@@ -314,14 +314,14 @@ export class RunManager extends EventEmitter {
       : false;
 
     if (hasInProgress) {
-      // Items are still running — set "pausing" and wait in the background
-      this.patchRun(runId, { status: "pausing" });
+      // Items are still running — set "stopping" and wait in the background
+      this.patchRun(runId, { status: "stopping" });
 
       // Fire-and-forget: await processors then transition to stopped
       void Promise.allSettled(procs.map(p => p.stop())).then(() => {
-        // Only transition to stopped if still in pausing state (not resumed in the meantime)
+        // Only transition to stopped if still in stopping state (not resumed in the meantime)
         const current = this.runs.get(runId);
-        if (current && current.status === "pausing") {
+        if (current && current.status === "stopping") {
           this.patchRun(runId, { status: "stopped" });
         }
       });
@@ -338,7 +338,7 @@ export class RunManager extends EventEmitter {
     return this.withRunLock(runId, async () => {
       const record = this.runs.get(runId);
       if (!record) return false;
-      if (record.status !== "stopped" && record.status !== "pausing" && record.status !== "completed") return false;
+      if (record.status !== "stopped" && record.status !== "stopping" && record.status !== "completed") return false;
 
       let qm = this.queueManagers.get(runId);
       if (!qm) {
@@ -432,7 +432,7 @@ export class RunManager extends EventEmitter {
   loadExistingRuns(): void {
     // Re-attach QueueManagers for persisted runs that have state on disk
     for (const [runId, record] of this.runs) {
-      if (record.status === "running" || record.status === "stopped" || record.status === "pausing" || record.status === "completed") {
+      if (record.status === "running" || record.status === "stopped" || record.status === "stopping" || record.status === "completed") {
         try {
           const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
           if (!existsSync(stateFile)) continue;
@@ -445,8 +445,8 @@ export class RunManager extends EventEmitter {
             qm.save();
           }
 
-          // Mark previously-running, pausing, or completed runs as stopped (server restarted)
-          if (record.status === "running" || record.status === "pausing" || record.status === "completed") {
+          // Mark previously-running, stopping, or completed runs as stopped (server restarted)
+          if (record.status === "running" || record.status === "stopping" || record.status === "completed") {
             this.patchRun(runId, { status: "stopped" });
           }
         } catch (err) {

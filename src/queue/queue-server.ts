@@ -149,7 +149,7 @@ runManager.on("run:updated", (record) => {
 
 runManager.on("pipeline:pause", (data: { runId: string; item: { itemKey: string }; error: string }) => {
   emitEvent(data.runId, "pipeline_paused", {
-    reason: `Pipeline paused: ${data.item.itemKey} failed after max retries`,
+    reason: `Pipeline stopped: ${data.item.itemKey} failed after max retries`,
     itemKey: data.item.itemKey,
     error: data.error,
   });

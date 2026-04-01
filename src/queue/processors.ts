@@ -190,7 +190,7 @@ export class QueueProcessor extends EventEmitter {
           }
           this.queueManager.save();
         } else {
-          // Max retries exceeded — mark as permanently failed and pause pipeline
+          // Max retries exceeded — mark as permanently failed and stop pipeline
           if (this.queueManager.markFailed(item.id, errorMsg)) {
             this.emit('item:failed', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });
             this.emit('pipeline:pause', { runId: this.runId, item: { ...item, status: 'failed' }, error: errorMsg });

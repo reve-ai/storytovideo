@@ -20,7 +20,7 @@ export function setUrlState(runId: string | null, view: string | null): void {
 
 export type RunStatus =
   | "running"
-  | "pausing"
+  | "stopping"
   | "stopped"
   | "completed"
   | "failed";
@@ -150,7 +150,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
 
     if (runStatus === "running") {
       await fetch(`/api/runs/${activeRunId}/stop`, { method: "POST" });
-    } else if (runStatus === "stopped" || runStatus === "pausing") {
+    } else if (runStatus === "stopped" || runStatus === "stopping") {
       await fetch(`/api/runs/${activeRunId}/resume`, { method: "POST" });
     }
   },

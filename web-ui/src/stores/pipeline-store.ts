@@ -556,7 +556,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     // Pipeline paused event
     es.addEventListener("pipeline_paused", (e: MessageEvent) => {
       useRunStore.getState().setRunStatus("stopped");
-      let reason = "Pipeline paused";
+      let reason = "Pipeline stopped";
       try {
         const data = JSON.parse(e.data) as { payload?: { reason?: string } };
         if (data.payload?.reason) reason = data.payload.reason;
@@ -604,7 +604,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
           refreshCoreData();
         } else if (data.type === "pipeline_paused") {
           useRunStore.getState().setRunStatus("stopped");
-          const reason = data.payload?.reason || "Pipeline paused";
+          const reason = data.payload?.reason || "Pipeline stopped";
           useUIStore.getState().showToast(reason, "warning");
           useRunStore.getState().loadRuns();
           refreshCoreData();
