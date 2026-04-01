@@ -75,7 +75,7 @@ export default function ShotCard({
   const sceneNumber = shot.sceneNumber as number | undefined;
   const shotInScene = shot.shotInScene as number | undefined;
   const continuityEnabled = Boolean(shot.continuousFromPrevious);
-  const isSkipped = Boolean(shot.skipped);
+
   const shotLabel = `S${String(sceneNumber ?? "?")}.${shotNum}`;
   const canToggleContinuity =
     Boolean(activeRunId) &&
@@ -140,7 +140,7 @@ export default function ShotCard({
   );
 
   return (
-    <div className={`story-shot-card${isSkipped ? " skipped" : ""}`} data-opens-detail onClick={handleCardClick}>
+    <div className="story-shot-card" data-opens-detail onClick={handleCardClick}>
       {/* Media area */}
       {playing && videoSrc ? (
         <div className="story-shot-media" style={{ aspectRatio }}>
@@ -199,24 +199,6 @@ export default function ShotCard({
           <div className="story-shot-action">{truncatedAction}</div>
         )}
         <div className="story-shot-controls">
-          {typeof sceneNumber === "number" && typeof shotInScene === "number" && activeRunId && (
-            <button
-              type="button"
-              className={`story-shot-toggle${isSkipped ? " enabled" : ""}`}
-              title={isSkipped ? "Unskip this shot" : "Skip this shot"}
-              onClick={async (e) => {
-                e.stopPropagation();
-                await fetch(`/api/runs/${activeRunId}/shots/${sceneNumber}/${shotInScene}/skip`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ skipped: !isSkipped }),
-                });
-                await fetchQueues(activeRunId);
-              }}
-            >
-              {isSkipped ? "Unskip" : "Skip"}
-            </button>
-          )}
           {canToggleContinuity && (
             <button
               type="button"

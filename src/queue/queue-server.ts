@@ -859,38 +859,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
 
         qm.updateShotSkipped(sceneNumber, shotInScene, skipped);
-
-        const frameKeyPrefix = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
-        const videoKeyPrefix = `video:scene:${sceneNumber}:shot:${shotInScene}`;
-        const state = qm.getState();
-
-        if (skipped) {
-          // Cancel active generate_frame and generate_video items for this shot
-          for (const item of state.workItems) {
-            if (item.status === "superseded" || item.status === "cancelled" || item.status === "completed") continue;
-            if (item.itemKey === frameKeyPrefix || item.itemKey === videoKeyPrefix) {
-              qm.cancelItem(item.id);
-            }
-          }
-        } else {
-          // Unskip: find the cancelled frame item and redo it to re-queue generation
-          const cancelledFrame = state.workItems
-            .filter(i => i.itemKey === frameKeyPrefix && i.status === "cancelled")
-            .pop();
-          if (cancelledFrame) {
-            try {
-              const newItem = runManager.redoItem(runId, cancelledFrame.id);
-              if (newItem) {
-                emitEvent(runId, "item_redo", { oldItemId: cancelledFrame.id, newItem });
-              }
-            } catch {
-              // Item may already be superseded
-            }
-          }
-        }
-
         qm.save();
-        await runManager.resumeRun(runId);
         sendJson(res, 200, { sceneNumber, shotInScene, skipped });
         return;
       }

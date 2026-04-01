@@ -1,4 +1,5 @@
-import { WorkItem } from "../stores/pipeline-store";
+import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
+import { useRunStore } from "../stores/run-store";
 import ShotCard from "./ShotCard";
 
 interface SceneData {
@@ -39,15 +40,41 @@ export default function SceneSection({
         )}
       </div>
       <div className="story-shots-grid">
-        {sortedShots.map((shotNum) => (
-          <ShotCard
-            key={shotNum}
-            shotNum={shotNum}
-            frameItem={sceneData.frames.get(shotNum)}
-            videoItem={sceneData.videos.get(shotNum)}
-            aspectRatio={aspectRatio}
-          />
-        ))}
+        {sortedShots.map((shotNum) => {
+          const frameItem = sceneData.frames.get(shotNum);
+          const videoItem = sceneData.videos.get(shotNum);
+          const shot = (frameItem?.inputs?.shot ?? videoItem?.inputs?.shot) as Record<string, unknown> | undefined;
+          const isSkipped = Boolean(shot?.skipped);
+          const activeRunId = useRunStore.getState().activeRunId;
+
+          return (
+            <div key={shotNum} style={{ position: "relative" }}>
+              <ShotCard
+                shotNum={shotNum}
+                frameItem={frameItem}
+                videoItem={videoItem}
+                aspectRatio={aspectRatio}
+              />
+              {activeRunId && shot && (
+                <button
+                  className={`skip-shot-btn${isSkipped ? " active" : ""}`}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await fetch(`/api/runs/${activeRunId}/shots/${shot.sceneNumber}/${shot.shotInScene}/skip`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ skipped: !isSkipped }),
+                    });
+                    const { fetchQueues } = usePipelineStore.getState();
+                    await fetchQueues(activeRunId);
+                  }}
+                >
+                  {isSkipped ? "Unskip" : "Skip"}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
