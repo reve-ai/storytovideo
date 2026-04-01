@@ -9,10 +9,7 @@ import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import type { VideoBackend } from "../types";
 import {
   VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS,
-  VIDEO_PROMPT_GAZE_WARNING,
-  VIDEO_PROMPT_NO_UNNAMED_HUMANS,
   VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS,
-  VIDEO_PROMPT_NO_PEOPLE,
   VIDEO_PROMPT_SUFFIX,
 } from "../prompts.js";
 
@@ -81,23 +78,20 @@ function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sce
 export function buildVideoPrompt(params: Pick<GenerateVideoParams, "videoPrompt" | "charactersPresent" | "directorsNote">): string {
   const promptParts: string[] = [];
   const hasCharacters = params.charactersPresent && params.charactersPresent.length > 0;
-  // Cinematic framing + gaze instruction at the very start — shifts the model away from YouTube/vlog/portrait training data
-  // Only include character-awareness instructions when characters are actually present;
+  // Scene direction first — the most important content for the video model.
+  if (params.videoPrompt) promptParts.push(params.videoPrompt);
+  // Concise style tag + character-awareness instruction at the end.
+  // Only include character-awareness text when characters are actually present;
   // otherwise the video model reads "characters" and hallucinates people into the scene.
   if (hasCharacters) {
     promptParts.push(VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS);
-    promptParts.push(VIDEO_PROMPT_GAZE_WARNING);
-    promptParts.push(VIDEO_PROMPT_NO_UNNAMED_HUMANS);
   } else {
     promptParts.push(VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS);
-    promptParts.push(VIDEO_PROMPT_NO_PEOPLE);
   }
-  // The planner writes the complete video direction as natural prose
-  if (params.videoPrompt) promptParts.push(params.videoPrompt);
   // Suppress music/soundtrack — per-shot music clashes when assembled; audio added in post-production.
-  // Sound effects and ambient audio are intentionally kept.
   promptParts.push(VIDEO_PROMPT_SUFFIX);
-  let prompt = promptParts.join(". ");
+  // Strip trailing periods from each part before joining to avoid double-period artifacts.
+  let prompt = promptParts.map(p => p.replace(/\.+$/, "")).join(". ") + ".";
   if (params.directorsNote) {
     prompt += `\n\nDirector's note: ${params.directorsNote}`;
   }

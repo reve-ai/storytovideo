@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   FRAME_PROMPT_STYLE_PREFIX,
+  FRAME_PROMPT_STYLE_PREFIX_NO_CHARACTERS,
   FRAME_GAZE_WIDE,
   FRAME_GAZE_MULTI_DIALOGUE,
   FRAME_GAZE_MULTI_NO_DIALOGUE,
@@ -561,6 +562,12 @@ export function buildFramePrompt(params: {
 
   const gazeInstruction = buildGazeInstruction({ composition, charactersPresent, hasCharacterDialogue });
 
+  // Format composition: replace underscores with spaces (e.g. "medium_shot" → "medium shot")
+  const formattedComposition = composition.replace(/_/g, " ");
+
+  // Select style prefix based on whether characters are present
+  const stylePrefix = charactersPresent.length > 0 ? FRAME_PROMPT_STYLE_PREFIX : FRAME_PROMPT_STYLE_PREFIX_NO_CHARACTERS;
+
   // Defensive instruction: only named characters should appear, no unnamed humans
   const humanPresenceInstruction = charactersPresent.length > 0
     ? `ONLY the following characters should appear in this image: ${charactersPresent.join(", ")}. No other people, no background figures, no staff, no unnamed humans.`
@@ -569,9 +576,9 @@ export function buildFramePrompt(params: {
   if (hasReferenceImages) {
     // Slim prompt — reference images provide character/location appearance
     const parts = [
-      FRAME_PROMPT_STYLE_PREFIX,
+      stylePrefix,
       `Style: ${artStyle}.`,
-      `${composition} shot, ${cameraDirection}.`,
+      `${formattedComposition}, ${cameraDirection}.`,
       (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",
       gazeInstruction,
       humanPresenceInstruction,
@@ -582,9 +589,9 @@ export function buildFramePrompt(params: {
 
   // Fallback — no reference images, include full descriptions
   const parts = [
-    FRAME_PROMPT_STYLE_PREFIX,
+    stylePrefix,
     `Style: ${artStyle}.`,
-    `${composition} shot, ${cameraDirection}.`,
+    `${formattedComposition}, ${cameraDirection}.`,
     `Location: ${locationDescription}.`,
     charactersPresent.length > 0 ? `Characters: ${charactersPresent.join(", ")}. All characters must have original appearances — no celebrity likenesses.` : "",
     (objectsPresent && objectsPresent.length > 0) ? `Objects/props: ${objectsPresent.join(", ")}.` : "",

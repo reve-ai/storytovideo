@@ -119,25 +119,24 @@ For this scene:
 15. NO UNNAMED HUMANS: NEVER mention ANY human figure who is not listed in charactersPresent for that shot. This includes waiters, servers, bartenders, hosts, background diners, couples at nearby tables, passersby, staff, or any unnamed person. The video model will hallucinate random people into the scene. If the story involves a waiter serving food, describe the food appearing on the table or show only disembodied hands — never describe a waiter as a person. If the scene is in a restaurant, describe empty tables, not tables with diners. Do NOT use phrases like 'other diners', 'background patrons', 'couples at nearby tables', 'the crowd', etc. The ONLY humans visible in any shot must be those listed in charactersPresent.
 16. NEVER include music, jazz, songs, score, soundtrack, or any musical terms in videoPrompt or soundEffects. The video model generates audio and will produce music if prompted. Only reference non-musical ambient sounds (chatter, footsteps, wind, clinking, engine noise, etc). Music is added in post-production.
 17. FACE VISIBILITY RULE: When planning a shot with continuousFromPrevious=true, consider whether every character whose face needs to be visible in this shot also had their face clearly visible in the previous shot. If the previous shot was an over-the-shoulder, behind-the-subject, or insert shot where a character's face was NOT visible (back of head, side profile, or off-screen), and the current shot needs to show that character's face, set continuousFromPrevious=false so a fresh start frame is generated with the correct reference image. The video model cannot generate a correct face from scratch — it will hallucinate a random face that doesn't match the character. Only faces that were clearly visible in the previous shot's frame will be rendered correctly in a continuous shot.
-18. MID-SHOT FACE REVEAL BAN: The video model CANNOT generate a correct face that is not already visible in the start frame. If a character is facing away, shown from behind, or otherwise has their face hidden in the startFramePrompt, the videoPrompt MUST NOT describe them turning around, looking over their shoulder toward camera, or otherwise revealing their face during the shot. The resulting face will be randomly generated and will not match the character. If you need to show a character's face after a behind-the-subject shot, create a NEW shot with continuousFromPrevious=false so the start frame is generated fresh from reference images with the character's face visible. Similarly, if a character enters the shot during the video (walks into frame), do NOT describe their face becoming visible — either start the shot with them already in frame (face visible in startFramePrompt) or keep them out of frame entirely and show them in the next shot.`;
+18. MID-SHOT FACE REVEAL BAN: The video model CANNOT generate a correct face that is not already visible in the start frame. If a character is facing away, shown from behind, or otherwise has their face hidden in the startFramePrompt, the videoPrompt MUST NOT describe them turning around, looking over their shoulder toward camera, or otherwise revealing their face during the shot. The resulting face will be randomly generated and will not match the character. If you need to show a character's face after a behind-the-subject shot, create a NEW shot with continuousFromPrevious=false so the start frame is generated fresh from reference images with the character's face visible. Similarly, if a character enters the shot during the video (walks into frame), do NOT describe their face becoming visible — either start the shot with them already in frame (face visible in startFramePrompt) or keep them out of frame entirely and show them in the next shot.
+19. DIALOGUE PLACEMENT: In videoPrompt, describe all visual blocking and action BEFORE dialogue. The video model handles sequential actions well, so structure each shot as: physical movement and gestures first, then spoken lines. Example: "The man holds both hands out in a calming gesture, looking off-screen right. He says: 'Now, now. I'll ask the Microvac right now.'" — not "He says 'Now, now' while holding his hands out."
+20. ACTION COMPLEXITY: Limit each shot to at most 2 simultaneously active characters performing independent actions. If more characters need to act independently, split into separate shots — e.g., a reaction shot of the children, then cut to parents watching. Wide establishing shots can show multiple characters but only 1-2 should have complex independent motion.
+21. MOTION INTENSITY: Use adverbs of degree to specify how actions should be performed — "slowly reaches", "rapidly turns", "gently places", "violently shakes", "powerfully stands". The video model responds strongly to motion intensity words and produces better results with explicit degree modifiers.`;
 
 // ---- Video prompt constants (from generate-video.ts) ----
 
-export const VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS = "Cinematic narrative film. Candid cinematography. Characters are unaware of the camera.";
+export const VIDEO_PROMPT_PREAMBLE_WITH_CHARACTERS = "Cinematic narrative film, candid fly-on-the-wall cinematography. Characters look at each other, at objects, or into the distance. Only the visible characters are in the scene.";
 
-export const VIDEO_PROMPT_GAZE_WARNING = "CRITICAL: Characters must NEVER look directly at the camera. This is a cinematic film, NOT a YouTube video or interview. When characters speak, they look at the person they are speaking to, not at the viewer. When characters reflect or share experiences, they look at their conversation partner, down at their hands, or into the distance — NEVER at the camera. No character should ever appear aware of the camera's existence.";
+export const VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS = "Cinematic narrative film. Empty scene, no people visible.";
 
-export const VIDEO_PROMPT_NO_UNNAMED_HUMANS = "ONLY these characters are in the scene. No other people should appear — no waiters, no background diners, no staff, no unnamed figures.";
-
-export const VIDEO_PROMPT_PREAMBLE_NO_CHARACTERS = "Cinematic narrative film.";
-
-export const VIDEO_PROMPT_NO_PEOPLE = "No people should appear in this video. No humans should be visible.";
-
-export const VIDEO_PROMPT_SUFFIX = "No music. No soundtrack. No background music.";
+export const VIDEO_PROMPT_SUFFIX = "Ambient sounds only.";
 
 // ---- Frame prompt constants (from generate-frame.ts) ----
 
 export const FRAME_PROMPT_STYLE_PREFIX = "Cinematic narrative film still. Candid, fly-on-the-wall cinematography. Characters are unaware of the camera.";
+
+export const FRAME_PROMPT_STYLE_PREFIX_NO_CHARACTERS = "Cinematic narrative film still.";
 
 export const FRAME_GAZE_WIDE = "Characters are engaged in their environment, not aware of the camera. No one looks at the camera.";
 
