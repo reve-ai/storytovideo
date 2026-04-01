@@ -15,6 +15,7 @@ import sharp from "sharp";
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
+import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -1492,6 +1493,46 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         sendJson(res, 200, { deleted: runId });
         return;
       }
+    }
+
+    // GET /api/capabilities
+    if (method === "GET" && url.pathname === "/api/capabilities") {
+      sendJson(res, 200, { elevenLabsAvailable: isElevenLabsAvailable() });
+      return;
+    }
+
+    // POST /api/runs/:id/add-music
+    if (pathParts.length === 4 && pathParts[0] === "api" && pathParts[1] === "runs" && pathParts[3] === "add-music" && method === "POST") {
+      const runId = decodeURIComponent(pathParts[2]);
+      const run = runManager.getRun(runId);
+      if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+      if (!isElevenLabsAvailable()) {
+        sendJson(res, 400, { error: "ELEVENLABS_API_KEY is not configured" });
+        return;
+      }
+
+      const outputDir = resolveOutputDir(run.outputDir);
+      const videoPath = join(outputDir, "final.mp4");
+      if (!existsSync(videoPath)) {
+        sendJson(res, 404, { error: "final.mp4 not found — assembly may not be complete" });
+        return;
+      }
+
+      try {
+        const musicPath = join(outputDir, "generated-music.mp3");
+        const finalMusicPath = join(outputDir, "final-music.mp4");
+
+        await generateMusicFromVideo(videoPath, musicPath);
+        await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
+
+        sendJson(res, 200, { path: "final-music.mp4", success: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[add-music] Error:", msg);
+        sendJson(res, 500, { error: msg });
+      }
+      return;
     }
 
     // GET /api/settings
