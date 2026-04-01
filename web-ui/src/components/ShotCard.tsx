@@ -10,6 +10,9 @@ interface ShotCardProps {
   frameItem: WorkItem | undefined;
   videoItem: WorkItem | undefined;
   aspectRatio: string;
+  showSkip?: boolean;
+  isSkipped?: boolean;
+  onSkipToggle?: () => void;
 }
 
 export default function ShotCard({
@@ -17,6 +20,9 @@ export default function ShotCard({
   frameItem,
   videoItem,
   aspectRatio,
+  showSkip,
+  isSkipped,
+  onSkipToggle,
 }: ShotCardProps) {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
@@ -214,6 +220,18 @@ export default function ShotCard({
             </button>
           )}
         </div>
+        {showSkip && onSkipToggle && (
+          <button
+            type="button"
+            className={`skip-shot-btn${isSkipped ? " active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSkipToggle();
+            }}
+          >
+            {isSkipped ? "Unskip" : "Skip"}
+          </button>
+        )}
       </div>
     </div>
   );

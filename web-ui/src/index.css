@@ -361,8 +361,8 @@ body {
   pointer-events: auto;
 }
 
-/* Parent wrapper hover reveals the button */
-.shot-wrapper:hover .skip-shot-btn,
+/* Card hover reveals the skip button */
+.story-shot-card:hover .skip-shot-btn,
 .skip-shot-btn.active {
   opacity: 1;
 }
