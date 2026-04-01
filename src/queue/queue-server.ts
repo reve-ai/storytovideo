@@ -418,6 +418,7 @@ function handleMediaRequest(res: ServerResponse, req: IncomingMessage, outputDir
   if (!rangeHeader) {
     res.statusCode = 200;
     res.setHeader("Content-Length", fileSize);
+    if (req.method === "HEAD") { res.end(); return; }
     createReadStream(mediaPath).pipe(res);
     return;
   }
@@ -575,8 +576,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // GET /api/runs/:id/media/** — Serve generated files
-      if (method === "GET" && action === "media" && pathParts.length >= 5) {
+      // GET|HEAD /api/runs/:id/media/** — Serve generated files
+      if ((method === "GET" || method === "HEAD") && action === "media" && pathParts.length >= 5) {
         const run = runManager.getRun(runId);
         if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
         handleMediaRequest(res, req, resolveOutputDir(run.outputDir), pathParts.slice(4));
