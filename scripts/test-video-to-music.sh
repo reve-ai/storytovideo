@@ -50,13 +50,14 @@ echo "Video duration: ${DURATION}s"
 MUSIC_DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MUSIC_OUTPUT")
 echo "Music duration: ${MUSIC_DURATION}s"
 
-# Mix: keep original audio (dialogue/SFX) at full volume, add music underneath at lower volume
-# -filter_complex: 
-#   [1:a] = music track, reduced volume to sit under dialogue
-#   [0:a] = original video audio at full volume
-#   amix: combine both, normalize off so we control levels manually
+# Mix: keep original audio (dialogue/SFX) at full volume, add music underneath at lower volume.
+# apad pads the music with silence if it's shorter than the video.
+# Use shortest=1 on amix so output matches the original audio length exactly.
 ffmpeg -y -i "$INPUT_VIDEO" -i "$MUSIC_OUTPUT" \
-  -filter_complex "[1:a]volume=0.3,aloop=loop=-1:size=2e+09,atrim=duration=$DURATION[music];[0:a][music]amix=inputs=2:duration=first:normalize=0[out]" \
+  -filter_complex "\
+    [0:a]asetpts=PTS-STARTPTS[orig];\
+    [1:a]asetpts=PTS-STARTPTS,volume=0.3,apad[music];\
+    [orig][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]" \
   -map 0:v -map "[out]" \
   -c:v copy -c:a aac -b:a 192k \
   "$FINAL_OUTPUT"
