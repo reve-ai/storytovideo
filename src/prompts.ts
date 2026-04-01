@@ -238,7 +238,7 @@ Convert the following story into a visual prose script:
 
 export const ASSET_EDIT_PROMPT_PREFIX = "Edit this image to show the same location from a different vantage point. Keep the exact same architecture, lighting, color palette, and atmosphere. Location details: ";
 
-export const CHARACTER_ASSET_PROMPT_TEMPLATE = "character turnaround sheet on white background. Four views: front portrait, 3/4 portrait, side portrait, full standing pose. Character: ";
+export const CHARACTER_ASSET_PROMPT_TEMPLATE = "Studio portrait photography on white background. Four views: front headshot, 3/4 headshot, side profile, full body standing pose. Subject: ";
 
 export const OBJECT_ASSET_PROMPT_TEMPLATE = "an object/product: ";
 
