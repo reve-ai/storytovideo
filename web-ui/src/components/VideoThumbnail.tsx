@@ -55,7 +55,18 @@ export default function VideoThumbnail({
           className="h-full w-full object-cover"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-[--surface2]" />
+        <video
+          src={videoSrc}
+          preload="metadata"
+          muted
+          playsInline
+          className="h-full w-full object-cover"
+          onLoadedData={(e) => {
+            // Seek to a tiny offset so the browser renders the first frame
+            const v = e.currentTarget;
+            if (v.currentTime === 0) v.currentTime = 0.1;
+          }}
+        />
       )}
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="rounded-full bg-black/60 px-3 py-1.5 text-lg text-white">
