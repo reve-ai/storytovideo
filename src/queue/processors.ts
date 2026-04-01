@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { execFileSync } from 'child_process';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, unlinkSync } from 'fs';
 import { join, resolve, isAbsolute } from 'path';
 import { generateObject, generateText } from 'ai';
 import { z } from 'zod';
@@ -685,6 +685,13 @@ ${JSON.stringify(scene, null, 2)}`;
       subtitles,
       outputDir: this.resolvedOutputDir(),
     });
+
+    // Remove stale music version since the base video has changed
+    const musicPath = join(this.resolvedOutputDir(), 'final-music.mp4');
+    if (existsSync(musicPath)) {
+      unlinkSync(musicPath);
+      console.log('[assembly] Removed stale final-music.mp4');
+    }
 
     return { path: this.relativePath(result.path) };
   }
