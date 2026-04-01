@@ -149,10 +149,13 @@ export const useRunStore = create<RunStore>((set, get) => ({
     if (!activeRunId) return;
 
     if (runStatus === "running") {
+      set({ runStatus: "stopping" });
       await fetch(`/api/runs/${activeRunId}/stop`, { method: "POST" });
     } else if (runStatus === "stopped" || runStatus === "stopping") {
+      set({ runStatus: "running" });
       await fetch(`/api/runs/${activeRunId}/resume`, { method: "POST" });
     }
+    await get().fetchRunStatus();
   },
 
   fetchRunStatus: async () => {
