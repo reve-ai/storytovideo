@@ -14,6 +14,7 @@ const VIEW_TABS = [
   { to: "/graph", label: "Graph", end: false },
   { to: "/story", label: "Story", end: false },
   { to: "/video", label: "Video", end: false },
+  { to: "/timeline", label: "Timeline", end: false },
   { to: "/analyze", label: "Analyze", end: false },
   { to: "/assets", label: "Assets", end: false },
 ] as const;
@@ -41,6 +42,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         graph: { route: "/graph", view: "graph" },
         story: { route: "/story", view: "story" },
         video: { route: "/video", view: "video" },
+        timeline: { route: "/timeline", view: "timeline" },
         analyze: { route: "/analyze", view: "analyze" },
         assets: { route: "/assets", view: "assets" },
       };

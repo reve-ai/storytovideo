@@ -7,6 +7,7 @@ import StoryView from "./views/StoryView";
 import VideoView from "./views/VideoView";
 import AnalyzeView from "./views/AnalyzeView";
 import AssetsView from "./views/AssetsView";
+import TimelineView from "./views/TimelineView";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/graph" element={<GraphView />} />
         <Route path="/story" element={<StoryView />} />
         <Route path="/video" element={<VideoView />} />
+        <Route path="/timeline" element={<TimelineView />} />
         <Route path="/analyze" element={<AnalyzeView />} />
         <Route path="/assets" element={<AssetsView />} />
       </Route>
