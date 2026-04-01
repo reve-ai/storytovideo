@@ -122,6 +122,8 @@ interface PipelineState {
   scriptData: ScriptData | null;
   /** Live progress info for in-progress items, keyed by item ID. Cleared when item completes/fails. */
   itemProgress: Record<string, ItemProgress>;
+  /** Skipped shots from storyAnalysis, keyed by "sceneNumber:shotInScene" */
+  skippedShots: Record<string, boolean>;
   sseStatus: SSEStatus;
 }
 
@@ -154,19 +156,20 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   assets: null,
   scriptData: null,
   itemProgress: {},
+  skippedShots: {},
   sseStatus: "disconnected",
 
   fetchQueues: async (runId: string) => {
     try {
       const res = await fetch(`/api/runs/${runId}/queues`);
       if (!res.ok) return;
-      const data: { runId: string; queues: QueueSnapshot[] } =
+      const data: { runId: string; queues: QueueSnapshot[]; skippedShots?: Record<string, boolean> } =
         await res.json();
       const queues = { ...get().queues };
       for (const q of data.queues) {
         queues[q.queue] = q;
       }
-      set({ queues });
+      set({ queues, skippedShots: data.skippedShots ?? {} });
 
       // Compute runStartTime: earliest startedAt across all items
       let earliestStart: number | null = null;

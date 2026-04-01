@@ -23,6 +23,7 @@ export default function SceneSection({
   location,
   aspectRatio,
 }: SceneSectionProps) {
+  const skippedShots = usePipelineStore(s => s.skippedShots);
   const shotNums = new Set([
     ...sceneData.frames.keys(),
     ...sceneData.videos.keys(),
@@ -44,7 +45,7 @@ export default function SceneSection({
           const frameItem = sceneData.frames.get(shotNum);
           const videoItem = sceneData.videos.get(shotNum);
           const shot = (frameItem?.inputs?.shot ?? videoItem?.inputs?.shot) as Record<string, unknown> | undefined;
-          const isSkipped = Boolean(shot?.skipped);
+          const isSkipped = Boolean(skippedShots[`${sceneNum}:${shotNum}`]);
           const activeRunId = useRunStore.getState().activeRunId;
 
           return (
