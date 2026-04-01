@@ -16,6 +16,7 @@ import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
 import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
+import { getQueueConcurrency } from "./processors.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -1498,7 +1499,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
     // GET /api/capabilities
     if (method === "GET" && url.pathname === "/api/capabilities") {
-      sendJson(res, 200, { elevenLabsAvailable: isElevenLabsAvailable() });
+      sendJson(res, 200, {
+        elevenLabsAvailable: isElevenLabsAvailable(),
+        queueConcurrency: {
+          llm: getQueueConcurrency("llm"),
+          image: getQueueConcurrency("image"),
+          video: getQueueConcurrency("video"),
+        },
+      });
       return;
     }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { QueueName, QueueSnapshot } from "../stores/pipeline-store";
 import { computeActiveElapsed, computeETA, fmtDuration } from "../utils/eta";
 
@@ -9,6 +9,20 @@ interface ProgressBarProps {
 
 export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) {
   const [now, setNow] = useState(Date.now());
+  const [queueConcurrency, setQueueConcurrency] = useState<Record<QueueName, number> | undefined>();
+  const fetchedRef = useRef(false);
+
+  // Fetch queue concurrency once from capabilities endpoint
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    fetch("/api/capabilities")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.queueConcurrency) setQueueConcurrency(data.queueConcurrency);
+      })
+      .catch(() => {});
+  }, []);
 
   // Tick every second while there's a run in progress
   useEffect(() => {
@@ -37,7 +51,7 @@ export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) 
   const pct = Math.round((completedItems / totalItems) * 100);
   const allDone = completedItems === totalItems;
   const elapsedSec = runStartTime ? computeActiveElapsed(queues, now) : 0;
-  const eta = allDone ? null : computeETA(queues);
+  const eta = allDone ? null : computeETA(queues, queueConcurrency);
 
   let text = `${completedItems} / ${totalItems} items completed (${pct}%)`;
   if (runStartTime) {

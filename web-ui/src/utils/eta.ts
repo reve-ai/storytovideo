@@ -90,10 +90,13 @@ export function getAllItems(
 /**
  * Compute estimated remaining time in seconds.
  * Queues run in parallel so ETA is the max across queues.
+ * Within each queue, items run in parallel up to `concurrency` workers,
+ * so the per-queue estimate is divided by the concurrency.
  * Returns null when there's not enough data to estimate.
  */
 export function computeETA(
   queues: Record<QueueName, QueueSnapshot | null>,
+  queueConcurrency?: Record<QueueName, number>,
 ): number | null {
   const allItems = getAllItems(queues);
   if (allItems.length === 0) return null;
@@ -154,7 +157,10 @@ export function computeETA(
         hasEstimate = true;
       }
     }
-    if (hasEstimate) perQueueRemaining[qName] = queueEst;
+    if (hasEstimate) {
+      const concurrency = queueConcurrency?.[qName] ?? 1;
+      perQueueRemaining[qName] = queueEst / concurrency;
+    }
   }
 
   const estimates = Object.values(perQueueRemaining);
