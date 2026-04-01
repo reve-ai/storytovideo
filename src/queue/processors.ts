@@ -308,7 +308,7 @@ export class QueueProcessor extends EventEmitter {
     const llmProvider = (this.queueManager.getState().options?.llmProvider ?? 'anthropic') as LlmProvider;
     setLlmProvider(llmProvider);
     const storyText = item.inputs.storyText as string;
-    const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the name, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
+    const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the plain text name — no quotes, no markdown, no formatting, no asterisks, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
     this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: getLlmModelName('fast') });
     const limiter = rateLimiters.get(getLlmProviderName());
     await limiter.acquire();
@@ -318,7 +318,7 @@ export class QueueProcessor extends EventEmitter {
         prompt: namePrompt,
         maxTokens: 30,
       } as any);
-      const name = text.trim();
+      const name = text.trim().replace(/\*+/g, '').replace(/^["']+|["']+$/g, '').trim();
       this.queueManager.setRunName(name);
       return { name };
     } catch (error: any) {
