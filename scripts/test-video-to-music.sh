@@ -4,7 +4,7 @@ set -euo pipefail
 # Load env
 source .env
 
-RUN_DIR="output/runs/c37ca1a8-cd54-4041-b806-2d4034de1757"
+RUN_DIR="${1:-output/runs/c37ca1a8-cd54-4041-b806-2d4034de1757}"
 INPUT_VIDEO="$RUN_DIR/final.mp4"
 MUSIC_OUTPUT="$RUN_DIR/generated-music.mp3"
 FINAL_OUTPUT="$RUN_DIR/final-music.mp4"
