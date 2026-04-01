@@ -35,8 +35,9 @@ export async function initCompositorWasm(wasmUrl?: string | URL): Promise<void> 
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
       try {
-        // @ts-expect-error — WASM module may not be present; handled by try/catch
-        const module = await import("../wasm/compositor/compositor.js");
+        const wasmPath = "../wasm/compositor/compositor.js";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const module = await import(/* @vite-ignore */ wasmPath);
         if (wasmUrl) {
           await module.default(wasmUrl);
         } else {
