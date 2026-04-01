@@ -24,11 +24,16 @@ export default function SceneSection({
   aspectRatio,
 }: SceneSectionProps) {
   const skippedShots = usePipelineStore(s => s.skippedShots);
+  const existingShots = usePipelineStore(s => s.existingShots);
+  const hasExistingShots = Object.keys(existingShots).length > 0;
   const shotNums = new Set([
     ...sceneData.frames.keys(),
     ...sceneData.videos.keys(),
   ]);
-  const sortedShots = [...shotNums].sort((a, b) => a - b);
+  // Filter out orphaned shots that no longer exist in the current storyAnalysis
+  const sortedShots = [...shotNums]
+    .filter(shotNum => !hasExistingShots || existingShots[`${sceneNum}:${shotNum}`])
+    .sort((a, b) => a - b);
 
   return (
     <div className="story-scene">
