@@ -39,10 +39,10 @@ export default function StoryView() {
   const { sortedScenes, planByScene, aspectRatio } = useMemo(() => {
     const allItems = getAllItems(queues);
     const frameItems = allItems.filter(
-      (i) => i.type === "generate_frame" && i.status !== "superseded",
+      (i) => i.type === "generate_frame" && i.status !== "superseded" && i.status !== "cancelled",
     );
     const videoItems = allItems.filter(
-      (i) => i.type === "generate_video" && i.status !== "superseded",
+      (i) => i.type === "generate_video" && i.status !== "superseded" && i.status !== "cancelled",
     );
     const planItems = allItems.filter(
       (i) => i.type === "plan_shots" && i.status === "completed",

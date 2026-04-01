@@ -66,8 +66,9 @@ export default function ShotCard({
     setPlaying(false);
   }, []);
 
-  const status =
-    videoItem?.status ?? frameItem?.status ?? ("pending" as string);
+  const status = videoItem?.status
+    ?? (frameItem?.status === "completed" && !videoItem ? "generating_video" : frameItem?.status)
+    ?? ("pending" as string);
   const composition = shot.composition as string | undefined;
   const durationSeconds = shot.durationSeconds as number | undefined;
   const videoPrompt = (shot.videoPrompt ?? shot.actionPrompt) as string | undefined;

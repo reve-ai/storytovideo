@@ -160,6 +160,7 @@ body {
 .badge-failed { background: var(--red-dim); color: var(--red); }
 .badge-cancelled { background: var(--surface2); color: var(--gray); text-decoration: line-through; }
 .badge-superseded { background: var(--orange-dim); color: var(--orange); }
+.badge-generating_video { background: var(--purple-dim); color: var(--purple); }
 
 /* Video thumbnail with play overlay */
 .video-thumbnail {
