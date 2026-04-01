@@ -842,9 +842,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       }
 
       // POST /api/runs/:id/shots/:sceneNumber/:shotInScene/skip
-      if (method === "POST" && action === "shots" && pathParts.length >= 7 && pathParts[6] === "skip") {
-        const sceneNumber = parseInt(pathParts[4], 10);
-        const shotInScene = parseInt(pathParts[5], 10);
+      if (method === "POST" && action === "shots" && pathParts.length >= 8 && pathParts[7] === "skip") {
+        const sceneNumber = parseInt(pathParts[5], 10);
+        const shotInScene = parseInt(pathParts[6], 10);
         if (isNaN(sceneNumber) || isNaN(shotInScene)) {
           sendJson(res, 400, { error: "Invalid sceneNumber or shotInScene" });
           return;
