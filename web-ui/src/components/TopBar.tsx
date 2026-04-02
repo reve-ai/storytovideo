@@ -103,10 +103,19 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     if (importInputRef.current) importInputRef.current.value = "";
   }, [importRun]);
 
+  const queues = usePipelineStore((s) => s.queues);
+
+  // Check if there's any pending or in-progress work left
+  const hasPendingWork = (["llm", "image", "video"] as const).some((qName) => {
+    const q = queues[qName];
+    return q && ((q.pending?.length ?? 0) > 0 || (q.inProgress?.length ?? 0) > 0);
+  });
+
   const showPlayPause =
     runStatus === "running" ||
     runStatus === "stopped" ||
     runStatus === "stopping";
+  const playDisabled = runStatus === "stopped" && !hasPendingWork;
   const activeRun = runs.find((run) => run.id === activeRunId);
 
   return (
@@ -173,22 +182,16 @@ export default function TopBar({ onNewRun }: TopBarProps) {
             type="button"
             className={`play-pause-btn ${runStatus === "running" ? "running" : "stopped"}`}
             onClick={togglePlayPause}
+            disabled={playDisabled}
             title={
-              runStatus === "running" ? "Stop pipeline" : "Resume pipeline"
+              playDisabled
+                ? "Nothing left to process"
+                : runStatus === "running"
+                  ? "Stop pipeline"
+                  : "Resume pipeline"
             }
           >
             {runStatus === "running" ? "⏸" : "▶"}
-          </button>
-        )}
-
-        {activeRunId && (
-          <button
-            type="button"
-            className="delete-run-btn"
-            onClick={handleExport}
-            title="Export run as zip"
-          >
-            📦
           </button>
         )}
 
@@ -212,6 +215,16 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           +
         </button>
 
+        {activeRunId && (
+          <button
+            type="button"
+            className="delete-run-btn"
+            onClick={handleExport}
+            title="Export run as zip"
+          >
+            📦
+          </button>
+        )}
         <button
           type="button"
           onClick={() => importInputRef.current?.click()}
