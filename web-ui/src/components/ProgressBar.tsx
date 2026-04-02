@@ -184,16 +184,167 @@ function TimeBreakdownContent({ queues, elapsedSec }: { queues: Record<QueueName
 }
 
 // ---------------------------------------------------------------------------
-// Cost breakdown content
+// Items breakdown content
 // ---------------------------------------------------------------------------
 
-function CostBreakdownContent({ costSummary }: { costSummary: CostSummary }) {
+function computeItemsBreakdown(queues: Record<QueueName, QueueSnapshot | null>) {
+  const allItems: WorkItem[] = [];
+  for (const qName of ["llm", "image", "video"] as QueueName[]) {
+    const q = queues[qName];
+    if (!q) continue;
+    for (const bucket of [q.pending, q.inProgress, q.completed, q.failed, q.cancelled, q.superseded]) {
+      if (bucket) allItems.push(...bucket);
+    }
+  }
+
+  // Active items (exclude superseded/cancelled)
+  const active = allItems.filter((i) => i.status !== "superseded" && i.status !== "cancelled");
+
+  // By queue
+  const byQueue: Record<string, { total: number; completed: number; inProgress: number; failed: number; pending: number }> = {};
+  for (const item of active) {
+    if (!byQueue[item.queue]) byQueue[item.queue] = { total: 0, completed: 0, inProgress: 0, failed: 0, pending: 0 };
+    byQueue[item.queue].total += 1;
+    if (item.status === "completed") byQueue[item.queue].completed += 1;
+    else if (item.status === "in_progress") byQueue[item.queue].inProgress += 1;
+    else if (item.status === "failed") byQueue[item.queue].failed += 1;
+    else byQueue[item.queue].pending += 1;
+  }
+
+  // By type
+  const byType: Record<string, { total: number; completed: number; inProgress: number; failed: number; pending: number }> = {};
+  for (const item of active) {
+    if (!byType[item.type]) byType[item.type] = { total: 0, completed: 0, inProgress: 0, failed: 0, pending: 0 };
+    byType[item.type].total += 1;
+    if (item.status === "completed") byType[item.type].completed += 1;
+    else if (item.status === "in_progress") byType[item.type].inProgress += 1;
+    else if (item.status === "failed") byType[item.type].failed += 1;
+    else byType[item.type].pending += 1;
+  }
+
+  const totalActive = active.length;
+  const totalCompleted = active.filter((i) => i.status === "completed").length;
+  const totalInProgress = active.filter((i) => i.status === "in_progress").length;
+  const totalFailed = active.filter((i) => i.status === "failed").length;
+
+  return { byQueue, byType, totalActive, totalCompleted, totalInProgress, totalFailed };
+}
+
+const STATUS_DOT: Record<string, string> = {
+  completed: "text-green-400",
+  inProgress: "text-blue-400",
+  failed: "text-red-400",
+  pending: "text-[--muted]",
+};
+
+function StatusDots({ completed, inProgress, failed, pending }: { completed: number; inProgress: number; failed: number; pending: number }) {
+  const parts: ReactNode[] = [];
+  if (completed > 0) parts.push(<span key="c" className={STATUS_DOT.completed}>✓{completed}</span>);
+  if (inProgress > 0) parts.push(<span key="i" className={STATUS_DOT.inProgress}>▶{inProgress}</span>);
+  if (failed > 0) parts.push(<span key="f" className={STATUS_DOT.failed}>✗{failed}</span>);
+  if (pending > 0) parts.push(<span key="p" className={STATUS_DOT.pending}>○{pending}</span>);
+  return <span className="flex items-center gap-1.5 text-[10px] tabular-nums">{parts}</span>;
+}
+
+function ItemsBreakdownContent({ queues }: { queues: Record<QueueName, QueueSnapshot | null> }) {
+  const { byQueue, byType, totalActive, totalCompleted, totalInProgress, totalFailed } = computeItemsBreakdown(queues);
+  const queueEntries = Object.entries(byQueue).sort(([, a], [, b]) => b.total - a.total);
+  const typeEntries = Object.entries(byType).sort(([, a], [, b]) => b.total - a.total);
+
+  return (
+    <>
+      <div className="border-b border-[--border] px-3 py-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-[--foreground]">Items Breakdown</span>
+          <span className="text-sm font-bold text-[--accent]">{totalCompleted}/{totalActive}</span>
+        </div>
+        <span className="text-[10px] text-[--muted]">
+          {totalCompleted} done · {totalInProgress} running{totalFailed > 0 ? ` · ${totalFailed} failed` : ""} · {totalActive - totalCompleted - totalInProgress - totalFailed} pending
+        </span>
+      </div>
+
+      <div className="px-3 py-2">
+        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[--muted]">By Queue</div>
+        {queueEntries.map(([q, s]) => (
+          <div key={q} className="flex items-center justify-between py-0.5">
+            <span className="text-xs text-[--foreground]">
+              {QUEUE_EMOJI[q] ?? "·"} {QUEUE_LABELS[q] ?? q}
+              <span className="text-[--muted] ml-1">×{s.total}</span>
+            </span>
+            <StatusDots {...s} />
+          </div>
+        ))}
+      </div>
+
+      {typeEntries.length > 0 && (
+        <div className="border-t border-[--border] px-3 py-2">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[--muted]">By Step</div>
+          {typeEntries.map(([type, s]) => (
+            <div key={type} className="flex items-center justify-between py-0.5">
+              <span className="text-xs text-[--foreground] truncate mr-2">
+                {TYPE_LABELS[type] ?? type}
+                <span className="text-[--muted] ml-1">×{s.total}</span>
+              </span>
+              <StatusDots {...s} />
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cost breakdown content (with estimated total)
+// ---------------------------------------------------------------------------
+
+function estimateTotalCost(
+  costSummary: CostSummary,
+  queues: Record<QueueName, QueueSnapshot | null>,
+): number | null {
+  // For each queue (category), compute avg cost per completed item, then multiply by total items in that queue
+  let estimate = 0;
+  let hasData = false;
+
+  for (const qName of ["llm", "image", "video"] as QueueName[]) {
+    const q = queues[qName];
+    if (!q) continue;
+
+    const completedCount = (q.completed || []).length;
+    const totalCount = [q.pending, q.inProgress, q.completed, q.failed]
+      .reduce((s, bucket) => s + (bucket?.length ?? 0), 0);
+
+    if (totalCount === 0) continue;
+
+    // Map queue name to cost category
+    const categoryCost = costSummary.byCategory[qName] ?? 0;
+
+    if (completedCount > 0 && categoryCost > 0) {
+      const avgCostPerItem = categoryCost / completedCount;
+      estimate += avgCostPerItem * totalCount;
+      hasData = true;
+    } else {
+      // No completed items yet in this queue — can't estimate, add what we have
+      estimate += categoryCost;
+    }
+  }
+
+  return hasData ? estimate : null;
+}
+
+function CostBreakdownContent({ costSummary, queues }: { costSummary: CostSummary; queues: Record<QueueName, QueueSnapshot | null> }) {
   const categoryEntries = Object.entries(costSummary.byCategory)
     .filter(([, v]) => v > 0)
     .sort(([, a], [, b]) => b - a);
   const modelEntries = Object.entries(costSummary.byModel)
     .filter(([, v]) => v > 0)
     .sort(([, a], [, b]) => b - a);
+
+  const estimatedTotal = estimateTotalCost(costSummary, queues);
+  const allDone = (["llm", "image", "video"] as QueueName[]).every((qName) => {
+    const q = queues[qName];
+    return !q || ((q.pending?.length ?? 0) === 0 && (q.inProgress?.length ?? 0) === 0);
+  });
 
   return (
     <>
@@ -202,7 +353,12 @@ function CostBreakdownContent({ costSummary }: { costSummary: CostSummary }) {
           <span className="text-xs font-semibold text-[--foreground]">Cost Breakdown</span>
           <span className="text-sm font-bold text-[--accent]">{fmtCost(costSummary.totalUsd)}</span>
         </div>
-        <span className="text-[10px] text-[--muted]">{costSummary.entryCount} API calls</span>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-[--muted]">{costSummary.entryCount} API calls</span>
+          {!allDone && estimatedTotal !== null && estimatedTotal > costSummary.totalUsd && (
+            <span className="text-[10px] text-[--muted]">est. total ~{fmtCost(estimatedTotal)}</span>
+          )}
+        </div>
       </div>
 
       <div className="px-3 py-2">
@@ -250,7 +406,7 @@ interface ProgressBarProps {
 export default function ProgressBar({ queues, runStartTime, costSummary }: ProgressBarProps) {
   const [now, setNow] = useState(Date.now());
   const [queueConcurrency, setQueueConcurrency] = useState<Record<QueueName, number> | undefined>();
-  const [openPopover, setOpenPopover] = useState<"time" | "cost" | null>(null);
+  const [openPopover, setOpenPopover] = useState<"items" | "time" | "cost" | null>(null);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -293,7 +449,13 @@ export default function ProgressBar({ queues, runStartTime, costSummary }: Progr
   return (
     <div className="px-4 py-2">
       <div className="mb-1 flex items-center gap-1 text-xs text-[--muted]">
-        <span>{completedItems} / {totalItems} completed ({pct}%)</span>
+        <BreakdownPopover
+          open={openPopover === "items"}
+          onToggle={() => setOpenPopover((v) => v === "items" ? null : "items")}
+          label={<>📋 {completedItems}/{totalItems} ({pct}%)</>}
+        >
+          <ItemsBreakdownContent queues={queues} />
+        </BreakdownPopover>
 
         {hasTime && (
           <>
@@ -321,7 +483,7 @@ export default function ProgressBar({ queues, runStartTime, costSummary }: Progr
               onToggle={() => setOpenPopover((v) => v === "cost" ? null : "cost")}
               label={<>💰 {fmtCost(costSummary.totalUsd)}</>}
             >
-              <CostBreakdownContent costSummary={costSummary} />
+              <CostBreakdownContent costSummary={costSummary} queues={queues} />
             </BreakdownPopover>
           </>
         )}
