@@ -2144,7 +2144,7 @@ async function start(): Promise<void> {
   });
 
   // Start periodic git pull when idle
-  startGitAutoPull(runManager);
+  startGitAutoPull(runManager, server);
 }
 
 void start();

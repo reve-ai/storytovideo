@@ -1,5 +1,26 @@
 import { execSync, spawn } from "child_process";
+import type { Server } from "http";
 import type { RunManager } from "./run-manager.js";
+
+
+/**
+ * Close the HTTP server, then spawn a replacement process that inherits
+ * the terminal (not detached). The parent waits for the child to exit
+ * and forwards its exit code, so the shell never reclaims the prompt.
+ */
+function restart(httpServer: Server): void {
+  const args = [...process.execArgv, ...process.argv.slice(1)];
+  console.log(`[git-auto-pull] Restarting: ${process.execPath} ${args.join(" ")}`);
+
+  // Close the server so the port is freed before the child starts listening.
+  httpServer.close(() => {
+    const child = spawn(process.execPath, args, { stdio: "inherit" });
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
+  // Force-close idle keep-alive connections so .close() doesn't hang.
+  httpServer.closeAllConnections?.();
+}
 
 // ---------------------------------------------------------------------------
 // Git auto-pull & local-change detection: periodically pull when idle,
@@ -38,24 +59,6 @@ function isIdle(runManager: RunManager): boolean {
   return runs.every((r) => r.status !== "running" && r.status !== "stopping");
 }
 
-/**
- * Restart the process by spawning a replacement and exiting.
- *
- * When run via `npm run dev` → `tsx src/queue/queue-server.ts`, process.argv is:
- *   ["/path/to/node", "src/queue/queue-server.ts"]
- * but the tsx loader is registered via --import flags in process.execArgv.
- * We need to pass execArgv so the tsx loader is preserved.
- */
-function restart(): never {
-  const args = [...process.execArgv, ...process.argv.slice(1)];
-  console.log(`[git-auto-pull] Restarting: ${process.execPath} ${args.join(" ")}`);
-  const child = spawn(process.execPath, args, {
-    stdio: "inherit",
-    detached: true,
-  });
-  child.unref();
-  process.exit(0);
-}
 
 /**
  * Start the auto-pull loop. Call once at server startup.
@@ -65,7 +68,7 @@ function restart(): never {
  *  2. Compare current HEAD sha to the one recorded at startup (or last check).
  *     If it changed — from a pull, a local commit, a checkout, etc. — restart.
  */
-export function startGitAutoPull(runManager: RunManager): void {
+export function startGitAutoPull(runManager: RunManager, httpServer: Server): void {
   if (!isGitRepo()) {
     console.log("[git-auto-pull] Not a git repository — auto-pull disabled.");
     return;
@@ -89,7 +92,7 @@ export function startGitAutoPull(runManager: RunManager): void {
         `[git-auto-pull] HEAD changed: ${knownHead.slice(0, 8)} → ${head.slice(0, 8)} — restarting…`,
       );
       clearInterval(timer);
-      restart();
+      restart(httpServer);
     }
   }, POLL_INTERVAL_MS);
 
