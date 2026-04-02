@@ -134,14 +134,12 @@ export function VideoPreview() {
       style={{
         position: "relative",
         width: "100%",
-        maxHeight: 360,
-        aspectRatio: "16 / 9",
+        height: "100%",
         background: "#000",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
-        flexShrink: 0,
       }}
     >
       <video
