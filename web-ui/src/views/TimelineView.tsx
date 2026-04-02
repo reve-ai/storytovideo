@@ -127,13 +127,26 @@ export default function TimelineView() {
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <VideoPreview />
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 50,
+      paddingTop: 48, /* leave room for TopBar */
+    }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <VideoPreview />
+      </div>
       <div style={{
         display: "flex",
         alignItems: "center",
         gap: 8,
         padding: "4px 8px",
+        borderTop: "1px solid #333",
         borderBottom: "1px solid #333",
         background: "#1a1a1a",
         minHeight: 32,
@@ -190,7 +203,9 @@ export default function TimelineView() {
           <span style={{ fontSize: 13, color: "#ef4444" }}>✗ {musicError}</span>
         )}
       </div>
-      <CanvasTimeline />
+      <div style={{ height: 280, flexShrink: 0 }}>
+        <CanvasTimeline />
+      </div>
     </div>
   );
 }
