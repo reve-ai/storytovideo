@@ -1668,6 +1668,141 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // POST /api/runs/:id/regenerate-music — Generate new background music from timeline
+      if (method === "POST" && action === "regenerate-music" && pathParts.length === 4) {
+        if (!isElevenLabsAvailable()) {
+          sendJson(res, 400, { error: "ELEVENLABS_API_KEY is not configured" });
+          return;
+        }
+
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const outputDir = resolveOutputDir(run.outputDir);
+
+        try {
+          // Check if timeline-export.mp4 already exists; if not, export it first
+          let videoPath = join(outputDir, "timeline-export.mp4");
+          if (!existsSync(videoPath)) {
+            // Need to export timeline first
+            const timelinePath = join(outputDir, "timeline_state.json");
+            if (!existsSync(timelinePath)) {
+              sendJson(res, 404, { error: "No saved timeline state — open the timeline and make edits first" });
+              return;
+            }
+
+            const raw = readFileSync(timelinePath, "utf-8");
+            const timeline = JSON.parse(raw) as {
+              clips: Array<{
+                id: string;
+                type: string;
+                startTime: number;
+                duration: number;
+                inPoint?: number;
+                assetId?: string;
+                speed?: number;
+              }>;
+              crossTransitions?: Array<{
+                id: string;
+                outgoingClipId: string;
+                incomingClipId: string;
+                duration: number;
+                type: string;
+                boundary: number;
+              }>;
+            };
+
+            const videoClips = timeline.clips
+              .filter((c) => c.type === "video" && c.assetId)
+              .sort((a, b) => a.startTime - b.startTime);
+
+            if (videoClips.length === 0) {
+              sendJson(res, 400, { error: "No video clips found in timeline" });
+              return;
+            }
+
+            const tempDir = join(outputDir, "_timeline_export_temp");
+            mkdirSync(tempDir, { recursive: true });
+
+            const videoPaths: string[] = [];
+            for (const clip of videoClips) {
+              const assetId = clip.assetId!;
+              const mediaPrefix = `/api/runs/${runId}/media/`;
+              let relativePath: string;
+              if (assetId.startsWith(mediaPrefix)) {
+                relativePath = assetId.slice(mediaPrefix.length);
+              } else if (assetId.startsWith("/api/runs/")) {
+                const parts = assetId.split("/media/");
+                relativePath = parts.length > 1 ? parts[1] : assetId;
+              } else {
+                relativePath = assetId;
+              }
+
+              const sourcePath = join(outputDir, decodeURIComponent(relativePath));
+              if (!existsSync(sourcePath)) {
+                sendJson(res, 400, { error: `Video file not found: ${relativePath}` });
+                return;
+              }
+
+              const needsTrim = (clip.inPoint && clip.inPoint > 0);
+              if (needsTrim) {
+                const trimmedPath = join(tempDir, `trim_${clip.id}.mp4`);
+                const ssArgs: string[] = [];
+                if (clip.inPoint && clip.inPoint > 0) {
+                  ssArgs.push("-ss", String(clip.inPoint));
+                }
+                ssArgs.push("-t", String(clip.duration));
+
+                await execFileAsync("ffmpeg", [
+                  ...ssArgs,
+                  "-i", sourcePath,
+                  "-c", "copy",
+                  "-y",
+                  trimmedPath,
+                ]);
+                videoPaths.push(trimmedPath);
+              } else {
+                videoPaths.push(sourcePath);
+              }
+            }
+
+            const transitions: Array<{ type: "cut" | "fade_black"; durationMs: number }> = [];
+            const crossTransitions = timeline.crossTransitions ?? [];
+            for (let i = 1; i < videoClips.length; i++) {
+              const ct = crossTransitions.find(
+                (t) => t.incomingClipId === videoClips[i].id && t.outgoingClipId === videoClips[i - 1].id
+              );
+              if (ct && ct.type !== "Cut") {
+                transitions.push({ type: "fade_black", durationMs: ct.duration * 1000 });
+              } else {
+                transitions.push({ type: "cut", durationMs: 0 });
+              }
+            }
+
+            await assembleVideo({
+              videoPaths,
+              transitions,
+              outputDir,
+              outputFile: "timeline-export.mp4",
+            });
+
+            // Clean up temp directory
+            try {
+              const { rmSync } = await import("fs");
+              rmSync(tempDir, { recursive: true, force: true });
+            } catch { /* ignore cleanup errors */ }
+          }
+
+          const musicPath = join(outputDir, "generated-music.mp3");
+          await generateMusicFromVideo(videoPath, musicPath);
+          sendJson(res, 200, { success: true, path: "generated-music.mp3" });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[regenerate-music] Error:", msg);
+          sendJson(res, 500, { error: msg });
+        }
+        return;
+      }
+
       // POST /api/runs/:id/scenes/:sceneNumber/redo
       if (method === "POST" && action === "scenes" && pathParts.length >= 6 && pathParts[5] === "redo") {
         const sceneNumber = parseInt(pathParts[4], 10);

@@ -44,6 +44,8 @@ export default function TimelineView() {
   const [exportState, setExportState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [exportError, setExportError] = useState<string>("");
   const [exportPath, setExportPath] = useState<string>("");
+  const [musicState, setMusicState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [musicError, setMusicError] = useState<string>("");
 
   // Wire up auto-save to persist timeline state to the server
   useAutoSave(activeRunId ?? "");
@@ -66,6 +68,25 @@ export default function TimelineView() {
       setExportState("error");
     }
   }, [activeRunId, exportState]);
+
+  const handleRegenerateMusic = useCallback(async () => {
+    if (!activeRunId || musicState === "loading") return;
+    setMusicState("loading");
+    setMusicError("");
+    try {
+      const resp = await fetch(`/api/runs/${activeRunId}/regenerate-music`, { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || "Music generation failed");
+      }
+      setMusicState("done");
+      // Auto-clear success message after 5s
+      setTimeout(() => setMusicState("idle"), 5000);
+    } catch (err) {
+      setMusicError(err instanceof Error ? err.message : "Music generation failed");
+      setMusicState("error");
+    }
+  }, [activeRunId, musicState]);
 
   // Load saved timeline state or populate from pipeline on mount / run change
   useEffect(() => {
@@ -145,6 +166,28 @@ export default function TimelineView() {
         )}
         {exportState === "error" && (
           <span style={{ fontSize: 13, color: "#ef4444" }}>✗ {exportError}</span>
+        )}
+        <button
+          onClick={handleRegenerateMusic}
+          disabled={musicState === "loading"}
+          style={{
+            padding: "4px 12px",
+            fontSize: 13,
+            borderRadius: 4,
+            border: "none",
+            background: musicState === "loading" ? "#555" : "#7c3aed",
+            color: "#fff",
+            cursor: musicState === "loading" ? "not-allowed" : "pointer",
+            marginLeft: 4,
+          }}
+        >
+          {musicState === "loading" ? "Generating music…" : "🎵 Regenerate Music"}
+        </button>
+        {musicState === "done" && (
+          <span style={{ fontSize: 13, color: "#22c55e" }}>✓ Music generated</span>
+        )}
+        {musicState === "error" && (
+          <span style={{ fontSize: 13, color: "#ef4444" }}>✗ {musicError}</span>
         )}
       </div>
       <CanvasTimeline />
