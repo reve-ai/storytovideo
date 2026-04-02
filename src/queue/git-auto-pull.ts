@@ -80,10 +80,9 @@ export function startGitAutoPull(runManager: RunManager, httpServer: Server): vo
   );
 
   const timer = setInterval(() => {
-    // Always pull when idle (safe no-op if already up to date)
-    if (isIdle(runManager)) {
-      gitPull();
-    }
+    if (!isIdle(runManager)) return; // busy — skip everything
+
+    gitPull();
 
     // Check for ANY head change — pull, local commit, checkout, rebase, etc.
     const head = currentHead();
