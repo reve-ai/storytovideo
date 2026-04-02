@@ -126,7 +126,14 @@ For this scene:
 18. MID-SHOT FACE REVEAL BAN: The video model CANNOT generate a correct face that is not already visible in the start frame. If a character is facing away, shown from behind, or otherwise has their face hidden in the startFramePrompt, the videoPrompt MUST NOT describe them turning around, looking over their shoulder toward camera, or otherwise revealing their face during the shot. The resulting face will be randomly generated and will not match the character. If you need to show a character's face after a behind-the-subject shot, create a NEW shot with continuousFromPrevious=false so the start frame is generated fresh from reference images with the character's face visible. Similarly, if a character enters the shot during the video (walks into frame), do NOT describe their face becoming visible — either start the shot with them already in frame (face visible in startFramePrompt) or keep them out of frame entirely and show them in the next shot.
 19. DIALOGUE PLACEMENT: In videoPrompt, describe all visual blocking and action BEFORE dialogue. The video model handles sequential actions well, so structure each shot as: physical movement and gestures first, then spoken lines. Example: "The man holds both hands out in a calming gesture, looking off-screen right. He says: 'Now, now. I'll ask the Microvac right now.'" — not "He says 'Now, now' while holding his hands out."
 20. ACTION COMPLEXITY: Limit each shot to at most 2 simultaneously active characters performing independent actions. If more characters need to act independently, split into separate shots — e.g., a reaction shot of the children, then cut to parents watching. Wide establishing shots can show multiple characters but only 1-2 should have complex independent motion.
-21. MOTION INTENSITY: Use adverbs of degree to specify how actions should be performed — "slowly reaches", "rapidly turns", "gently places", "violently shakes", "powerfully stands". The video model responds strongly to motion intensity words and produces better results with explicit degree modifiers.`;
+21. MOTION INTENSITY: Use adverbs of degree to specify how actions should be performed — "slowly reaches", "rapidly turns", "gently places", "violently shakes", "powerfully stands". The video model responds strongly to motion intensity words and produces better results with explicit degree modifiers.
+22. PACING AND TEMPO: The overall tempo should be FAST. Think trailer editing, not art house cinema. Every shot must have visible action, dialogue, or meaningful visual change happening throughout its duration. Apply these rules aggressively:
+   - NO DEAD AIR: If a shot has no dialogue and no meaningful action (just a character standing, sitting, or looking), either cut it entirely or merge it into an adjacent shot. The only exception is a rare, deliberate dramatic beat — and even then, keep it to 2-3 seconds max.
+   - CUT FAST: Default to the shortest duration that fits the content. If a shot could work at 3s or 5s, use 3s. Audiences process visuals faster than you think.
+   - EARN EVERY SECOND: Before finalizing any shot longer than 4 seconds, verify that something is happening for the ENTIRE duration — not just the first half. A 6-second shot where the character acts for 3 seconds then holds still is really a 3-second shot.
+   - ESTABLISHING SHOTS ARE SHORT: Wide establishing shots should be 2-3 seconds — just long enough to orient the viewer — then cut to the action. Don't linger.
+   - REACTION SHOTS ARE SHORT: A character reacting (nodding, smiling, looking surprised) is 2-3 seconds, not 5.
+   - PREFER MORE CUTS OVER LONGER SHOTS: 3 shots at 3 seconds each is almost always better than 1 shot at 9 seconds. More angles = more visual energy.`;
 
 // ---- Video prompt constants (from generate-video.ts) ----
 
@@ -166,7 +173,7 @@ For each character, provide vivid physical descriptions that will help generate 
 IMPORTANT: If any character in the story is a real person or celebrity, you MUST rename them to an original fictional name that reflects their personality or role in the story. For example, a tech visionary named "Elon Musk" might become "Nova Sparks", a cooking show host named "Gordon Ramsay" might become "Blaze Thornton". NEVER use real people's names — always invent creative fictional names. Also ensure physical descriptions are completely original and do not resemble any real person.
 For each location, describe the visual mood, lighting, and key objects.
 For each object, describe its shape, color, size, material, and distinguishing visual features. Objects are products, props, vehicles, or key items that appear repeatedly or are important to the story. Only include objects that would benefit from having a consistent reference image.
-Estimate scene duration based on action density and dialogue length.
+Estimate scene duration based on action density and dialogue length. Keep durations TIGHT — default to the minimum time needed to cover the dialogue and key actions. A scene with one short exchange and a reaction should be 10-15 seconds, not 30. Scenes with no dialogue and simple action (walking, arriving, looking around) should be 5-10 seconds. Only scenes with substantial dialogue or complex multi-character action should exceed 20 seconds.
 Unless the story explicitly specifies an art style, default to "photorealistic" for the visual art style.
 In scene narrativeSummary, do NOT include actions by unnamed characters like waiters, servers, or background extras. Only describe actions by the named characters. Instead of 'A waiter pours wine', write 'Wine is poured into their glasses'.
 
@@ -225,9 +232,11 @@ export const STORY_TO_SCRIPT_PROMPT_PREFIX = `You are a screenwriter adapting a 
 Rules:
 - "Show, don't tell." If the story says "she was nervous," describe her fidgeting, avoiding eye contact, tapping her fingers.
 - If the story says "they had been friends for years," show a brief flashback or have dialogue that implies their history.
-- Expand thin scenes into proper dramatic beats with setting, action, and emotion.
-- Add dialogue where the story only summarizes conversations. Make it sound natural and character-appropriate.
-- Maintain the story's tone, themes, and pacing. Don't change the plot.
+- Fill out thin scenes with specific visual actions and dialogue, but do NOT pad them. A scene that can be told in 3 beats should not become 6. Add detail to what's there, don't invent filler.
+- Add dialogue where the story only summarizes conversations. Make it sound natural and character-appropriate. Keep dialogue TIGHT — real people don't give speeches. Short exchanges, quick back-and-forth.
+- PACING IS KING. The script should move fast. Cut transitions, cut throat-clearing, cut "settling in" moments. Start each scene as late as possible (in medias res) and end it as soon as the point is made. If a scene's purpose is "character arrives at location," don't spend 3 paragraphs on them walking up, opening the door, and looking around — start with them already there, already doing the interesting thing.
+- Do NOT create scenes where nothing happens. A character "reflecting" or "taking in the view" or "sitting quietly" is not a scene — it's dead air. Either give them dialogue, an action, or a decision to make, or cut it.
+- Maintain the story's tone and themes. Don't change the plot.
 - Keep it grounded — don't add spectacle or events that weren't implied by the original.
 - Write in prose script format (not screenplay format). Describe what we SEE and HEAR.
 - Each scene should have a clear visual setting, character actions, and sensory details.
