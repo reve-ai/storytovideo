@@ -71,8 +71,8 @@ export interface EditableTrack {
   type: "video" | "audio";
   /** Optional custom name - if not set, derive from position (e.g., "Video 1", "Audio 2") */
   name?: string;
-  /** ID of the paired track (video tracks link to audio, audio to video) */
-  pairedTrackId: string;
+  /** ID of the paired track (video tracks link to audio, audio to video). Undefined for standalone audio tracks. */
+  pairedTrackId?: string;
   muted: boolean;
   locked: boolean;
   /** Volume level for audio tracks (0-1) */
@@ -155,7 +155,42 @@ export function addTrackPair(
 }
 
 /**
- * Remove a track pair (video + audio) and all clips on those tracks.
+ * Create a standalone audio track (not paired with a video track).
+ *
+ * @param tracks - Existing tracks
+ * @param audioTrackId - ID for the new audio track
+ * @param name - Optional name for the track
+ * @returns New tracks array with the standalone audio track added
+ */
+export function addStandaloneAudioTrack(
+  tracks: readonly EditableTrack[],
+  audioTrackId: string,
+  name?: string,
+): { tracks: EditableTrack[]; result: EditableTrack } {
+  // Use the next available index for audio tracks
+  const audioTracks = tracks.filter((t) => t.type === "audio");
+  const maxAudioIndex = audioTracks.length > 0 ? Math.max(...audioTracks.map((t) => t.index)) : -1;
+  const newIndex = maxAudioIndex + 1;
+
+  const audioTrack: EditableTrack = {
+    id: audioTrackId,
+    index: newIndex,
+    type: "audio",
+    name,
+    pairedTrackId: undefined,
+    muted: false,
+    locked: false,
+    volume: 1,
+  };
+
+  return {
+    tracks: [...tracks, audioTrack],
+    result: audioTrack,
+  };
+}
+
+/**
+ * Remove a track (or track pair if paired) and all clips on those tracks.
  *
  * When removing a track, both the video and audio tracks are removed,
  * along with all clips that belong to those tracks.
@@ -176,8 +211,9 @@ export function removeTrackPair<T extends EditableClip>(
     return { tracks: [...tracks], clips: [...clips] };
   }
 
-  // Get both track IDs (the track and its pair)
-  const trackIdsToRemove = new Set([track.id, track.pairedTrackId]);
+  // Get both track IDs (the track and its pair, if it has one)
+  const trackIdsToRemove = new Set<string>([track.id]);
+  if (track.pairedTrackId) trackIdsToRemove.add(track.pairedTrackId);
 
   // Get the index of the video track being removed
   const videoTrack =
@@ -293,7 +329,8 @@ export function muteTrackPair(
   const track = tracks.find((t) => t.id === trackId);
   if (!track) return [...tracks];
 
-  const trackIds = new Set([track.id, track.pairedTrackId]);
+  const trackIds = new Set<string>([track.id]);
+  if (track.pairedTrackId) trackIds.add(track.pairedTrackId);
   return tracks.map((t) => (trackIds.has(t.id) ? { ...t, muted } : t));
 }
 
@@ -313,7 +350,8 @@ export function lockTrackPair(
   const track = tracks.find((t) => t.id === trackId);
   if (!track) return [...tracks];
 
-  const trackIds = new Set([track.id, track.pairedTrackId]);
+  const trackIds = new Set<string>([track.id]);
+  if (track.pairedTrackId) trackIds.add(track.pairedTrackId);
   return tracks.map((t) => (trackIds.has(t.id) ? { ...t, locked } : t));
 }
 
@@ -362,8 +400,15 @@ export function validateTracks(tracks: readonly EditableTrack[]): {
 } {
   const errors: string[] = [];
 
-  // Check each track has a valid pair
+  // Check each track has a valid pair (standalone audio tracks skip this check)
   for (const track of tracks) {
+    if (!track.pairedTrackId) {
+      // Standalone audio track — no pair needed
+      if (track.type !== "audio") {
+        errors.push(`Track "${track.id}" is a video track without a paired audio track`);
+      }
+      continue;
+    }
     const pair = tracks.find((t) => t.id === track.pairedTrackId);
     if (!pair) {
       errors.push(`Track "${track.id}" has invalid pairedTrackId "${track.pairedTrackId}"`);

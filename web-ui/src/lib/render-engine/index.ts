@@ -103,6 +103,7 @@ export {
   removeCrossTransitionsForClip,
   // Track operations
   addTrackPair,
+  addStandaloneAudioTrack,
   removeTrackPair,
   reorderTrackPair,
   updateTrack,

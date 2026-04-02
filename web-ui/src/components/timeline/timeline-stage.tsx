@@ -47,7 +47,7 @@ interface TimelineTrack {
   type: "video" | "audio";
   name: string;
   index: number;
-  pairedTrackId: string;
+  pairedTrackId?: string;
   muted: boolean;
   locked: boolean;
 }
@@ -313,6 +313,14 @@ export function TimelineStage({
     trackHeight: number;
   } | null>(null);
 
+  // Pending regeneration confirmation after trim
+  const [pendingRegen, setPendingRegen] = useState<{
+    clipId: string;
+    clipName: string;
+    originalDuration: number;
+    newDuration: number;
+  } | null>(null);
+
   // Store state
   const zoom = useVideoEditorStore((s) => s.zoom);
   const scrollX = useVideoEditorStore((s) => s.scrollX);
@@ -347,6 +355,9 @@ export function TimelineStage({
   const selectedCrossTransition = useVideoEditorStore((s) => s.selectedCrossTransition);
   const setSelectedCrossTransition = useVideoEditorStore((s) => s.setSelectedCrossTransition);
   const updateCrossTransitionDuration = useVideoEditorStore((s) => s.updateCrossTransitionDuration);
+  const updateClipAssetDuration = useVideoEditorStore((s) => s.updateClipAssetDuration);
+  const selectedTrackId = useVideoEditorStore((s) => s.selectedTrackId);
+  const setSelectedTrackId = useVideoEditorStore((s) => s.setSelectedTrackId);
 
   // Combine tracks with full IDs - video tracks first (sorted by index descending), then audio tracks (sorted by index ascending)
   const allTracks = useMemo<TimelineTrack[]>(() => {
@@ -1157,17 +1168,12 @@ export function TimelineStage({
               });
             }
           } else {
-            let maxDuration = Infinity;
-            if (assetDuration !== undefined) {
-              maxDuration = (assetDuration - originalInPoint) / speed;
-            }
-
-            let newDuration = Math.max(0.1, Math.min(maxDuration, originalDuration + deltaTime));
+            // Allow trimming beyond asset duration — user will be prompted to regenerate if needed
+            let newDuration = Math.max(0.1, originalDuration + deltaTime);
 
             const endTime = originalStartTime + newDuration;
             const snapResult = snapTime(endTime, snapTargetsRef.current, thresholdTime);
-            newDuration = snapResult.time - originalStartTime;
-            newDuration = Math.max(0.1, Math.min(maxDuration, newDuration));
+            newDuration = Math.max(0.1, snapResult.time - originalStartTime);
             setSnapLines(snapResult.snapLines);
 
             setTrimPreview({
@@ -1645,7 +1651,32 @@ export function TimelineStage({
           if (edge === "left") {
             trimLeft(clipId, trimPreview.startTime);
           } else {
-            trimRight(clipId, trimPreview.duration);
+            const clip = clips.find((c) => c.id === clipId);
+            const newDuration = trimPreview.duration;
+
+            // Check if the trim extends beyond the asset duration
+            if (
+              clip &&
+              "assetDuration" in clip &&
+              clip.assetDuration !== undefined &&
+              Math.abs(newDuration - clip.duration) > 0.01
+            ) {
+              const maxAssetDuration = (clip.assetDuration - clip.inPoint) / clip.speed;
+              if (newDuration > maxAssetDuration + 0.01) {
+                // Exceeds asset duration — ask for regeneration
+                trimRight(clipId, newDuration);
+                setPendingRegen({
+                  clipId,
+                  clipName: clip.name || "Clip",
+                  originalDuration: clip.duration,
+                  newDuration,
+                });
+              } else {
+                trimRight(clipId, newDuration);
+              }
+            } else {
+              trimRight(clipId, newDuration);
+            }
           }
         }
         setTrimPreview(null);
@@ -2110,7 +2141,24 @@ export function TimelineStage({
     ],
   );
 
+  // Regen dialog handlers
+  const handleRegenConfirm = useCallback(() => {
+    if (!pendingRegen) return;
+    // Keep the new duration and update the asset duration to match
+    // This signals that the clip needs regeneration with the new duration
+    updateClipAssetDuration(pendingRegen.clipId, pendingRegen.newDuration);
+    setPendingRegen(null);
+  }, [pendingRegen, updateClipAssetDuration]);
+
+  const handleRegenCancel = useCallback(() => {
+    if (!pendingRegen) return;
+    // Revert the trim to the original duration
+    trimRight(pendingRegen.clipId, pendingRegen.originalDuration);
+    setPendingRegen(null);
+  }, [pendingRegen, trimRight]);
+
   return (
+    <>
     <Stage
       ref={stageRef}
       width={width}
@@ -2550,23 +2598,40 @@ export function TimelineStage({
 
           const LockIcon = track.locked ? KonvaLockIcon : KonvaLockOpenIcon;
 
+          const isTrackSelected = selectedTrackId === track.fullId;
+
           return (
             <Group key={track.fullId}>
+              {/* Track header background - clickable to select track */}
               <Rect
                 x={0}
                 y={y}
                 width={TRACK_HEADER_WIDTH}
                 height={TRACK_HEIGHT}
-                fill={COLORS.headerBackground}
-                stroke={COLORS.headerBorder}
-                strokeWidth={1}
+                fill={isTrackSelected ? "#1e3a5f" : COLORS.headerBackground}
+                stroke={isTrackSelected ? "#3b82f6" : COLORS.headerBorder}
+                strokeWidth={isTrackSelected ? 2 : 1}
+                onClick={() => setSelectedTrackId(isTrackSelected ? null : track.fullId)}
+                onTap={() => setSelectedTrackId(isTrackSelected ? null : track.fullId)}
               />
+              {/* Selected indicator bar */}
+              {isTrackSelected && (
+                <Rect
+                  x={0}
+                  y={y}
+                  width={3}
+                  height={TRACK_HEIGHT}
+                  fill="#3b82f6"
+                  listening={false}
+                />
+              )}
               <Text
                 x={12}
                 y={y + TRACK_HEIGHT / 2 - 6}
                 text={track.name}
                 fontSize={12}
-                fill={COLORS.headerText}
+                fill={isTrackSelected ? "#93c5fd" : COLORS.headerText}
+                listening={false}
               />
 
               {/* Mute button */}
@@ -2643,5 +2708,35 @@ export function TimelineStage({
         )}
       </Layer>
     </Stage>
+
+    {/* Regeneration confirmation dialog */}
+    {pendingRegen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 max-w-md shadow-xl">
+          <h3 className="text-white text-lg font-semibold mb-2">Regenerate Clip?</h3>
+          <p className="text-zinc-300 text-sm mb-4">
+            You've extended <strong>{pendingRegen.clipName}</strong> beyond its current duration
+            ({pendingRegen.originalDuration.toFixed(1)}s → {pendingRegen.newDuration.toFixed(1)}s).
+            <br /><br />
+            This requires regenerating the clip with the new duration. Do you want to proceed?
+          </p>
+          <div className="flex gap-3 justify-end">
+            <button
+              className="px-4 py-2 text-sm rounded-md bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors"
+              onClick={handleRegenCancel}
+            >
+              No, reset size
+            </button>
+            <button
+              className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+              onClick={handleRegenConfirm}
+            >
+              Yes, regenerate
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

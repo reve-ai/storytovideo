@@ -11,7 +11,7 @@ import {
   addAssetsToStores,
 } from "./use-asset-store";
 import { TRACK_HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from "./constants";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, MusicIcon, VideoIcon } from "lucide-react";
 
 /**
  * Canvas-based timeline component.
@@ -71,6 +71,8 @@ export function CanvasTimeline() {
   const linkClipPair = useVideoEditorStore((s) => s.linkClipPair);
   const clips = useVideoEditorStore((s) => s.clips);
   const addTrack = useVideoEditorStore((s) => s.addTrack);
+  const addAudioTrack = useVideoEditorStore((s) => s.addAudioTrack);
+  const cutSelectedClips = useVideoEditorStore((s) => s.cutSelectedClips);
   const setActiveTool = useVideoEditorStore((s) => s.setActiveTool);
   const setClipTransitionIn = useVideoEditorStore((s) => s.setClipTransitionIn);
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
@@ -136,6 +138,13 @@ export function CanvasTimeline() {
       if ((e.metaKey || e.ctrlKey) && e.key === "c") {
         e.preventDefault();
         copySelectedClips();
+        return;
+      }
+
+      // Cmd/Ctrl+X: Cut selected clips
+      if ((e.metaKey || e.ctrlKey) && e.key === "x") {
+        e.preventDefault();
+        cutSelectedClips();
         return;
       }
 
@@ -246,6 +255,7 @@ export function CanvasTimeline() {
     undo,
     redo,
     copySelectedClips,
+    cutSelectedClips,
     pasteClipsAtPlayhead,
     selectedTransition,
     setClipTransitionIn,
@@ -961,15 +971,25 @@ export function CanvasTimeline() {
         />
       )}
 
-      {/* Add track button (top-left corner) */}
-      <Button
-        size="sm"
-        onClick={() => addTrack()}
-        className="absolute left-2 top-2 z-10 px-2 py-0 h-6"
-        title="Add track pair"
-      >
-        <PlusIcon className="size-2" /> Track
-      </Button>
+      {/* Add track buttons (top-left corner) */}
+      <div className="absolute left-2 top-2 z-10 flex gap-1">
+        <Button
+          size="sm"
+          onClick={() => addTrack()}
+          className="px-2 py-0 h-6"
+          title="Add video + audio track pair"
+        >
+          <VideoIcon className="size-3" /> <PlusIcon className="size-2" />
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => addAudioTrack()}
+          className="px-2 py-0 h-6"
+          title="Add audio-only track"
+        >
+          <MusicIcon className="size-3" /> <PlusIcon className="size-2" />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -31,6 +31,7 @@ import {
   type CrossTransitionType,
   type AudioEffectsParams,
   addTrackPair,
+  addStandaloneAudioTrack,
   removeTrackPair,
   addClip,
   removeClipWithLinked,
@@ -187,8 +188,13 @@ interface VideoEditorState {
   selectedTransition: { clipId: string; edge: "in" | "out" } | null;
   selectedCrossTransition: string | null;
 
+  // Track selection (for paste targeting, not tracked by undo/redo)
+  selectedTrackId: string | null;
+
   // Clipboard (not tracked by undo/redo)
   clipboard: EditorClip[];
+  /** Whether the clipboard was from a cut (copy + delete) */
+  clipboardIsCut: boolean;
 
   // View state
   zoom: number;
@@ -232,12 +238,18 @@ interface VideoEditorState {
   setSelectedCrossTransition: (id: string | null) => void;
   clearSelection: () => void;
 
+  // Actions - Track Selection
+  setSelectedTrackId: (trackId: string | null) => void;
+
   // Actions - Clipboard
   copySelectedClips: () => void;
+  /** Cut = copy + delete. Supports cutting only audio or only video clips. */
+  cutSelectedClips: (filter?: "all" | "audio" | "video") => void;
   pasteClipsAtPlayhead: () => void;
 
   // Actions - Tracks
   addTrack: () => { videoTrackId: string; audioTrackId: string };
+  addAudioTrack: () => string;
   removeTrack: (trackId: string) => void;
   toggleTrackMuted: (trackId: string) => void;
   toggleTrackLocked: (trackId: string) => void;
@@ -272,6 +284,9 @@ interface VideoEditorState {
     effectType: keyof AudioEffectsParams,
     enabled: boolean,
   ) => void;
+
+  /** Update the asset duration on a clip (used when regeneration changes the source duration) */
+  updateClipAssetDuration: (clipId: string, assetDuration: number) => void;
 
   // Actions - Text clips
   updateClipText: (clipId: string, text: string) => void;
@@ -647,7 +662,9 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         selectedClipIds: [],
         selectedTransition: null,
         selectedCrossTransition: null,
+        selectedTrackId: null,
         clipboard: [],
+        clipboardIsCut: false,
 
         zoom: 50,
         scrollX: 0,
@@ -733,12 +750,92 @@ export const useVideoEditorStore = create<VideoEditorState>()(
         clearSelection: () =>
           set({ selectedClipIds: [], selectedTransition: null, selectedCrossTransition: null }),
 
+        // Track selection
+        setSelectedTrackId: (trackId) => set({ selectedTrackId: trackId }),
+
         // Clipboard actions
         copySelectedClips: () => {
           const state = get();
           if (state.selectedClipIds.length === 0) return;
           const clipsToCopy = state.clips.filter((c) => state.selectedClipIds.includes(c.id));
-          set({ clipboard: clipsToCopy });
+          set({ clipboard: clipsToCopy, clipboardIsCut: false });
+        },
+
+        cutSelectedClips: (filter = "all") => {
+          const state = get();
+          if (state.selectedClipIds.length === 0) return;
+
+          // Get selected clips (and their linked clips if "all")
+          const selectedClips = state.clips.filter((c) => state.selectedClipIds.includes(c.id));
+
+          let clipsToCut: EditorClip[];
+          let clipIdsToRemove: Set<string>;
+
+          if (filter === "audio") {
+            // Cut only audio clips from the selection
+            clipsToCut = selectedClips.filter((c) => c.type === "audio");
+            // Also include audio clips linked to selected video clips
+            for (const clip of selectedClips) {
+              if (clip.type !== "audio" && clip.linkedClipId) {
+                const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+                if (linked && linked.type === "audio" && !clipsToCut.includes(linked)) {
+                  clipsToCut.push(linked);
+                }
+              }
+            }
+            clipIdsToRemove = new Set(clipsToCut.map((c) => c.id));
+          } else if (filter === "video") {
+            // Cut only video clips from the selection
+            clipsToCut = selectedClips.filter((c) => c.type !== "audio");
+            // Also include video clips linked to selected audio clips
+            for (const clip of selectedClips) {
+              if (clip.type === "audio" && clip.linkedClipId) {
+                const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+                if (linked && linked.type !== "audio" && !clipsToCut.includes(linked)) {
+                  clipsToCut.push(linked);
+                }
+              }
+            }
+            clipIdsToRemove = new Set(clipsToCut.map((c) => c.id));
+          } else {
+            // Cut all selected clips and their linked clips
+            clipsToCut = [...selectedClips];
+            clipIdsToRemove = new Set(clipsToCut.map((c) => c.id));
+            for (const clip of clipsToCut) {
+              if (clip.linkedClipId) {
+                clipIdsToRemove.add(clip.linkedClipId);
+                const linked = state.clips.find((c) => c.id === clip.linkedClipId);
+                if (linked && !clipsToCut.includes(linked)) {
+                  clipsToCut.push(linked);
+                }
+              }
+            }
+          }
+
+          if (clipsToCut.length === 0) return;
+
+          // Unlink clips that are being cut from clips that are staying
+          let newClips = [...state.clips];
+          for (const cutClip of clipsToCut) {
+            if (cutClip.linkedClipId && !clipIdsToRemove.has(cutClip.linkedClipId)) {
+              // The linked clip is staying — unlink it
+              const linkedIdx = newClips.findIndex((c) => c.id === cutClip.linkedClipId);
+              if (linkedIdx >= 0) {
+                newClips[linkedIdx] = { ...newClips[linkedIdx], linkedClipId: undefined } as EditorClip;
+              }
+            }
+          }
+
+          // Remove the cut clips
+          newClips = newClips.filter((c) => !clipIdsToRemove.has(c.id));
+
+          set({
+            clipboard: clipsToCut,
+            clipboardIsCut: true,
+            clips: newClips,
+            selectedClipIds: [],
+            duration: calculateDuration(newClips),
+          });
         },
 
         pasteClipsAtPlayhead: () => {
@@ -749,11 +846,43 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           const earliestStart = Math.min(...state.clipboard.map((c) => c.startTime));
           const offset = state.currentTime - earliestStart;
 
+          // If a track is selected, retarget clips to that track
+          const selectedTrack = state.selectedTrackId
+            ? state.tracks.find((t) => t.id === state.selectedTrackId)
+            : null;
+
           // Build an old-id → new-id map for relinking
           const idMap = new Map<string, string>();
           for (const clip of state.clipboard) {
             idMap.set(clip.id, generateId());
           }
+
+          // Determine track mapping for paste
+          // If a track is selected and clips are compatible, map all clips of that type to the selected track
+          const getTargetTrackId = (clip: EditorClip): string => {
+            if (!selectedTrack) return clip.trackId;
+
+            // If the selected track matches the clip's type requirement, use it
+            const isAudioClip = clip.type === "audio";
+            if (isAudioClip && selectedTrack.type === "audio") {
+              return selectedTrack.id;
+            }
+            if (!isAudioClip && selectedTrack.type === "video") {
+              return selectedTrack.id;
+            }
+
+            // If there's a paired track and the clip type matches it, use the paired track
+            if (selectedTrack.pairedTrackId) {
+              const pairedTrack = state.tracks.find((t) => t.id === selectedTrack.pairedTrackId);
+              if (pairedTrack) {
+                if (isAudioClip && pairedTrack.type === "audio") return pairedTrack.id;
+                if (!isAudioClip && pairedTrack.type === "video") return pairedTrack.id;
+              }
+            }
+
+            // Fallback: keep original track
+            return clip.trackId;
+          };
 
           const newClipIds: string[] = [];
           for (const clip of state.clipboard) {
@@ -766,9 +895,12 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               newLinkedId = idMap.get(clip.linkedClipId);
             }
 
+            const targetTrackId = getTargetTrackId(clip);
+
             const newClip: EditorClip = {
               ...clip,
               id: newId,
+              trackId: targetTrackId,
               startTime: clip.startTime + offset,
               ...(newLinkedId !== undefined
                 ? { linkedClipId: newLinkedId }
@@ -798,6 +930,17 @@ export const useVideoEditorStore = create<VideoEditorState>()(
           });
 
           return { videoTrackId, audioTrackId };
+        },
+
+        addAudioTrack: () => {
+          const audioTrackId = generateId();
+
+          set((state) => {
+            const { tracks } = addStandaloneAudioTrack(state.tracks, audioTrackId);
+            return { tracks };
+          });
+
+          return audioTrackId;
         },
 
         removeTrack: (trackId) =>
@@ -1274,6 +1417,13 @@ export const useVideoEditorStore = create<VideoEditorState>()(
               }),
             };
           }),
+
+        updateClipAssetDuration: (clipId, assetDuration) =>
+          set((state) => ({
+            clips: state.clips.map((clip) =>
+              clip.id === clipId ? { ...clip, assetDuration } : clip,
+            ),
+          })),
 
         updateClipAudioEffects: (clipId, effectType, params) =>
           set((state) => ({

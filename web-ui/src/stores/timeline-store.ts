@@ -333,7 +333,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
             index: 1,
             type: "audio",
             name: "Music",
-            pairedTrackId: "tl-music-0",
+            pairedTrackId: undefined,
             muted: false,
             locked: false,
             volume: 1,

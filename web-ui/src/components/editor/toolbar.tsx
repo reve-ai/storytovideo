@@ -37,6 +37,7 @@ export function Toolbar() {
   const setClipTransitionOut = useVideoEditorStore((s) => s.setClipTransitionOut);
   const clipboard = useVideoEditorStore((s) => s.clipboard);
   const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const cutSelectedClips = useVideoEditorStore((s) => s.cutSelectedClips);
   const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
   const undo = useTemporalStore((s) => s.undo);
   const redo = useTemporalStore((s) => s.redo);
@@ -161,9 +162,15 @@ export function Toolbar() {
                 <MenubarShortcut>⇧⌘Z</MenubarShortcut>
               </MenubarItem>
               <MenubarSeparator />
-              <MenubarItem disabled>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={() => cutSelectedClips()}>
                 Cut
                 <MenubarShortcut>⌘X</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={() => cutSelectedClips("audio")}>
+                Cut Audio Only
+              </MenubarItem>
+              <MenubarItem disabled={selectedClipIds.length === 0} onClick={() => cutSelectedClips("video")}>
+                Cut Video Only
               </MenubarItem>
               <MenubarItem disabled={selectedClipIds.length === 0} onClick={copySelectedClips}>
                 Copy
