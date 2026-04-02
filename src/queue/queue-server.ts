@@ -2118,6 +2118,7 @@ function initiateShutdown(reason: string, exitCode: number): void {
   shutdownInProgress = true;
   console.log(`[queue-server] Shutting down: ${reason}`);
 
+  // Hard deadline — exit no matter what
   const exitTimer = setTimeout(() => process.exit(exitCode), SHUTDOWN_TIMEOUT_MS);
   exitTimer.unref();
 
@@ -2125,14 +2126,17 @@ function initiateShutdown(reason: string, exitCode: number): void {
     void viteDevServer.close();
   }
 
-  server.close(() => {
-    process.exit(exitCode);
-  });
-
-  // Destroy all open connections (SSE clients etc.) so server.close() can finish
+  // Destroy all open connections first (SSE clients etc.)
   for (const socket of activeConnections) {
     socket.destroy();
   }
+  activeConnections.clear();
+
+  // Stop accepting new connections and wait for the socket to fully close
+  server.close(() => {
+    // Small delay to let the OS fully release the port before tsx restarts
+    setTimeout(() => process.exit(exitCode), 200);
+  });
 }
 
 process.on("SIGINT", () => initiateShutdown("SIGINT", 130));
@@ -2153,9 +2157,37 @@ async function start(): Promise<void> {
   setLlmProviderImpl(settings.llmProvider);
 
   await setupViteDevServer();
-  server.listen(PORT, () => {
-    console.log(`Queue server listening on http://localhost:${PORT}`);
-  });
+
+  // Retry binding the port in case the previous process hasn't fully released it yet
+  const MAX_BIND_RETRIES = 5;
+  const BIND_RETRY_DELAY_MS = 500;
+  for (let attempt = 1; attempt <= MAX_BIND_RETRIES; attempt++) {
+    try {
+      await new Promise<void>((resolveP, rejectP) => {
+        const onError = (err: NodeJS.ErrnoException) => {
+          server.removeListener("listening", onListening);
+          rejectP(err);
+        };
+        const onListening = () => {
+          server.removeListener("error", onError);
+          resolveP();
+        };
+        server.once("error", onError);
+        server.once("listening", onListening);
+        server.listen(PORT);
+      });
+      console.log(`Queue server listening on http://localhost:${PORT}`);
+      break;
+    } catch (err: unknown) {
+      const errno = (err as NodeJS.ErrnoException).code;
+      if (errno === "EADDRINUSE" && attempt < MAX_BIND_RETRIES) {
+        console.log(`[queue-server] Port ${PORT} in use, retrying in ${BIND_RETRY_DELAY_MS}ms (attempt ${attempt}/${MAX_BIND_RETRIES})…`);
+        await new Promise((r) => setTimeout(r, BIND_RETRY_DELAY_MS));
+      } else {
+        throw err;
+      }
+    }
+  }
 
   // Start periodic git pull when idle
   startGitAutoPull(runManager, server);
