@@ -4,8 +4,10 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
@@ -583,10 +585,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
         // Clean up leftover files from tmpDir (run-record.json, etc.)
         try {
-          const { unlinkSync } = require("fs") as typeof import("fs");
           if (existsSync(recordPath)) unlinkSync(recordPath);
           // Try to remove the now-empty tmpDir
-          const { rmdirSync } = require("fs") as typeof import("fs");
           try { rmdirSync(tmpDir); } catch { /* not empty or already gone */ }
         } catch { /* best-effort cleanup */ }
 
