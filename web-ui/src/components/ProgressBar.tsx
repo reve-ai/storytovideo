@@ -138,7 +138,8 @@ export default function ProgressBar({ queues, runStartTime, costSummary }: Progr
             </button>
             {showCostBreakdown && (
               <div
-                className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[--border] bg-[--bg] shadow-lg"
+                className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[--border] shadow-lg"
+                style={{ background: "#0f1117" }}
               >
                 <div className="border-b border-[--border] px-3 py-2">
                   <div className="flex items-center justify-between">
