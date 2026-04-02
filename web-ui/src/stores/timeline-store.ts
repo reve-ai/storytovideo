@@ -101,22 +101,11 @@ function completedByType(type: string): WorkItem[] {
   return items;
 }
 
-/** Build the default tracks (video + audio pair, plus standalone music track). */
+/** Build the default tracks (video + audio pair only — music track added on demand). */
 function ensureTracks(existing: EditableTrack[]): EditableTrack[] {
-  if (existing.length >= 3) return existing;
+  if (existing.length >= 2) return existing;
   const { tracks } = addTrackPair([], "tl-video-0", "tl-audio-0");
-  // Add standalone music track (not paired — uses itself as pairedTrackId)
-  const musicTrack: EditableTrack = {
-    id: "tl-music-0",
-    index: 1,
-    type: "audio",
-    name: "Music",
-    pairedTrackId: "tl-music-0",
-    muted: false,
-    locked: false,
-    volume: 1,
-  };
-  return [...tracks, musicTrack];
+  return tracks;
 }
 
 function buildTimeline(runId: string) {
@@ -314,6 +303,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
 
   populateFromPipeline: async (runId: string) => {
     const { clips, meta, crossTransitions, duration } = buildTimeline(runId);
+    let tracks = ensureTracks(get().tracks);
 
     // Check if background music file exists before adding music clip
     try {
@@ -335,13 +325,28 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
           volume: 0.3,
         };
         clips.push(musicClip);
+
+        // Add music track if not already present
+        if (!tracks.some(t => t.id === "tl-music-0")) {
+          const musicTrack: EditableTrack = {
+            id: "tl-music-0",
+            index: 1,
+            type: "audio",
+            name: "Music",
+            pairedTrackId: "tl-music-0",
+            muted: false,
+            locked: false,
+            volume: 1,
+          };
+          tracks = [...tracks, musicTrack];
+        }
       }
     } catch {
       /* no music file available */
     }
 
     set({
-      tracks: ensureTracks(get().tracks),
+      tracks,
       clips,
       clipMeta: meta,
       crossTransitions,

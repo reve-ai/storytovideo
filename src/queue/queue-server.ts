@@ -36,6 +36,7 @@ const MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
   ".json": "application/json; charset=utf-8",
 };
 
