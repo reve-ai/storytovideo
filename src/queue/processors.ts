@@ -25,6 +25,7 @@ import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
 import { analyzeVideoClip, buildAnalyzeVideoPrompt } from '../tools/analyze-video-pacing.js';
 import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
+import { computeLlmCost, computeImageCost, computeVideoCost } from './cost-tracker.js';
 
 // ---------------------------------------------------------------------------
 // Per-scene shot schema (matches plan-shots.ts perSceneShotSchema)
@@ -223,6 +224,34 @@ export class QueueProcessor extends EventEmitter {
   }
 
   // ---------------------------------------------------------------------------
+  // Cost recording helpers
+  // ---------------------------------------------------------------------------
+
+  private recordLlmCost(item: WorkItem, model: string, promptTokens: number, completionTokens: number): void {
+    const costUsd = computeLlmCost(model, promptTokens, completionTokens);
+    this.queueManager.recordCost({
+      itemId: item.id, itemKey: item.itemKey, model, category: 'llm',
+      promptTokens, completionTokens, costUsd, timestamp: new Date().toISOString(),
+    });
+  }
+
+  private recordImageCost(item: WorkItem, model: string): void {
+    const costUsd = computeImageCost(model);
+    this.queueManager.recordCost({
+      itemId: item.id, itemKey: item.itemKey, model, category: 'image',
+      costUsd, timestamp: new Date().toISOString(),
+    });
+  }
+
+  private recordVideoCost(item: WorkItem, model: string, durationSeconds: number): void {
+    const costUsd = computeVideoCost(model, durationSeconds);
+    this.queueManager.recordCost({
+      itemId: item.id, itemKey: item.itemKey, model, category: 'video',
+      durationSeconds, costUsd, timestamp: new Date().toISOString(),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
@@ -231,10 +260,14 @@ export class QueueProcessor extends EventEmitter {
     const llmProvider = (this.queueManager.getState().options?.llmProvider ?? 'anthropic') as LlmProvider;
     setLlmProvider(llmProvider);
     const storyText = item.inputs.storyText as string;
-    this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: getLlmModelName('strong') });
-    const script = await storyToScript(storyText);
-    this.queueManager.setConvertedScript(script);
-    return { script };
+    const modelName = getLlmModelName('strong');
+    this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: modelName });
+    const result = await storyToScript(storyText);
+    this.queueManager.setConvertedScript(result.text);
+    if (result.usage) {
+      this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
+    }
+    return { script: result.text };
   }
 
   private async handleAnalyzeStory(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -244,10 +277,14 @@ export class QueueProcessor extends EventEmitter {
     setLlmProvider(llmProvider);
     // Use converted script if available, otherwise raw story
     const textToAnalyze = state.convertedScript ?? item.inputs.storyText as string;
-    this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: getLlmModelName('strong') });
-    const analysis = await analyzeStory(textToAnalyze);
-    this.queueManager.setStoryAnalysis(analysis);
-    return { analysis };
+    const modelName = getLlmModelName('strong');
+    this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: modelName });
+    const result = await analyzeStory(textToAnalyze);
+    this.queueManager.setStoryAnalysis(result.analysis);
+    if (result.usage) {
+      this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
+    }
+    return { analysis: result.analysis };
   }
 
   private handleArtifact(item: WorkItem): Record<string, unknown> {
@@ -308,18 +345,22 @@ export class QueueProcessor extends EventEmitter {
     const llmProvider = (this.queueManager.getState().options?.llmProvider ?? 'anthropic') as LlmProvider;
     setLlmProvider(llmProvider);
     const storyText = item.inputs.storyText as string;
+    const modelName = getLlmModelName('fast');
     const namePrompt = `Give this story a short, catchy name (2-5 words). Reply with ONLY the plain text name — no quotes, no markdown, no formatting, no asterisks, nothing else.\n\nStory:\n${storyText.slice(0, 2000)}`;
-    this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: getLlmModelName('fast') });
+    this.promptLogger.log(item.itemKey, 'name_run', namePrompt, { model: modelName });
     const limiter = rateLimiters.get(getLlmProviderName());
     await limiter.acquire();
     try {
-      const { text } = await generateText({
+      const { text, usage } = await generateText({
         model: getLlmModel('fast'),
         prompt: namePrompt,
         maxTokens: 30,
       } as any);
       const name = text.trim().replace(/\*+/g, '').replace(/^["']+|["']+$/g, '').trim();
       this.queueManager.setRunName(name);
+      if (usage) {
+        this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+      }
       return { name };
     } catch (error: any) {
       if (error?.status === 429 || error?.message?.includes('429')) {
@@ -362,7 +403,8 @@ ${JSON.stringify(analysis, null, 2)}
 Scene to plan:
 ${JSON.stringify(scene, null, 2)}`;
 
-    this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: getLlmModelName('strong'), sceneNumber });
+    const modelName = getLlmModelName('strong');
+    this.promptLogger.log(item.itemKey, 'plan_shots', planShotsPrompt, { model: modelName, sceneNumber });
 
     const limiter = rateLimiters.get(getLlmProviderName());
     await limiter.acquire();
@@ -383,7 +425,10 @@ ${JSON.stringify(scene, null, 2)}`;
       limiter.release();
     }
 
-    const { object } = planResult;
+    const { object, usage } = planResult;
+    if (usage) {
+      this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
+    }
     const processedShots = planShotsForScene(
       sceneNumber,
       object.shots,
@@ -428,6 +473,10 @@ ${JSON.stringify(scene, null, 2)}`;
     });
 
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
+
+    // Record image generation cost
+    const imageModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
+    this.recordImageCost(item, imageModelName);
 
     // Build asset library from generated outputs
     this.rebuildAssetLibrary();
@@ -511,6 +560,10 @@ ${JSON.stringify(scene, null, 2)}`;
       this.queueManager.setGeneratedOutput(`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`, this.relativePath(result.startPath));
     }
 
+    // Record frame generation cost (only if an image was actually generated, not ffmpeg extraction)
+    const frameModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
+    this.recordImageCost(item, frameModelName);
+
     return {
       shotNumber: result.shotNumber,
       startPath: result.startPath ? this.relativePath(result.startPath) : result.startPath,
@@ -559,6 +612,12 @@ ${JSON.stringify(scene, null, 2)}`;
 
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
 
+    // Record video generation cost
+    const videoModelName = videoBackend === 'grok' ? 'grok-imagine-video'
+      : videoBackend === 'veo' ? 'veo-3.1-generate-preview'
+      : 'ltx';
+    this.recordVideoCost(item, videoModelName, result.duration);
+
     return {
       shotNumber: result.shotNumber,
       path: this.relativePath(result.path),
@@ -589,7 +648,7 @@ ${JSON.stringify(scene, null, 2)}`;
       hasStartFrame: startFrameExists,
     }), { model: 'gemini-2.5-flash', shotNumber, durationSeconds: shot.durationSeconds });
 
-    const analysis = await analyzeVideoClip({
+    const analyzeResult = await analyzeVideoClip({
       videoPath,
       shotNumber,
       startFramePath,
@@ -600,6 +659,11 @@ ${JSON.stringify(scene, null, 2)}`;
       cameraDirection: shot.cameraDirection,
       startFramePrompt: shot.startFramePrompt,
     });
+
+    const { analysis } = analyzeResult;
+    if (analyzeResult.usage) {
+      this.recordLlmCost(item, 'gemini-3.1-pro-preview', analyzeResult.usage.promptTokens, analyzeResult.usage.completionTokens);
+    }
 
     console.log(`[analyze_video] Shot ${shotNumber}: matchScore=${analysis.matchScore}, issues=${analysis.issues.length}`);
 

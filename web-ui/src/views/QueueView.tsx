@@ -8,11 +8,12 @@ const QUEUE_NAMES: QueueName[] = ["llm", "image", "video"];
 
 export default function QueueView() {
   const queues = usePipelineStore((s) => s.queues);
+  const costSummary = usePipelineStore((s) => s.costSummary);
   const runStartTime = useRunStore((s) => s.runStartTime);
 
   return (
     <div className="flex h-full flex-col">
-      <ProgressBar queues={queues} runStartTime={runStartTime} />
+      <ProgressBar queues={queues} runStartTime={runStartTime} costSummary={costSummary} />
       <div className="flex min-h-0 flex-1 divide-x divide-[--border]">
         {QUEUE_NAMES.map((name) => (
           <QueueColumn key={name} name={name} snapshot={queues[name]} />

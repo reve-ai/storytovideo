@@ -107,6 +107,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
       pipeline.fetchQueues(runId),
       pipeline.fetchGraph(runId),
       pipeline.fetchAnalyzeItems(runId),
+      pipeline.fetchCosts(runId),
       get().fetchRunStatus(),
     ]);
 

@@ -43,14 +43,19 @@ export function buildAnalyzeStoryPrompt(storyText: string): string {
   return `${ANALYZE_STORY_PROMPT_PREFIX}${storyText}`;
 }
 
-export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
+export interface AnalyzeStoryResult {
+  analysis: StoryAnalysis;
+  usage?: { promptTokens: number; completionTokens: number };
+}
+
+export async function analyzeStory(storyText: string): Promise<AnalyzeStoryResult> {
   const prompt = buildAnalyzeStoryPrompt(storyText);
 
   const limiter = rateLimiters.get(getLlmProviderName());
   await limiter.acquire();
   try {
     const providerOptions = getLlmProviderOptions();
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: getLlmModel('strong'),
       schema: storyAnalysisSchema,
       prompt,
@@ -66,7 +71,10 @@ export async function analyzeStory(storyText: string): Promise<StoryAnalysis> {
     if (result.scenes) {
       result.scenes = result.scenes.map((s: any) => ({ ...s, shots: [] }));
     }
-    return result as StoryAnalysis;
+    return {
+      analysis: result as StoryAnalysis,
+      usage: usage ? { promptTokens: usage.inputTokens ?? 0, completionTokens: usage.outputTokens ?? 0 } : undefined,
+    };
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {
       const retryMs = 5000;

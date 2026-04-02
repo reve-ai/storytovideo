@@ -15,21 +15,29 @@ export function buildStoryToScriptPrompt(storyText: string): string {
   return `${STORY_TO_SCRIPT_PROMPT_PREFIX}${storyText}`;
 }
 
-export async function storyToScript(storyText: string): Promise<string> {
+export interface StoryToScriptResult {
+  text: string;
+  usage?: { promptTokens: number; completionTokens: number };
+}
+
+export async function storyToScript(storyText: string): Promise<StoryToScriptResult> {
   const prompt = buildStoryToScriptPrompt(storyText);
 
   const limiter = rateLimiters.get(getLlmProviderName());
   await limiter.acquire();
   try {
     const providerOptions = getLlmProviderOptions();
-    const { text } = await generateText({
+    const { text, usage } = await generateText({
       model: getLlmModel('strong'),
       prompt,
       maxTokens: 16384,
       ...(providerOptions ? { providerOptions } : {}),
     } as any);
 
-    return text;
+    return {
+      text,
+      usage: usage ? { promptTokens: usage.inputTokens ?? 0, completionTokens: usage.outputTokens ?? 0 } : undefined,
+    };
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {
       const retryMs = 5000;

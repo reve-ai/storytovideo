@@ -1,4 +1,5 @@
 import type { StoryAnalysis, AssetLibrary, ImageBackend, VideoBackend } from '../types.js';
+import type { CostEntry } from './cost-tracker.js';
 
 // Work item types matching each pipeline step
 export type WorkItemType =
@@ -70,6 +71,9 @@ export interface RunState {
 
   // Shots whose duration was manually set by the user (skip pacing analysis)
   manualDurations?: Record<string, boolean>;
+
+  // Cost tracking entries for all API calls in this run
+  costEntries?: CostEntry[];
 
   // Run options (aspect ratio, etc.)
   options?: {

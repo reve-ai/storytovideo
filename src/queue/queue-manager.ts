@@ -13,6 +13,8 @@ import type {
   DependencyGraphEdge,
 } from './types.js';
 import type { StoryAnalysis, AssetLibrary, Shot, Character, Location as StoryLocation, StoryObject, Scene } from '../types.js';
+import type { CostEntry, CostSummary } from './cost-tracker.js';
+import { summarizeCosts } from './cost-tracker.js';
 
 interface AddItemOptions {
   type: WorkItemType;
@@ -556,6 +558,24 @@ export class QueueManager {
   setRunName(name: string): void {
     this.state.runName = name;
     this.touch();
+  }
+
+  // --- Cost tracking ---
+
+  recordCost(entry: CostEntry): void {
+    if (!this.state.costEntries) {
+      this.state.costEntries = [];
+    }
+    this.state.costEntries.push(entry);
+    this.touch();
+  }
+
+  getCostEntries(): CostEntry[] {
+    return [...(this.state.costEntries ?? [])];
+  }
+
+  getCostSummary(): CostSummary {
+    return summarizeCosts(this.state.costEntries ?? []);
   }
 
   /** Set one scene's shots in-place. Finds the scene by number and sets only scene.shots and scene.transition. */

@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import type { QueueName, QueueSnapshot } from "../stores/pipeline-store";
+import type { QueueName, QueueSnapshot, CostSummary } from "../stores/pipeline-store";
 import { computeActiveElapsed, computeETA, fmtDuration } from "../utils/eta";
+
+function fmtCost(usd: number): string {
+  if (usd < 0.01) return "<$0.01";
+  if (usd < 1) return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(2)}`;
+}
 
 interface ProgressBarProps {
   queues: Record<QueueName, QueueSnapshot | null>;
   runStartTime: number | null;
+  costSummary?: CostSummary | null;
 }
 
-export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) {
+export default function ProgressBar({ queues, runStartTime, costSummary }: ProgressBarProps) {
   const [now, setNow] = useState(Date.now());
   const [queueConcurrency, setQueueConcurrency] = useState<Record<QueueName, number> | undefined>();
   const fetchedRef = useRef(false);
@@ -59,6 +66,9 @@ export default function ProgressBar({ queues, runStartTime }: ProgressBarProps) 
     if (!allDone) {
       text += eta !== null ? ` · ETA: ~${fmtDuration(eta)}` : ` · ETA: calculating…`;
     }
+  }
+  if (costSummary && costSummary.totalUsd > 0) {
+    text += ` · Cost: ${fmtCost(costSummary.totalUsd)}`;
   }
 
   return (

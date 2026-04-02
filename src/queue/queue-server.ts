@@ -22,6 +22,7 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 import { getQueueConcurrency } from "./processors.js";
+import { startGitAutoPull } from "./git-auto-pull.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -270,6 +271,13 @@ runManager.on("item:completed", (data: { runId: string; item: WorkItem }) => {
   // Propagate run name when name_run completes
   if (data.item.type === 'name_run' && data.item.outputs?.name) {
     runManager.setRunName(data.runId, data.item.outputs.name as string);
+  }
+
+  // Emit cost update after each item completes
+  const qm = runManager.getQueueManager(data.runId);
+  if (qm) {
+    const summary = qm.getCostSummary();
+    emitEvent(data.runId, "cost_updated", { ...summary });
   }
 });
 
@@ -588,6 +596,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
         sendJson(res, 200, { runId, graph: qm.getDependencyGraph() });
+        return;
+      }
+
+      // GET /api/runs/:id/costs
+      if (method === "GET" && action === "costs") {
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
+        sendJson(res, 200, { runId, ...qm.getCostSummary(), entries: qm.getCostEntries() });
         return;
       }
 
@@ -2020,6 +2036,9 @@ async function start(): Promise<void> {
   server.listen(PORT, () => {
     console.log(`Queue server listening on http://localhost:${PORT}`);
   });
+
+  // Start periodic git pull when idle
+  startGitAutoPull(runManager);
 }
 
 void start();

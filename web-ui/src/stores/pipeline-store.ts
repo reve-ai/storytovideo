@@ -114,6 +114,13 @@ export interface ScriptData {
   scenes: ScriptScene[];
 }
 
+export interface CostSummary {
+  totalUsd: number;
+  byCategory: Record<string, number>;
+  byModel: Record<string, number>;
+  entryCount: number;
+}
+
 interface PipelineState {
   queues: Record<QueueName, QueueSnapshot | null>;
   graph: DependencyGraph | null;
@@ -126,6 +133,8 @@ interface PipelineState {
   skippedShots: Record<string, boolean>;
   /** Shots that exist in the current storyAnalysis, keyed by "sceneNumber:shotInScene" */
   existingShots: Record<string, boolean>;
+  /** Running cost estimate for the current run */
+  costSummary: CostSummary | null;
   sseStatus: SSEStatus;
 }
 
@@ -143,6 +152,7 @@ interface PipelineActions {
   replaceAsset: (runId: string, assetKey: string, file: File) => Promise<{ framesRequeued: number } | null>;
   redoAsset: (runId: string, assetKey: string, description?: string, directorsNote?: string) => Promise<boolean>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
+  fetchCosts: (runId: string) => Promise<void>;
   connectSSE: (runId: string) => void;
   disconnectSSE: () => void;
 }
@@ -160,6 +170,7 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
   itemProgress: {},
   skippedShots: {},
   existingShots: {},
+  costSummary: null,
   sseStatus: "disconnected",
 
   fetchQueues: async (runId: string) => {
@@ -307,6 +318,17 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       set({ scriptData: data });
     } catch (e) {
       console.error("fetchScript:", e);
+    }
+  },
+
+  fetchCosts: async (runId: string) => {
+    try {
+      const res = await fetch(`/api/runs/${runId}/costs`);
+      if (!res.ok) return;
+      const data: CostSummary & { runId: string; entries: unknown[] } = await res.json();
+      set({ costSummary: { totalUsd: data.totalUsd, byCategory: data.byCategory, byModel: data.byModel, entryCount: data.entryCount } });
+    } catch (e) {
+      console.error("fetchCosts:", e);
     }
   },
 
@@ -541,6 +563,16 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
         const progress = data.payload?.progress;
         if (itemId && progress) {
           set((s) => ({ itemProgress: { ...s.itemProgress, [itemId]: progress } }));
+        }
+      } catch { /* ignore */ }
+    });
+
+    // Cost update events
+    es.addEventListener("cost_updated", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as { payload?: CostSummary };
+        if (data.payload) {
+          set({ costSummary: data.payload });
         }
       } catch { /* ignore */ }
     });

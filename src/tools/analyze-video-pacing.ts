@@ -30,6 +30,11 @@ export interface VideoClipAnalysis {
   recommendations: VideoRecommendation[];
 }
 
+export interface AnalyzeVideoResult {
+  analysis: VideoClipAnalysis;
+  usage?: { promptTokens: number; completionTokens: number };
+}
+
 export interface AnalyzeVideoClipOptions {
   videoPath: string;
   shotNumber: number;
@@ -64,7 +69,7 @@ ${ANALYZE_VIDEO_REPLACEMENT_RULES}
 ${ANALYZE_VIDEO_RESPONSE_FORMAT}`;
 }
 
-export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<VideoClipAnalysis> {
+export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<AnalyzeVideoResult> {
   const client = getGoogleClient();
 
   const videoData = fs.readFileSync(opts.videoPath);
@@ -132,7 +137,14 @@ export async function analyzeVideoClip(opts: AnalyzeVideoClipOptions): Promise<V
     const text = response.text ?? "";
     const result = JSON.parse(text) as VideoClipAnalysis;
     result.matchScore = Math.max(0, Math.min(100, Math.round(result.matchScore)));
-    return result;
+
+    // Extract token usage from Gemini response
+    const usageMeta = (response as any).usageMetadata;
+    const usage = usageMeta
+      ? { promptTokens: usageMeta.promptTokenCount ?? 0, completionTokens: usageMeta.candidatesTokenCount ?? 0 }
+      : undefined;
+
+    return { analysis: result, usage };
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
       const retryMs = 5000;
