@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import type { RunManager } from "./run-manager.js";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,6 @@ function isIdle(runManager: RunManager): boolean {
 
 /** Restart the process by spawning a replacement and exiting. */
 function restart(): never {
-  const { spawn } = require("child_process") as typeof import("child_process");
   const child = spawn(process.argv[0], process.argv.slice(1), {
     stdio: "inherit",
     detached: true,
