@@ -17,7 +17,7 @@ export interface CostEntry {
   /** Model identifier */
   model: string;
   /** Category of the call */
-  category: 'llm' | 'image' | 'video';
+  category: 'llm' | 'image' | 'video' | 'audio';
   /** For LLMs: token counts */
   promptTokens?: number;
   completionTokens?: number;
@@ -72,6 +72,8 @@ const PRICE_LIST: Record<string, ModelPricing> = {
   'grok-imagine-video': { perSecond: 0.10 },
   'veo-3.1-generate-preview': { perSecond: 0.15 },
   'ltx':                { perSecond: 0 },  // self-hosted
+  // Audio generation
+  'elevenlabs-music':   { perSecond: 0.28 / 60 },  // $0.28/min
 };
 
 // ---------------------------------------------------------------------------
@@ -91,6 +93,12 @@ export function computeImageCost(model: string): number {
 }
 
 export function computeVideoCost(model: string, durationSeconds: number): number {
+  const pricing = PRICE_LIST[model];
+  if (!pricing || !('perSecond' in pricing)) return 0;
+  return pricing.perSecond * durationSeconds;
+}
+
+export function computeAudioCost(model: string, durationSeconds: number): number {
   const pricing = PRICE_LIST[model];
   if (!pricing || !('perSecond' in pricing)) return 0;
   return pricing.perSecond * durationSeconds;

@@ -16,7 +16,8 @@ import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
 import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
-import { assembleVideo } from "../tools/assemble-video.js";
+import { assembleVideo, getVideoDuration } from "../tools/assemble-video.js";
+import { computeAudioCost } from "./cost-tracker.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
@@ -1810,7 +1811,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           }
 
           const musicPath = join(outputDir, "generated-music.mp3");
+          const videoDuration = await getVideoDuration(videoPath);
           await generateMusicFromVideo(videoPath, musicPath);
+
+          // Record ElevenLabs music cost
+          const qm = runManager.getQueueManager(runId);
+          if (qm) {
+            const costUsd = computeAudioCost('elevenlabs-music', videoDuration);
+            qm.recordCost({
+              itemId: 'music-regen', itemKey: 'music:regenerate', model: 'elevenlabs-music',
+              category: 'audio', durationSeconds: videoDuration, costUsd, timestamp: new Date().toISOString(),
+            });
+            emitEvent(runId, "cost_updated", { ...qm.getCostSummary() });
+          }
+
           sendJson(res, 200, { success: true, path: "generated-music.mp3" });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -1927,8 +1941,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const musicPath = join(outputDir, "generated-music.mp3");
         const finalMusicPath = join(outputDir, "final-music.mp4");
 
+        const videoDuration = await getVideoDuration(videoPath);
         await generateMusicFromVideo(videoPath, musicPath);
         await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
+
+        // Record ElevenLabs music cost
+        const qm = runManager.getQueueManager(runId);
+        if (qm) {
+          const costUsd = computeAudioCost('elevenlabs-music', videoDuration);
+          qm.recordCost({
+            itemId: 'music-add', itemKey: 'music:add', model: 'elevenlabs-music',
+            category: 'audio', durationSeconds: videoDuration, costUsd, timestamp: new Date().toISOString(),
+          });
+          emitEvent(runId, "cost_updated", { ...qm.getCostSummary() });
+        }
 
         sendJson(res, 200, { path: "final-music.mp4", success: true });
       } catch (err) {

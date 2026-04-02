@@ -17,8 +17,8 @@ function itemDurationSec(item: WorkItem): number {
   return Math.max(0, (new Date(item.completedAt).getTime() - new Date(item.startedAt).getTime()) / 1000);
 }
 
-const QUEUE_LABELS: Record<string, string> = { llm: "LLM", image: "Image", video: "Video" };
-const QUEUE_EMOJI: Record<string, string> = { llm: "💬", image: "🖼", video: "🎬" };
+const QUEUE_LABELS: Record<string, string> = { llm: "LLM", image: "Image", video: "Video", audio: "Audio" };
+const QUEUE_EMOJI: Record<string, string> = { llm: "💬", image: "🖼", video: "🎬", audio: "🎵" };
 
 const TYPE_LABELS: Record<string, string> = {
   story_to_script: "Story → Script",
@@ -45,6 +45,7 @@ const MODEL_LABELS: Record<string, string> = {
   "grok-imagine-video": "Grok Video",
   "veo-3.1-generate-preview": "Veo 3.1",
   "ltx": "LTX (self-hosted)",
+  "elevenlabs-music": "ElevenLabs Music",
 };
 
 // ---------------------------------------------------------------------------
