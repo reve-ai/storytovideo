@@ -158,6 +158,11 @@
   color: var(--green);
 }
 
+.play-pause-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 /* Delete run button */
 .delete-run-btn {
   font-size: 1rem;
