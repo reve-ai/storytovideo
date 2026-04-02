@@ -16,6 +16,11 @@ import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
 import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
+import { assembleVideo } from "../tools/assemble-video.js";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 import { getQueueConcurrency } from "./processors.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
@@ -559,7 +564,21 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
         const queues: QueueName[] = ["llm", "image", "video"];
         const snapshots = queues.map(q => qm.getQueueSnapshot(q));
-        sendJson(res, 200, { runId, queues: snapshots });
+        // Build skippedShots + existingShots from the authoritative storyAnalysis data
+        const skippedShots: Record<string, boolean> = {};
+        const existingShots: string[] = [];
+        const analysis = qm.getState().storyAnalysis;
+        if (analysis?.scenes) {
+          for (const scene of analysis.scenes) {
+            for (const shot of scene.shots || []) {
+              existingShots.push(`${scene.sceneNumber}:${shot.shotInScene}`);
+              if (shot.skipped) {
+                skippedShots[`${scene.sceneNumber}:${shot.shotInScene}`] = true;
+              }
+            }
+          }
+        }
+        sendJson(res, 200, { runId, queues: snapshots, skippedShots, existingShots });
         return;
       }
 
@@ -842,9 +861,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       }
 
       // POST /api/runs/:id/shots/:sceneNumber/:shotInScene/skip
-      if (method === "POST" && action === "shots" && pathParts.length >= 8 && pathParts[7] === "skip") {
-        const sceneNumber = parseInt(pathParts[5], 10);
-        const shotInScene = parseInt(pathParts[6], 10);
+      if (method === "POST" && action === "shots" && pathParts.length >= 7 && pathParts[6] === "skip") {
+        const sceneNumber = parseInt(pathParts[4], 10);
+        const shotInScene = parseInt(pathParts[5], 10);
         if (isNaN(sceneNumber) || isNaN(shotInScene)) {
           sendJson(res, 400, { error: "Invalid sceneNumber or shotInScene" });
           return;
@@ -858,24 +877,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
 
-        qm.updateShotSkipped(sceneNumber, shotInScene, skipped);
-
-        // Also update the work item inputs so the frontend reflects the change
-        const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
-        const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
-        for (const key of [frameKey, videoKey]) {
-          const items = qm.getItemsByKey(key);
-          for (const item of items) {
-            if (item.status === 'superseded' || item.status === 'cancelled') continue;
-            const shot = item.inputs.shot as Record<string, unknown> | undefined;
-            if (shot) {
-              shot.skipped = skipped;
-            }
-          }
+        try {
+          qm.updateShotSkipped(sceneNumber, shotInScene, skipped);
+          qm.save();
+          sendJson(res, 200, { sceneNumber, shotInScene, skipped });
+        } catch (err: any) {
+          sendJson(res, 500, { error: err.message ?? String(err) });
         }
-
-        qm.save();
-        sendJson(res, 200, { sceneNumber, shotInScene, skipped });
         return;
       }
 
@@ -1488,6 +1496,175 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         qm.save();
         await runManager.resumeRun(runId);
         sendJson(res, 200, { ok: true, supersededCount });
+        return;
+      }
+
+      // GET /api/runs/:id/timeline — Load saved timeline state
+      if (method === "GET" && action === "timeline" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const outputDir = resolveOutputDir(run.outputDir);
+        const timelinePath = join(outputDir, "timeline_state.json");
+        if (!existsSync(timelinePath)) {
+          sendJson(res, 404, { error: "No saved timeline state" });
+          return;
+        }
+        try {
+          const raw = readFileSync(timelinePath, "utf-8");
+          const data = JSON.parse(raw);
+          sendJson(res, 200, data);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 500, { error: `Failed to read timeline state: ${msg}` });
+        }
+        return;
+      }
+
+      // PUT /api/runs/:id/timeline — Save timeline state
+      if (method === "PUT" && action === "timeline" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const body = await readJsonBody(req);
+        const outputDir = resolveOutputDir(run.outputDir);
+        const timelinePath = join(outputDir, "timeline_state.json");
+        try {
+          writeFileSync(timelinePath, JSON.stringify(body, null, 2), "utf-8");
+          sendJson(res, 200, { ok: true });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendJson(res, 500, { error: `Failed to save timeline state: ${msg}` });
+        }
+        return;
+      }
+
+      // POST /api/runs/:id/timeline-export — Export video from timeline state
+      if (method === "POST" && action === "timeline-export" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const outputDir = resolveOutputDir(run.outputDir);
+        const timelinePath = join(outputDir, "timeline_state.json");
+        if (!existsSync(timelinePath)) {
+          sendJson(res, 404, { error: "No saved timeline state — open the timeline and make edits first" });
+          return;
+        }
+
+        try {
+          const raw = readFileSync(timelinePath, "utf-8");
+          const timeline = JSON.parse(raw) as {
+            clips: Array<{
+              id: string;
+              type: string;
+              startTime: number;
+              duration: number;
+              inPoint?: number;
+              assetId?: string;
+              speed?: number;
+            }>;
+            crossTransitions?: Array<{
+              id: string;
+              outgoingClipId: string;
+              incomingClipId: string;
+              duration: number;
+              type: string;
+              boundary: number;
+            }>;
+          };
+
+          // Extract video clips sorted by startTime
+          const videoClips = timeline.clips
+            .filter((c) => c.type === "video" && c.assetId)
+            .sort((a, b) => a.startTime - b.startTime);
+
+          if (videoClips.length === 0) {
+            sendJson(res, 400, { error: "No video clips found in timeline" });
+            return;
+          }
+
+          // Resolve file paths and handle trimming
+          const tempDir = join(outputDir, "_timeline_export_temp");
+          mkdirSync(tempDir, { recursive: true });
+
+          const videoPaths: string[] = [];
+          for (const clip of videoClips) {
+            // Strip /api/runs/{runId}/media/ prefix to get relative path
+            const assetId = clip.assetId!;
+            const mediaPrefix = `/api/runs/${runId}/media/`;
+            let relativePath: string;
+            if (assetId.startsWith(mediaPrefix)) {
+              relativePath = assetId.slice(mediaPrefix.length);
+            } else if (assetId.startsWith("/api/runs/")) {
+              // Handle case where runId in URL might differ
+              const parts = assetId.split("/media/");
+              relativePath = parts.length > 1 ? parts[1] : assetId;
+            } else {
+              relativePath = assetId;
+            }
+
+            const sourcePath = join(outputDir, decodeURIComponent(relativePath));
+            if (!existsSync(sourcePath)) {
+              sendJson(res, 400, { error: `Video file not found: ${relativePath}` });
+              return;
+            }
+
+            // If clip is trimmed, extract the segment to a temp file
+            const needsTrim = (clip.inPoint && clip.inPoint > 0);
+            if (needsTrim) {
+              const trimmedPath = join(tempDir, `trim_${clip.id}.mp4`);
+              const ssArgs: string[] = [];
+              if (clip.inPoint && clip.inPoint > 0) {
+                ssArgs.push("-ss", String(clip.inPoint));
+              }
+              ssArgs.push("-t", String(clip.duration));
+
+              await execFileAsync("ffmpeg", [
+                ...ssArgs,
+                "-i", sourcePath,
+                "-c", "copy",
+                "-y",
+                trimmedPath,
+              ]);
+              videoPaths.push(trimmedPath);
+            } else {
+              videoPaths.push(sourcePath);
+            }
+          }
+
+          // Build transitions array from crossTransitions
+          const transitions: Array<{ type: "cut" | "fade_black"; durationMs: number }> = [];
+          const crossTransitions = timeline.crossTransitions ?? [];
+          for (let i = 1; i < videoClips.length; i++) {
+            const ct = crossTransitions.find(
+              (t) => t.incomingClipId === videoClips[i].id && t.outgoingClipId === videoClips[i - 1].id
+            );
+            if (ct && ct.type !== "Cut") {
+              transitions.push({
+                type: "fade_black",
+                durationMs: ct.duration * 1000,
+              });
+            } else {
+              transitions.push({ type: "cut", durationMs: 0 });
+            }
+          }
+
+          await assembleVideo({
+            videoPaths,
+            transitions,
+            outputDir,
+            outputFile: "timeline-export.mp4",
+          });
+
+          // Clean up temp directory
+          try {
+            const { rmSync } = await import("fs");
+            rmSync(tempDir, { recursive: true, force: true });
+          } catch { /* ignore cleanup errors */ }
+
+          sendJson(res, 200, { path: "timeline-export.mp4" });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[timeline-export] Error:", msg);
+          sendJson(res, 500, { error: msg });
+        }
         return;
       }
 

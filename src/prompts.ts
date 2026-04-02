@@ -24,11 +24,15 @@ Scene persistence: The video model cannot introduce new visual elements mid-shot
 
 // ---- Shot planning (from processors.ts) ----
 
-export const DURATION_GUIDANCE = `Shots can be 2-15 seconds long. Choose the duration that best fits the action:
-- Very short (2-3s): flash cuts, inserts, whip pans, rapid montage
-- Short (2-4s): quick reactions, insert cutaways, snappy dialogue
-- Medium (4-8s): establishing shots, dialogue, tracking shots, emotional beats
-- Long (8-15s): slow reveals, extended action, lingering moments`;
+export const DURATION_GUIDANCE = `TEMPO: Default to FAST. Every shot must earn its screen time with visible action, dialogue, or meaningful change. Dead air kills the video.
+
+Shot durations (2-10s). Shorter is almost always better:
+- Flash (2-3s): DEFAULT for reactions, cutaways, inserts, establishing context, transitions. Use this unless the shot has dialogue or complex action that demands more time.
+- Standard (3-5s): Dialogue shots, single actions, most of your shots should land here.
+- Extended (5-8s): Tracking shots with continuous action, longer dialogue exchanges. Must have sustained motion or speech throughout — no static holds.
+- Long (8-10s): RARE. Only for scenes with heavy dialogue that cannot be split, or a deliberate dramatic pause for maximum emotional impact. If a shot has no dialogue, it almost never needs to be this long.
+
+If nothing visually changes during a shot — no movement, no speech, no reaction — the shot should not exist. Cut it or merge it into an adjacent shot. A shot where a character "stands and looks out the window" for 6 seconds is wasted screen time unless they are speaking or something is happening outside.`;
 
 export const SHOT_PLANNING_PRINCIPLES = `HOW GROK VIDEO GENERATION WORKS:
 Each shot has a START FRAME (an image prompt describing the visual setup) and a VIDEO PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the video prompt. There are no end frames — Grok controls where the shot ends based on the video direction.
