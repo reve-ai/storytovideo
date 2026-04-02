@@ -71,22 +71,69 @@
 }
 
 /* SSE badge */
-.sse-badge {
-  font-size: 0.75rem;
+.sse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sse-dot.connected {
+  background: var(--green);
+}
+
+.sse-dot.disconnected,
+.sse-dot.connecting {
+  background: var(--red);
+}
+
+/* ⋯ menu dropdown */
+.top-bar-menu-wrapper {
+  position: relative;
+}
+
+.top-bar-menu-btn {
+  font-size: 1.2rem;
   padding: 0.2rem 0.5rem;
-  border-radius: 10px;
-  font-weight: 500;
+  letter-spacing: 0.1em;
 }
 
-.sse-badge.connected {
-  background: var(--green-dim);
-  color: var(--green);
+.top-bar-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  margin-top: 4px;
+  min-width: 160px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
-.sse-badge.disconnected,
-.sse-badge.connecting {
-  background: var(--red-dim);
-  color: var(--red);
+.top-bar-menu-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  background: none;
+  border: none;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.top-bar-menu-dropdown button:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.top-bar-menu-dropdown button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.top-bar-menu-danger {
+  color: var(--red) !important;
 }
 
 /* Play/Pause button */

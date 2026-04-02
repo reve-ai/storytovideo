@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
@@ -79,6 +79,18 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const exportRun = useRunStore((s) => s.exportRun);
   const importRun = useRunStore((s) => s.importRun);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showMenu]);
 
   const handleDelete = useCallback(async () => {
     if (!activeRunId) return;
@@ -195,43 +207,42 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           </button>
         )}
 
-        {activeRunId && (
-          <button
-            type="button"
-            className="delete-run-btn"
-            onClick={handleDelete}
-            disabled={runStatus === "running"}
-            title={
-              runStatus === "running"
-                ? "Stop the run before deleting"
-                : "Delete run"
-            }
-          >
-            🗑
-          </button>
-        )}
-
         <button type="button" onClick={onNewRun} title="New run">
           +
         </button>
 
-        {activeRunId && (
+        <div className="top-bar-menu-wrapper" ref={menuRef}>
           <button
             type="button"
-            className="delete-run-btn"
-            onClick={handleExport}
-            title="Export run as zip"
+            onClick={() => setShowMenu((v) => !v)}
+            className="top-bar-menu-btn"
+            title="More actions"
           >
-            📦
+            ⋯
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => importInputRef.current?.click()}
-          title="Import run from zip"
-        >
-          📥
-        </button>
+          {showMenu && (
+            <div className="top-bar-menu-dropdown" style={{ background: "#0f1117" }}>
+              {activeRunId && (
+                <button type="button" onClick={() => { handleExport(); setShowMenu(false); }}>
+                  📦 Export run
+                </button>
+              )}
+              <button type="button" onClick={() => { importInputRef.current?.click(); setShowMenu(false); }}>
+                📥 Import run
+              </button>
+              {activeRunId && (
+                <button
+                  type="button"
+                  disabled={runStatus === "running"}
+                  onClick={() => { handleDelete(); setShowMenu(false); }}
+                  className="top-bar-menu-danger"
+                >
+                  🗑 Delete run
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <input
           ref={importInputRef}
           type="file"
@@ -240,7 +251,10 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           onChange={handleImport}
         />
 
-        <span className={`sse-badge ${sseStatus}`}>{sseStatus}</span>
+        <span
+          className={`sse-dot ${sseStatus}`}
+          title={sseStatus === "connected" ? "Connected" : sseStatus === "connecting" ? "Connecting…" : "Disconnected"}
+        />
       </div>
     </header>
   );
