@@ -109,7 +109,7 @@ export default function CreateRunDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <form onSubmit={handleSubmit}>
-          <h2>New Run</h2>
+          <h2>New Project</h2>
 
           <label htmlFor="story-input">Story text</label>
           <textarea
@@ -201,7 +201,7 @@ export default function CreateRunDialog({
               Cancel
             </button>
             <button type="submit" className="primary" disabled={submitting}>
-              {submitting ? "Creating…" : "Create Run"}
+              {submitting ? "Creating…" : "Create Project"}
             </button>
           </div>
         </form>

@@ -94,7 +94,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
 
   const handleDelete = useCallback(async () => {
     if (!activeRunId) return;
-    if (!confirm("Delete this run? This cannot be undone.")) return;
+    if (!confirm("Delete this project? This cannot be undone.")) return;
     await deleteRun(activeRunId);
     navigate("/");
   }, [activeRunId, deleteRun, navigate]);
@@ -175,9 +175,9 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         <select
           value={activeRunId ?? ""}
           onChange={handleRunChange}
-          aria-label="Select run"
+          aria-label="Select project"
         >
-          <option value="">— select run —</option>
+          <option value="">— select project —</option>
           {runs.map((run) => (
             <option key={run.id} value={run.id}>
               {run.name || run.id.slice(0, 8)}
@@ -207,7 +207,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           </button>
         )}
 
-        <button type="button" onClick={onNewRun} title="New run">
+        <button type="button" onClick={onNewRun} title="New project">
           +
         </button>
 
@@ -224,11 +224,11 @@ export default function TopBar({ onNewRun }: TopBarProps) {
             <div className="top-bar-menu-dropdown" style={{ background: "#0f1117" }}>
               {activeRunId && (
                 <button type="button" onClick={() => { handleExport(); setShowMenu(false); }}>
-                  📦 Export run
+                  📦 Export project
                 </button>
               )}
               <button type="button" onClick={() => { importInputRef.current?.click(); setShowMenu(false); }}>
-                📥 Import run
+                📥 Import project
               </button>
               {activeRunId && (
                 <button
@@ -237,7 +237,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
                   onClick={() => { handleDelete(); setShowMenu(false); }}
                   className="top-bar-menu-danger"
                 >
-                  🗑 Delete run
+                  🗑 Delete project
                 </button>
               )}
             </div>
