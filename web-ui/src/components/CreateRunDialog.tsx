@@ -31,16 +31,39 @@ const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI (GPT-5.4)" },
 ] as const;
 
+const STORAGE_KEY = "storytovideo:lastRunDefaults";
+
+interface SavedDefaults {
+  assetImageBackend?: ImageBackend;
+  imageBackend?: ImageBackend;
+  videoBackend?: VideoBackend;
+}
+
+function loadDefaults(): SavedDefaults {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as SavedDefaults;
+  } catch { /* ignore */ }
+  return {};
+}
+
+function saveDefaults(d: SavedDefaults): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  } catch { /* ignore */ }
+}
+
 export default function CreateRunDialog({
   open,
   onClose,
 }: CreateRunDialogProps) {
+  const saved = loadDefaults();
   const [storyText, setStoryText] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [needsConversion, setNeedsConversion] = useState(true);
-  const [assetImageBackend, setAssetImageBackend] = useState<ImageBackend>("grok");
-  const [imageBackend, setImageBackend] = useState<ImageBackend>("grok");
-  const [videoBackend, setVideoBackend] = useState<VideoBackend>("grok");
+  const [assetImageBackend, setAssetImageBackend] = useState<ImageBackend>(saved.assetImageBackend ?? "grok");
+  const [imageBackend, setImageBackend] = useState<ImageBackend>(saved.imageBackend ?? "grok");
+  const [videoBackend, setVideoBackend] = useState<VideoBackend>(saved.videoBackend ?? "grok");
   const [llmProvider, setLlmProviderState] = useState<"anthropic" | "openai">("anthropic");
   const [submitting, setSubmitting] = useState(false);
   const createRun = useRunStore((s) => s.createRun);
@@ -63,14 +86,10 @@ export default function CreateRunDialog({
       setSubmitting(true);
       try {
         await createRun(text, { aspectRatio, assetImageBackend, imageBackend, videoBackend, llmProvider, needsConversion });
+        // Persist model selections for next run
+        saveDefaults({ assetImageBackend, imageBackend, videoBackend });
         navigate("/");
         setStoryText("");
-        setAspectRatio("16:9");
-        setNeedsConversion(true);
-        setAssetImageBackend("grok");
-        setImageBackend("grok");
-        setVideoBackend("grok");
-        setLlmProviderState("anthropic");
         onClose();
       } catch (err) {
         console.error("Failed to create run:", err);
