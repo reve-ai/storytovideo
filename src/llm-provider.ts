@@ -71,3 +71,16 @@ export function getLlmProviderOptions(): Record<string, unknown> | undefined {
   }
   return undefined;
 }
+
+/**
+ * Returns Anthropic server-side web search tool config for use with generateText.
+ * Returns undefined for non-Anthropic providers (web search is Anthropic-only).
+ */
+export function getWebSearchTools(): Record<string, unknown> | undefined {
+  if (currentProvider === 'anthropic') {
+    return {
+      web_search: anthropic.tools.webSearch_20260209(),
+    };
+  }
+  return undefined;
+}

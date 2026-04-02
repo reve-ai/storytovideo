@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import { STORY_TO_SCRIPT_PROMPT_PREFIX } from "../prompts.js";
-import { getLlmModel, getLlmProviderName, getLlmProviderOptions } from "../llm-provider.js";
+import { getLlmModel, getLlmProviderName, getLlmProviderOptions, getWebSearchTools } from "../llm-provider.js";
 
 /**
  * Converts a raw story into a fleshed-out visual script using Claude Opus 4.6.
@@ -27,11 +27,13 @@ export async function storyToScript(storyText: string): Promise<StoryToScriptRes
   await limiter.acquire();
   try {
     const providerOptions = getLlmProviderOptions();
+    const tools = getWebSearchTools();
     const { text, usage } = await generateText({
       model: getLlmModel('strong'),
       prompt,
       maxTokens: 16384,
       ...(providerOptions ? { providerOptions } : {}),
+      ...(tools ? { tools, maxSteps: 3 } : {}),
     } as any);
 
     return {
