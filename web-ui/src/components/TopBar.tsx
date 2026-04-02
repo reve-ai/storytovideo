@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
@@ -76,12 +76,32 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     [selectRun],
   );
 
+  const exportRun = useRunStore((s) => s.exportRun);
+  const importRun = useRunStore((s) => s.importRun);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   const handleDelete = useCallback(async () => {
     if (!activeRunId) return;
     if (!confirm("Delete this run? This cannot be undone.")) return;
     await deleteRun(activeRunId);
     navigate("/");
   }, [activeRunId, deleteRun, navigate]);
+
+  const handleExport = useCallback(() => {
+    if (activeRunId) exportRun(activeRunId);
+  }, [activeRunId, exportRun]);
+
+  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await importRun(file);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Import failed");
+    }
+    // Reset input so the same file can be re-selected
+    if (importInputRef.current) importInputRef.current.value = "";
+  }, [importRun]);
 
   const showPlayPause =
     runStatus === "running" ||
@@ -165,6 +185,17 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           <button
             type="button"
             className="delete-run-btn"
+            onClick={handleExport}
+            title="Export run as zip"
+          >
+            📦
+          </button>
+        )}
+
+        {activeRunId && (
+          <button
+            type="button"
+            className="delete-run-btn"
             onClick={handleDelete}
             disabled={runStatus === "running"}
             title={
@@ -180,6 +211,21 @@ export default function TopBar({ onNewRun }: TopBarProps) {
         <button type="button" onClick={onNewRun}>
           + New Run
         </button>
+
+        <button
+          type="button"
+          onClick={() => importInputRef.current?.click()}
+          title="Import run from zip"
+        >
+          📥 Import
+        </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".zip"
+          style={{ display: "none" }}
+          onChange={handleImport}
+        />
 
         <span className={`sse-badge ${sseStatus}`}>{sseStatus}</span>
       </div>

@@ -75,6 +75,8 @@ interface RunActions {
     },
   ) => Promise<RunRecord>;
   deleteRun: (runId: string) => Promise<void>;
+  exportRun: (runId: string) => void;
+  importRun: (file: File) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   fetchRunStatus: () => Promise<void>;
   clearActiveRun: () => void;
@@ -143,6 +145,31 @@ export const useRunStore = create<RunStore>((set, get) => ({
     const currentHash = getUrlState();
     setUrlState(null, currentHash.view);
     await get().loadRuns();
+  },
+
+  exportRun: (runId: string) => {
+    // Trigger browser download of the zip
+    const a = document.createElement("a");
+    a.href = `/api/runs/${runId}/export`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  },
+
+  importRun: async (file: File) => {
+    const res = await fetch("/api/runs/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: file,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Import failed" }));
+      throw new Error(err.error ?? "Import failed");
+    }
+    const record: RunRecord = await res.json();
+    await get().loadRuns();
+    await get().selectRun(record.id);
   },
 
   togglePlayPause: async () => {

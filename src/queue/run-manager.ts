@@ -427,6 +427,47 @@ export class RunManager extends EventEmitter {
     });
   }
 
+  // -- Import a run from an extracted zip directory --------------------------
+
+  importRun(extractedDir: string, runRecord: QueueRunRecord): QueueRunRecord {
+    const newRunId = randomUUID();
+    const outputDir = join(RUN_OUTPUT_ROOT, newRunId);
+    const absOutputDir = resolveOutputDir(outputDir);
+
+    // Move (rename) extracted data directory to the new run location
+    const { renameSync } = require("fs") as typeof import("fs");
+    renameSync(extractedDir, absOutputDir);
+
+    // Load queue state and remap runId + outputDir
+    const stateFile = join(absOutputDir, "queue_state.json");
+    if (!existsSync(stateFile)) {
+      throw new Error("Imported zip is missing queue_state.json");
+    }
+    const qm = QueueManager.load(stateFile);
+    qm.remapRunId(newRunId, outputDir);
+    qm.save();
+
+    // Build run record for this import
+    const now = new Date().toISOString();
+    const record: QueueRunRecord = {
+      id: newRunId,
+      name: runRecord.name ? `${runRecord.name} (imported)` : undefined,
+      storyText: runRecord.storyText,
+      outputDir,
+      status: "stopped",
+      createdAt: now,
+      startedAt: runRecord.startedAt,
+      completedAt: runRecord.completedAt,
+      options: runRecord.options,
+    };
+
+    this.runs.set(newRunId, record);
+    this.queueManagers.set(newRunId, qm);
+    this.persistRuns();
+    this.emit("run:created", record);
+    return record;
+  }
+
   // -- Load existing runs on startup ----------------------------------------
 
   loadExistingRuns(): void {

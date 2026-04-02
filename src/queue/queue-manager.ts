@@ -711,6 +711,14 @@ export class QueueManager {
     this.touch();
   }
 
+  /** Remap runId and outputDir after import. */
+  remapRunId(newRunId: string, newOutputDir: string): void {
+    this.state.runId = newRunId;
+    this.state.outputDir = newOutputDir;
+    const absOutputDir = isAbsolute(newOutputDir) ? newOutputDir : resolve(process.cwd(), newOutputDir);
+    this.stateFilePath = join(absOutputDir, 'queue_state.json');
+  }
+
   // --- Persistence ---
 
   save(): void {

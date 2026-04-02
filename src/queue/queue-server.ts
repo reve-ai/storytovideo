@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "fs";
@@ -11,6 +12,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { join, resolve, extname } from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
+import archiver from "archiver";
+import unzipper from "unzipper";
 
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
@@ -547,6 +550,56 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
+    // POST /api/runs/import — Import a run from a zip file
+    if (method === "POST" && url.pathname === "/api/runs/import") {
+      const tmpDir = join(resolveOutputDir("output/runs"), `.import-${randomUUID()}`);
+      mkdirSync(tmpDir, { recursive: true });
+      try {
+        // Pipe request body through unzipper
+        await new Promise<void>((resolveP, rejectP) => {
+          req.pipe(unzipper.Extract({ path: tmpDir }))
+            .on("close", resolveP)
+            .on("error", rejectP);
+        });
+
+        // Read run-record.json
+        const recordPath = join(tmpDir, "run-record.json");
+        if (!existsSync(recordPath)) {
+          rmSync(tmpDir, { recursive: true, force: true });
+          sendJson(res, 400, { error: "Invalid zip: missing run-record.json" });
+          return;
+        }
+        const runRecord = JSON.parse(readFileSync(recordPath, "utf-8"));
+
+        // The actual data is in tmpDir/data/
+        const dataDir = join(tmpDir, "data");
+        if (!existsSync(dataDir) || !existsSync(join(dataDir, "queue_state.json"))) {
+          rmSync(tmpDir, { recursive: true, force: true });
+          sendJson(res, 400, { error: "Invalid zip: missing data/queue_state.json" });
+          return;
+        }
+
+        const record = runManager.importRun(dataDir, runRecord);
+
+        // Clean up leftover files from tmpDir (run-record.json, etc.)
+        try {
+          const { unlinkSync } = require("fs") as typeof import("fs");
+          if (existsSync(recordPath)) unlinkSync(recordPath);
+          // Try to remove the now-empty tmpDir
+          const { rmdirSync } = require("fs") as typeof import("fs");
+          try { rmdirSync(tmpDir); } catch { /* not empty or already gone */ }
+        } catch { /* best-effort cleanup */ }
+
+        sendJson(res, 201, record);
+      } catch (err) {
+        rmSync(tmpDir, { recursive: true, force: true });
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[import] Error:", msg);
+        sendJson(res, 500, { error: `Import failed: ${msg}` });
+      }
+      return;
+    }
+
     // GET /api/runs — List all runs
     if (method === "GET" && url.pathname === "/api/runs") {
       sendJson(res, 200, { runs: runManager.listRuns() });
@@ -605,6 +658,33 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or no queue state: ${runId}` }); return; }
         sendJson(res, 200, { runId, ...qm.getCostSummary(), entries: qm.getCostEntries() });
+        return;
+      }
+
+      // GET /api/runs/:id/export — download run as zip
+      if (method === "GET" && action === "export") {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const absOutputDir = resolveOutputDir(run.outputDir);
+        if (!existsSync(absOutputDir)) { sendJson(res, 404, { error: "Run output directory not found" }); return; }
+
+        const safeName = (run.name ?? runId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60);
+        res.writeHead(200, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${safeName}.zip"`,
+        });
+
+        const archive = archiver("zip", { zlib: { level: 5 } });
+        archive.on("error", (err) => { console.error("[export] Archiver error:", err); res.end(); });
+        archive.pipe(res);
+
+        // Add run record metadata
+        archive.append(JSON.stringify(run, null, 2), { name: "run-record.json" });
+
+        // Add all files from the run directory
+        archive.directory(absOutputDir, "data");
+
+        archive.finalize();
         return;
       }
 
