@@ -2104,6 +2104,15 @@ async function setupViteDevServer(): Promise<void> {
 
 let shutdownInProgress = false;
 
+// Track all open connections so we can destroy them on shutdown.
+// Without this, long-lived SSE connections keep the socket alive and prevent
+// the port from being released before a restart.
+const activeConnections = new Set<import("net").Socket>();
+server.on("connection", (socket) => {
+  activeConnections.add(socket);
+  socket.once("close", () => activeConnections.delete(socket));
+});
+
 function initiateShutdown(reason: string, exitCode: number): void {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
@@ -2119,6 +2128,11 @@ function initiateShutdown(reason: string, exitCode: number): void {
   server.close(() => {
     process.exit(exitCode);
   });
+
+  // Destroy all open connections (SSE clients etc.) so server.close() can finish
+  for (const socket of activeConnections) {
+    socket.destroy();
+  }
 }
 
 process.on("SIGINT", () => initiateShutdown("SIGINT", 130));
