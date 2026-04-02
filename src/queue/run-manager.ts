@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, existsSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join, resolve, relative, isAbsolute } from "path";
 import { EventEmitter } from "events";
 import { QueueManager } from "./queue-manager.js";
@@ -435,7 +435,6 @@ export class RunManager extends EventEmitter {
     const absOutputDir = resolveOutputDir(outputDir);
 
     // Move (rename) extracted data directory to the new run location
-    const { renameSync } = require("fs") as typeof import("fs");
     renameSync(extractedDir, absOutputDir);
 
     // Load queue state and remap runId + outputDir
