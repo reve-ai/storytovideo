@@ -8,7 +8,7 @@
 import { create } from "zustand";
 import type { EditableTrack, CrossTransitionRef } from "../lib/render-engine";
 import { addTrackPair } from "../lib/render-engine";
-import type { VideoClip, EditorClip } from "./video-editor-store";
+import type { VideoClip, AudioClip, EditorClip } from "./video-editor-store";
 import { usePipelineStore, type WorkItem } from "./pipeline-store";
 import { useRunStore } from "./run-store";
 
@@ -101,17 +101,28 @@ function completedByType(type: string): WorkItem[] {
   return items;
 }
 
-/** Build the default track pair (creates if empty). */
+/** Build the default tracks (video + audio pair, plus standalone music track). */
 function ensureTracks(existing: EditableTrack[]): EditableTrack[] {
-  if (existing.length >= 2) return existing;
+  if (existing.length >= 3) return existing;
   const { tracks } = addTrackPair([], "tl-video-0", "tl-audio-0");
-  return tracks;
+  // Add standalone music track (not paired — uses itself as pairedTrackId)
+  const musicTrack: EditableTrack = {
+    id: "tl-music-0",
+    index: 1,
+    type: "audio",
+    name: "Music",
+    pairedTrackId: "tl-music-0",
+    muted: false,
+    locked: false,
+    volume: 1,
+  };
+  return [...tracks, musicTrack];
 }
 
 function buildTimeline(runId: string) {
   const planShots = completedByType("plan_shots");
   const genVideos = completedByType("generate_video");
-  const genFrames = completedByType("generate_frame");
+  const _genFrames = completedByType("generate_frame");
 
   // Index generate_video and generate_frame by scene:shot key
   const videoByKey = new Map<string, WorkItem>();
@@ -122,7 +133,7 @@ function buildTimeline(runId: string) {
     }
   }
   const frameByKey = new Map<string, WorkItem>();
-  for (const item of genFrames) {
+  for (const item of _genFrames) {
     const shot = extractShot(item);
     if (shot?.sceneNumber != null && shot?.shotInScene != null) {
       frameByKey.set(`${shot.sceneNumber}:${shot.shotInScene}`, item);
@@ -188,19 +199,16 @@ function buildTimeline(runId: string) {
   let prevClipId: string | null = null;
 
   const videoTrackId = "tl-video-0";
+  const audioTrackId = "tl-audio-0";
 
   for (const shot of uniqueShots) {
     const key = `${shot.sceneNumber}:${shot.shotInScene}`;
     const id = clipId(shot.sceneNumber, shot.shotInScene);
     const videoItem = videoByKey.get(key);
-    const frameItem = frameByKey.get(key);
-
     // Determine duration — use actual if available
     let duration = shot.durationSeconds || 4;
     let status: ClipStatus = "pending";
     let assetId = "";
-    let thumbnailUrl: string | undefined;
-
     if (videoItem) {
       const out = videoItem.outputs as Record<string, unknown>;
       const path = out?.path as string | undefined;
@@ -208,12 +216,6 @@ function buildTimeline(runId: string) {
       if (actualDuration && actualDuration > 0) duration = actualDuration;
       if (path) assetId = mediaUrl(runId, path);
       status = "ready";
-    }
-
-    if (frameItem) {
-      const out = frameItem.outputs as Record<string, unknown>;
-      const startPath = out?.startPath as string | undefined;
-      if (startPath) thumbnailUrl = mediaUrl(runId, startPath);
     }
 
     // Scene transition handling
@@ -234,6 +236,9 @@ function buildTimeline(runId: string) {
       });
     }
 
+    const clipName = `S${shot.sceneNumber} Shot ${shot.shotInScene}`;
+    const audioId = `audio-${id}`;
+
     const clip: VideoClip = {
       id,
       type: "video",
@@ -252,13 +257,25 @@ function buildTimeline(runId: string) {
         anchor_x: 0.5,
         anchor_y: 0.5,
       },
-      name: `S${shot.sceneNumber} Shot ${shot.shotInScene}`,
-      ...(thumbnailUrl ? {} : {}),
+      name: clipName,
+      linkedClipId: audioId,
     };
 
-    // We can't add thumbnailUrl directly on VideoClip since EditorClip union doesn't have it.
-    // The meta map carries that info instead.
+    const audioClip: AudioClip = {
+      id: audioId,
+      type: "audio",
+      startTime: cursor,
+      duration,
+      trackId: audioTrackId,
+      inPoint: 0,
+      assetId,
+      speed: 1,
+      name: clipName,
+      linkedClipId: id,
+    };
+
     clips.push(clip);
+    clips.push(audioClip);
 
     meta[id] = {
       sceneNumber: shot.sceneNumber,
@@ -275,6 +292,21 @@ function buildTimeline(runId: string) {
   }
 
   const totalDuration = Math.max(30, cursor + 5);
+
+  // Add background music clip spanning the full timeline
+  const musicClip: AudioClip = {
+    id: "music-bg",
+    type: "audio",
+    startTime: 0,
+    duration: totalDuration,
+    trackId: "tl-music-0",
+    inPoint: 0,
+    assetId: mediaUrl(runId, "generated-music.mp3"),
+    speed: 1,
+    name: "Background Music",
+    volume: 0.3,
+  };
+  clips.push(musicClip);
 
   return { clips, meta, crossTransitions, duration: totalDuration };
 }
