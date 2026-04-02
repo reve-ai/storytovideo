@@ -112,7 +112,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   return (
     <header className="top-bar">
       <div className="top-bar-left">
-        <h1>Queue Pipeline</h1>
+        <h1 style={{ fontWeight: 700, letterSpacing: "-0.02em" }}>R<em style={{ fontStyle: "italic" }}>e</em>v<em style={{ fontStyle: "italic" }}>e</em>Movi<em style={{ fontStyle: "italic" }}>e</em>s</h1>
         <nav className="view-tabs">
           {VIEW_TABS.map(({ to, label, end }) => (
             <NavLink
@@ -208,8 +208,8 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           </button>
         )}
 
-        <button type="button" onClick={onNewRun}>
-          + New Run
+        <button type="button" onClick={onNewRun} title="New run">
+          +
         </button>
 
         <button
@@ -217,7 +217,7 @@ export default function TopBar({ onNewRun }: TopBarProps) {
           onClick={() => importInputRef.current?.click()}
           title="Import run from zip"
         >
-          📥 Import
+          📥
         </button>
         <input
           ref={importInputRef}
