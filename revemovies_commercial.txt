@@ -1,0 +1,19 @@
+A writer named Casey sits alone at a desk late at night, laptop open, bathed in the glow of the screen. The room is dim, cluttered with coffee cups and crumpled notes. Casey stares at the screen, fingers hovering over the keyboard, stuck.
+
+Casey starts typing. We see the words appear on the laptop screen: a short story about two strangers meeting in a rainy cafe. The typing picks up speed. Casey smiles. In under a minute, a full paragraph sits on the screen. Casey leans back, satisfied. "That's the one," Casey mutters.
+
+Casey opens a sleek web application on the laptop. The interface is clean and modern, dark-themed, with the title "ReveMovies" at the top. Casey pastes the story into a text field, selects a few options, and clicks a button labeled "Create." A progress indicator appears.
+
+The screen fills with activity. The application analyzes Casey's story automatically, extracting characters, locations, and scenes from the text. Character portraits begin generating — a woman with short red hair, a tall man in a grey overcoat. A rainy cafe interior materializes as a location reference image. Shot plans tile across the interface, each one a different camera angle: wide establishing, close-up, over-the-shoulder.
+
+Keyframe images render one after another. Each one looks like a still from a real film — the woman sitting at a window table, rain streaking the glass beside her. The man stepping through the cafe door, shaking water off his coat. The two of them facing each other across a small table, steam rising from their cups.
+
+Then the frames come alive. Video clips generate from each keyframe. The woman looks up from her coffee. The man pulls out a chair. Rain runs down the window behind them. Each clip is a few seconds of cinematic footage, generated entirely from Casey's paragraph.
+
+The application assembles everything automatically. Clips snap together on a timeline. Transitions smooth the cuts between scenes. Subtitles appear at the bottom of the frame, matching the dialogue Casey wrote. A final video file is produced.
+
+Casey clicks play. The finished short film fills the screen. It looks real — cinematic lighting, natural movement, consistent characters across every shot. The cafe scene plays out exactly as Casey wrote it. Rain on glass. Two strangers meeting. A conversation that changes everything. Casey watches the whole thing, mouth slightly open, then breaks into a wide grin.
+
+Casey picks up a phone and calls someone. "You have to see this. I wrote a story twenty minutes ago and it's already a movie." Casey turns the laptop to show the screen. On it, the ReveMovies interface displays the completed video alongside the original story text. The words "ReveMovies" are visible at the top of the screen. Casey says, "Write it. Watch it. That's it."
+
+The screen goes dark. The words "ReveMovies" appear in large, clean white text against the black background. Below it, a tagline fades in: "Write it. Watch it." A website address appears beneath: revemovies.com. The text holds for a beat, then fades to black.
