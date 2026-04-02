@@ -49,7 +49,7 @@ interface TimelineState {
 }
 
 interface TimelineActions {
-  populateFromPipeline: (runId: string) => void;
+  populateFromPipeline: (runId: string) => Promise<void>;
   syncFromPipeline: () => void;
   setCurrentTime: (t: number) => void;
   setZoom: (z: number) => void;
@@ -293,21 +293,6 @@ function buildTimeline(runId: string) {
 
   const totalDuration = Math.max(30, cursor + 5);
 
-  // Add background music clip spanning the full timeline
-  const musicClip: AudioClip = {
-    id: "music-bg",
-    type: "audio",
-    startTime: 0,
-    duration: totalDuration,
-    trackId: "tl-music-0",
-    inPoint: 0,
-    assetId: mediaUrl(runId, "generated-music.mp3"),
-    speed: 1,
-    name: "Background Music",
-    volume: 0.3,
-  };
-  clips.push(musicClip);
-
   return { clips, meta, crossTransitions, duration: totalDuration };
 }
 
@@ -327,8 +312,34 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
   selectedClipIds: [],
   duration: 30,
 
-  populateFromPipeline: (runId: string) => {
+  populateFromPipeline: async (runId: string) => {
     const { clips, meta, crossTransitions, duration } = buildTimeline(runId);
+
+    // Check if background music file exists before adding music clip
+    try {
+      const res = await fetch(
+        `/api/runs/${encodeURIComponent(runId)}/media/generated-music.mp3`,
+        { method: "HEAD" },
+      );
+      if (res.ok) {
+        const musicClip: AudioClip = {
+          id: "music-bg",
+          type: "audio",
+          startTime: 0,
+          duration,
+          trackId: "tl-music-0",
+          inPoint: 0,
+          assetId: mediaUrl(runId, "generated-music.mp3"),
+          speed: 1,
+          name: "Background Music",
+          volume: 0.3,
+        };
+        clips.push(musicClip);
+      }
+    } catch {
+      /* no music file available */
+    }
+
     set({
       tracks: ensureTracks(get().tracks),
       clips,
@@ -341,7 +352,7 @@ export const useTimelineStore = create<TimelineStore>((set, get) => ({
   syncFromPipeline: () => {
     const runId = useRunStore.getState().activeRunId;
     if (!runId) return;
-    get().populateFromPipeline(runId);
+    get().populateFromPipeline(runId); // fire-and-forget async
   },
 
   setCurrentTime: (t) => set({ currentTime: Math.max(0, t) }),

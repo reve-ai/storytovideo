@@ -130,6 +130,8 @@ export default function TimelineView() {
         throw new Error(data.error || "Music generation failed");
       }
       setMusicState("done");
+      // Sync timeline to pick up the new music file
+      useTimelineStore.getState().syncFromPipeline();
       // Auto-clear success message after 5s
       setTimeout(() => setMusicState("idle"), 5000);
     } catch (err) {
@@ -157,7 +159,7 @@ export default function TimelineView() {
         pushToEditorStore(saved.settings);
       } else {
         // Fall back to building from pipeline data
-        useTimelineStore.getState().populateFromPipeline(activeRunId);
+        await useTimelineStore.getState().populateFromPipeline(activeRunId);
         pushToEditorStore();
       }
       initialized.current = true;
