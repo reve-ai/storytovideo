@@ -38,9 +38,18 @@ function isIdle(runManager: RunManager): boolean {
   return runs.every((r) => r.status !== "running" && r.status !== "stopping");
 }
 
-/** Restart the process by spawning a replacement and exiting. */
+/**
+ * Restart the process by spawning a replacement and exiting.
+ *
+ * When run via `npm run dev` → `tsx src/queue/queue-server.ts`, process.argv is:
+ *   ["/path/to/node", "src/queue/queue-server.ts"]
+ * but the tsx loader is registered via --import flags in process.execArgv.
+ * We need to pass execArgv so the tsx loader is preserved.
+ */
 function restart(): never {
-  const child = spawn(process.argv[0], process.argv.slice(1), {
+  const args = [...process.execArgv, ...process.argv.slice(1)];
+  console.log(`[git-auto-pull] Restarting: ${process.execPath} ${args.join(" ")}`);
+  const child = spawn(process.execPath, args, {
     stdio: "inherit",
     detached: true,
   });
