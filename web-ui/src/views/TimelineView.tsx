@@ -5,6 +5,8 @@ import { useVideoEditorStore, type MediaAsset } from "../stores/video-editor-sto
 import { usePipelineStore } from "../stores/pipeline-store";
 import { timelineStorage } from "../stores/timeline-storage";
 import { useAutoSave } from "../hooks/use-auto-save";
+import { useAudioEngine } from "../hooks/use-audio-engine";
+import { useAssetStore } from "../components/timeline/use-asset-store";
 import { CanvasTimeline } from "../components/timeline/canvas-timeline";
 import { VideoPreview } from "../components/timeline/VideoPreview";
 
@@ -40,6 +42,7 @@ function pushToEditorStore(settings?: { width: number; height: number; fps: numb
 
 export default function TimelineView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
+  const { isReady: isAudioReady } = useAudioEngine();
   const initialized = useRef(false);
   const [exportState, setExportState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [exportError, setExportError] = useState<string>("");
@@ -49,6 +52,53 @@ export default function TimelineView() {
 
   // Wire up auto-save to persist timeline state to the server
   useAutoSave(activeRunId ?? "");
+
+  // Fetch video asset URLs as Blobs and register them in the asset store
+  // so the WASM audio engine can decode their audio tracks
+  const fetchedAssetsRef = useRef<Set<string>>(new Set());
+  const clips = useVideoEditorStore((s) => s.clips);
+  useEffect(() => {
+    if (!isAudioReady) return;
+    const mediaClips = clips.filter(
+      (c): c is (typeof clips[number]) & { assetId: string } =>
+        (c.type === "video" || c.type === "audio") && "assetId" in c && !!c.assetId,
+    );
+    const uniqueAssetIds = [...new Set(mediaClips.map((c) => c.assetId))];
+    const existingAssets = useAssetStore.getState().assets;
+    const existingIds = new Set(existingAssets.map((a) => a.id));
+
+    for (const assetId of uniqueAssetIds) {
+      if (fetchedAssetsRef.current.has(assetId) || existingIds.has(assetId)) continue;
+      fetchedAssetsRef.current.add(assetId);
+
+      const clipType = mediaClips.find((c) => c.assetId === assetId)?.type ?? "video";
+      const defaultMime = clipType === "audio" ? "audio/mpeg" : "video/mp4";
+      const defaultExt = clipType === "audio" ? "audio.mp3" : "video.mp4";
+
+      fetch(assetId)
+        .then((r) => r.blob())
+        .then((blob) => {
+          const file = new File([blob], assetId.split("/").pop() ?? defaultExt, {
+            type: blob.type || defaultMime,
+          });
+          useAssetStore.getState().addAssets([
+            {
+              id: assetId,
+              name: assetId.split("/").pop() ?? clipType,
+              type: clipType as "video" | "audio",
+              url: assetId,
+              duration: 0,
+              size: blob.size,
+              file,
+            },
+          ]);
+        })
+        .catch((err) => {
+          console.error(`[TimelineView] Failed to fetch asset blob for ${assetId}:`, err);
+          fetchedAssetsRef.current.delete(assetId);
+        });
+    }
+  }, [clips, isAudioReady]);
 
   const handleExport = useCallback(async () => {
     if (!activeRunId || exportState === "loading") return;

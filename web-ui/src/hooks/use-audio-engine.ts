@@ -10,11 +10,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { BrowserAudioEngine, type AudioTimelineState } from "../lib/render-engine";
 import { useVideoEditorStore } from "../stores/video-editor-store";
 import { useAssetStore } from "../components/timeline/use-asset-store";
-// TODO: Wire up WASM audio engine when available
-// import audioWasmUrl from "@tooscut/render-engine/wasm/audio-engine/audio_engine_bg.wasm?url";
-// import audioWorkletUrl from "@tooscut/render-engine/dist/worklet/audio-engine.worklet.iife.js?url";
-const audioWasmUrl: string = "";
-const audioWorkletUrl: string = "";
+const audioWasmUrl = "/wasm/audio-engine/audio_engine_bg.wasm";
+const audioWorkletUrl = "/audio-engine.worklet.js";
 
 /**
  * Hook to manage audio playback in the video editor

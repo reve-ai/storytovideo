@@ -152,6 +152,7 @@ export function VideoPreview() {
           objectFit: "contain",
           display: isReady ? "block" : "none",
         }}
+        muted
         playsInline
         preload="auto"
       />
