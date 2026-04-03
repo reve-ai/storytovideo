@@ -485,8 +485,18 @@ export class RunManager extends EventEmitter {
             qm.save();
           }
 
-          // Mark previously-running, stopping, or completed runs as stopped (server restarted)
-          if (record.status === "running" || record.status === "stopping" || record.status === "completed") {
+          // Determine correct status after server restart
+          const items = qm.getState().workItems;
+          const activeItems = items.filter(i => i.status !== "superseded" && i.status !== "cancelled");
+          const allDone = activeItems.length > 0 && activeItems.every(i => i.status === "completed");
+
+          if (allDone) {
+            // All work completed — mark as done
+            if (record.status !== "done") {
+              this.patchRun(runId, { status: "done" });
+            }
+          } else if (record.status === "running" || record.status === "stopping" || record.status === "completed") {
+            // Was in-flight when server restarted — mark as stopped
             this.patchRun(runId, { status: "stopped" });
           }
         } catch (err) {
