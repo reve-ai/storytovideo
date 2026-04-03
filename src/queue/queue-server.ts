@@ -694,6 +694,34 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // GET /api/runs/:id/thumbnail — Serve the first generated frame as a thumbnail
+      if (method === "GET" && action === "thumbnail" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) { sendJson(res, 404, { error: "No state for run" }); return; }
+        const outputs = qm.getState().generatedOutputs;
+        // Find the first frame: try scene 1 shot 1, then iterate
+        let framePath: string | null = null;
+        const firstFrame = outputs["frame:scene:1:shot:1:start"];
+        if (firstFrame) {
+          framePath = firstFrame;
+        } else {
+          // Find any frame
+          for (const [key, val] of Object.entries(outputs)) {
+            if (key.startsWith("frame:") && key.endsWith(":start")) {
+              framePath = val;
+              break;
+            }
+          }
+        }
+        if (!framePath) { sendJson(res, 404, { error: "No thumbnail available" }); return; }
+        const absPath = join(resolveOutputDir(run.outputDir), framePath);
+        if (!existsSync(absPath)) { sendJson(res, 404, { error: "Thumbnail file not found" }); return; }
+        handleMediaRequest(res, req, resolveOutputDir(run.outputDir), framePath.split("/"));
+        return;
+      }
+
       // GET|HEAD /api/runs/:id/media/** — Serve generated files
       if ((method === "GET" || method === "HEAD") && action === "media" && pathParts.length >= 5) {
         const run = runManager.getRun(runId);

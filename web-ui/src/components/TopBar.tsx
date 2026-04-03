@@ -56,13 +56,10 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     loadRuns().then(() => {
       const state = useRunStore.getState();
       if (!state.activeRunId && state.runs.length > 0) {
-        // Prefer run ID from URL hash
+        // Only restore run from URL hash — otherwise show home page
         const hashRunId = urlState.runId;
         if (hashRunId && state.runs.some((r) => r.id === hashRunId)) {
           selectRun(hashRunId);
-        } else {
-          const latest = state.runs[state.runs.length - 1];
-          selectRun(latest.id);
         }
       }
     });
@@ -129,132 +126,148 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     runStatus === "stopping";
   const playDisabled = runStatus === "stopped" && !hasPendingWork;
   const activeRun = runs.find((run) => run.id === activeRunId);
+  const clearActiveRun = useRunStore((s) => s.clearActiveRun);
+
+  const handleGoHome = useCallback(() => {
+    const pipeline = usePipelineStore.getState();
+    pipeline.disconnectSSE();
+    clearActiveRun();
+    navigate("/");
+  }, [clearActiveRun, navigate]);
 
   return (
     <header className="top-bar">
       <div className="top-bar-left">
-        <h1 style={{ fontWeight: 700, letterSpacing: "-0.02em" }}>R<em style={{ fontStyle: "italic" }}>e</em>v<em style={{ fontStyle: "italic" }}>e</em>Movi<em style={{ fontStyle: "italic" }}>e</em>s</h1>
-        <nav className="view-tabs">
-          {VIEW_TABS.map(({ to, label, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `tab${isActive ? " active" : ""}`
-              }
+        <h1
+          style={{ fontWeight: 700, letterSpacing: "-0.02em", cursor: "pointer" }}
+          onClick={handleGoHome}
+          title="Home"
+        >R<em style={{ fontStyle: "italic" }}>e</em>v<em style={{ fontStyle: "italic" }}>e</em>Movi<em style={{ fontStyle: "italic" }}>e</em>s</h1>
+        {activeRunId && (
+          <>
+            <nav className="view-tabs">
+              {VIEW_TABS.map(({ to, label, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  className={({ isActive }) =>
+                    `tab${isActive ? " active" : ""}`
+                  }
+                >
+                  {label}
+                  {label === "Analyze" && analyzeCount > 0 && (
+                    <span className="tab-badge">{analyzeCount}</span>
+                  )}
+                </NavLink>
+              ))}
+            </nav>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+                fontSize: "0.75rem",
+                color: "var(--muted)",
+                flexWrap: "wrap",
+              }}
             >
-              {label}
-              {label === "Analyze" && analyzeCount > 0 && (
-                <span className="tab-badge">{analyzeCount}</span>
+              {activeRun && (
+                <>
+                  <span>Assets: {activeRun.options.assetImageBackend ?? activeRun.options.imageBackend ?? "grok"}</span>
+                  <span>Frames: {activeRun.options.imageBackend ?? "grok"}</span>
+                  <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
+                </>
               )}
-            </NavLink>
-          ))}
-        </nav>
-        <div
-          style={{
-            display: "flex",
-            gap: "0.5rem",
-            marginTop: "0.5rem",
-            fontSize: "0.75rem",
-            color: "var(--muted)",
-            flexWrap: "wrap",
-          }}
-        >
-          {activeRun && (
-            <>
-              <span>Assets: {activeRun.options.assetImageBackend ?? activeRun.options.imageBackend ?? "grok"}</span>
-              <span>Frames: {activeRun.options.imageBackend ?? "grok"}</span>
-              <span>Video: {activeRun.options.videoBackend ?? "grok"}</span>
-            </>
-          )}
-          <span>LLM: {activeRun?.options?.llmProvider ?? "anthropic"}</span>
-        </div>
+              <span>LLM: {activeRun?.options?.llmProvider ?? "anthropic"}</span>
+            </div>
+          </>
+        )}
       </div>
       <div className="top-bar-right">
-        <select
-          value={activeRunId ?? ""}
-          onChange={handleRunChange}
-          aria-label="Select project"
-        >
-          <option value="">— select project —</option>
-          {runs.map((run) => (
-            <option key={run.id} value={run.id}>
-              {run.name || run.id.slice(0, 8)}
-            </option>
-          ))}
-        </select>
+        {activeRunId && (
+          <>
+            <select
+              value={activeRunId ?? ""}
+              onChange={handleRunChange}
+              aria-label="Select project"
+            >
+              <option value="">— select project —</option>
+              {runs.map((run) => (
+                <option key={run.id} value={run.id}>
+                  {run.name || run.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
 
-        {activeRunId && runStatus && (
-          <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
-        )}
+            {runStatus && (
+              <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
+            )}
 
-        {activeRunId && showPlayPause && (
-          <button
-            type="button"
-            className={`play-pause-btn ${runStatus === "running" ? "running" : "stopped"}`}
-            onClick={togglePlayPause}
-            disabled={playDisabled}
-            title={
-              playDisabled
-                ? "Nothing left to process"
-                : runStatus === "running"
-                  ? "Stop pipeline"
-                  : "Resume pipeline"
-            }
-          >
-            {runStatus === "running" ? "⏸" : "▶"}
-          </button>
-        )}
-
-        <button type="button" onClick={onNewRun} title="New project">
-          +
-        </button>
-
-        <div className="top-bar-menu-wrapper" ref={menuRef}>
-          <button
-            type="button"
-            onClick={() => setShowMenu((v) => !v)}
-            className="top-bar-menu-btn"
-            title="More actions"
-          >
-            ⋯
-          </button>
-          {showMenu && (
-            <div className="top-bar-menu-dropdown" style={{ background: "#0f1117" }}>
-              {activeRunId && (
-                <button type="button" onClick={() => { handleExport(); setShowMenu(false); }}>
-                  📦 Export project
-                </button>
-              )}
-              <button type="button" onClick={() => { importInputRef.current?.click(); setShowMenu(false); }}>
-                📥 Import project
+            {showPlayPause && (
+              <button
+                type="button"
+                className={`play-pause-btn ${runStatus === "running" ? "running" : "stopped"}`}
+                onClick={togglePlayPause}
+                disabled={playDisabled}
+                title={
+                  playDisabled
+                    ? "Nothing left to process"
+                    : runStatus === "running"
+                      ? "Stop pipeline"
+                      : "Resume pipeline"
+                }
+              >
+                {runStatus === "running" ? "⏸" : "▶"}
               </button>
-              {activeRunId && (
-                <button
-                  type="button"
-                  disabled={runStatus === "running"}
-                  onClick={() => { handleDelete(); setShowMenu(false); }}
-                  className="top-bar-menu-danger"
-                >
-                  🗑 Delete project
-                </button>
+            )}
+
+            <button type="button" onClick={onNewRun} title="New project">
+              +
+            </button>
+
+            <div className="top-bar-menu-wrapper" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setShowMenu((v) => !v)}
+                className="top-bar-menu-btn"
+                title="More actions"
+              >
+                ⋯
+              </button>
+              {showMenu && (
+                <div className="top-bar-menu-dropdown" style={{ background: "#0f1117" }}>
+                  <button type="button" onClick={() => { handleExport(); setShowMenu(false); }}>
+                    📦 Export project
+                  </button>
+                  <button type="button" onClick={() => { importInputRef.current?.click(); setShowMenu(false); }}>
+                    📥 Import project
+                  </button>
+                  <button
+                    type="button"
+                    disabled={runStatus === "running"}
+                    onClick={() => { handleDelete(); setShowMenu(false); }}
+                    className="top-bar-menu-danger"
+                  >
+                    🗑 Delete project
+                  </button>
+                </div>
               )}
             </div>
-          )}
-        </div>
-        <input
-          ref={importInputRef}
-          type="file"
-          accept=".zip"
-          style={{ display: "none" }}
-          onChange={handleImport}
-        />
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".zip"
+              style={{ display: "none" }}
+              onChange={handleImport}
+            />
 
-        <span
-          className={`sse-dot ${sseStatus}`}
-          title={sseStatus === "connected" ? "Connected" : sseStatus === "connecting" ? "Connecting…" : "Disconnected"}
-        />
+            <span
+              className={`sse-dot ${sseStatus}`}
+              title={sseStatus === "connected" ? "Connected" : sseStatus === "connecting" ? "Connecting…" : "Disconnected"}
+            />
+          </>
+        )}
       </div>
     </header>
   );
