@@ -24,7 +24,7 @@ import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
 import { analyzeVideoClip, buildAnalyzeVideoPrompt } from '../tools/analyze-video-pacing.js';
-import type { StoryAnalysis, AssetLibrary, Shot } from '../types.js';
+import type { StoryAnalysis, Shot } from '../types.js';
 import { computeLlmCost, computeImageCost, computeVideoCost } from './cost-tracker.js';
 
 // ---------------------------------------------------------------------------
@@ -487,7 +487,8 @@ ${JSON.stringify(scene, null, 2)}`;
   private async handleGenerateFrame(item: WorkItem, signal: AbortSignal): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const state = this.queueManager.getState();
-    if (!state.storyAnalysis || !state.assetLibrary) {
+    const resolvedAssetLib = this.queueManager.resolveAssetLibrary();
+    if (!state.storyAnalysis || !resolvedAssetLib) {
       throw new Error('generate_frame requires storyAnalysis and assetLibrary');
     }
 
@@ -544,7 +545,7 @@ ${JSON.stringify(scene, null, 2)}`;
     const result = await generateFrame({
       shot,
       artStyle: state.storyAnalysis.artStyle,
-      assetLibrary: state.assetLibrary,
+      assetLibrary: resolvedAssetLib,
       outputDir: this.resolvedOutputDir(),
       imageBackend,
       aspectRatio,
@@ -1135,42 +1136,9 @@ ${JSON.stringify(scene, null, 2)}`;
   }
 
   private rebuildAssetLibrary(): void {
-    const state = this.queueManager.getState();
-    console.log('[rebuildAssetLibrary] generatedOutputs keys:', Object.keys(state.generatedOutputs));
-    const analysis = state.storyAnalysis;
-    if (!analysis) return;
-
-    const lib: AssetLibrary = {
-      characterImages: {},
-      locationImages: {},
-      objectImages: {},
-    };
-
-    // generateAsset() returns keys formatted as `${assetType}:${assetName}:${angleType}`
-    // (no 'asset:' prefix). Characters use :front/:angle, locations and objects also get :front.
-    for (const char of analysis.characters) {
-      const frontPath = state.generatedOutputs[`character:${char.name}:front`];
-      const anglePath = state.generatedOutputs[`character:${char.name}:angle`];
-      if (frontPath) {
-        lib.characterImages[char.name] = {
-          front: this.absolutePath(frontPath),
-          angle: this.absolutePath(anglePath ?? frontPath),
-        };
-      }
-    }
-
-    for (const loc of analysis.locations) {
-      const path = state.generatedOutputs[`location:${loc.name}:front`];
-      if (path) lib.locationImages[loc.name] = this.absolutePath(path);
-    }
-
-    for (const obj of (analysis.objects ?? [])) {
-      const path = state.generatedOutputs[`object:${obj.name}:front`];
-      if (path) lib.objectImages[obj.name] = this.absolutePath(path);
-    }
-
-    this.queueManager.setAssetLibrary(lib);
-    console.log('[rebuildAssetLibrary] Asset library:', JSON.stringify(lib, null, 2));
+    // Delegate to QueueManager which stores relative paths
+    this.queueManager.rebuildAssetLibrary();
+    console.log('[rebuildAssetLibrary] Asset library rebuilt (relative paths)');
   }
 }
 

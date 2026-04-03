@@ -725,24 +725,21 @@ export class QueueManager {
     this.touch();
   }
 
-  /** Remap runId and outputDir after import. Rebuilds assetLibrary with correct paths. */
+  /** Remap runId and outputDir after import. Rebuilds assetLibrary with relative paths. */
   remapRunId(newRunId: string, newOutputDir: string): void {
     this.state.runId = newRunId;
     this.state.outputDir = newOutputDir;
     const absOutputDir = isAbsolute(newOutputDir) ? newOutputDir : resolve(process.cwd(), newOutputDir);
     this.stateFilePath = join(absOutputDir, 'queue_state.json');
 
-    // Rebuild assetLibrary from generatedOutputs with correct absolute paths for the new location
-    this.rebuildAssetLibrary(absOutputDir);
+    // Rebuild assetLibrary from generatedOutputs with relative paths
+    this.rebuildAssetLibrary();
   }
 
-  /** Rebuild the assetLibrary from generatedOutputs and storyAnalysis, using the given absolute output dir. */
-  rebuildAssetLibrary(absOutputDir?: string): void {
+  /** Rebuild the assetLibrary from generatedOutputs and storyAnalysis. All paths stored are relative to outputDir. */
+  rebuildAssetLibrary(): void {
     const analysis = this.state.storyAnalysis;
     if (!analysis) return;
-
-    const resolvedDir = absOutputDir ?? (isAbsolute(this.state.outputDir) ? this.state.outputDir : resolve(process.cwd(), this.state.outputDir));
-    const toAbsPath = (relPath: string) => isAbsolute(relPath) ? relPath : join(resolvedDir, relPath);
 
     const lib: import('../types.js').AssetLibrary = {
       characterImages: {},
@@ -755,23 +752,43 @@ export class QueueManager {
       const anglePath = this.state.generatedOutputs[`character:${char.name}:angle`];
       if (frontPath) {
         lib.characterImages[char.name] = {
-          front: toAbsPath(frontPath),
-          angle: toAbsPath(anglePath ?? frontPath),
+          front: frontPath,
+          angle: anglePath ?? frontPath,
         };
       }
     }
 
     for (const loc of analysis.locations) {
       const p = this.state.generatedOutputs[`location:${loc.name}:front`];
-      if (p) lib.locationImages[loc.name] = toAbsPath(p);
+      if (p) lib.locationImages[loc.name] = p;
     }
 
     for (const obj of (analysis.objects ?? [])) {
       const p = this.state.generatedOutputs[`object:${obj.name}:front`];
-      if (p) lib.objectImages[obj.name] = toAbsPath(p);
+      if (p) lib.objectImages[obj.name] = p;
     }
 
     this.state.assetLibrary = lib;
+  }
+
+  /** Return a copy of the assetLibrary with all paths resolved to absolute using the run's outputDir. */
+  resolveAssetLibrary(): import('../types.js').AssetLibrary | null {
+    if (!this.state.assetLibrary) return null;
+    const absOutputDir = isAbsolute(this.state.outputDir) ? this.state.outputDir : resolve(process.cwd(), this.state.outputDir);
+    const toAbs = (p: string) => isAbsolute(p) ? p : join(absOutputDir, p);
+
+    const lib = this.state.assetLibrary;
+    return {
+      characterImages: Object.fromEntries(
+        Object.entries(lib.characterImages).map(([name, imgs]) => [name, { front: toAbs(imgs.front), angle: toAbs(imgs.angle) }])
+      ),
+      locationImages: Object.fromEntries(
+        Object.entries(lib.locationImages).map(([name, p]) => [name, toAbs(p)])
+      ),
+      objectImages: Object.fromEntries(
+        Object.entries(lib.objectImages).map(([name, p]) => [name, toAbs(p)])
+      ),
+    };
   }
 
   // --- Persistence ---

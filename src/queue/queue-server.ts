@@ -736,40 +736,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         // Add run record metadata
         archive.append(JSON.stringify(run, null, 2), { name: "run-record.json" });
 
-        // Sanitize queue_state.json: strip absolute paths from assetLibrary so export is portable
-        const queueStatePath = join(absOutputDir, "queue_state.json");
-        if (existsSync(queueStatePath)) {
-          try {
-            const rawState = JSON.parse(readFileSync(queueStatePath, "utf-8"));
-            // Strip absolute outputDir prefix from assetLibrary paths
-            if (rawState.assetLibrary) {
-              const prefix = absOutputDir.endsWith("/") ? absOutputDir : absOutputDir + "/";
-              const strip = (v: string) => v.startsWith(prefix) ? v.slice(prefix.length) : v;
-              const lib = rawState.assetLibrary;
-              for (const [name, imgs] of Object.entries(lib.characterImages ?? {})) {
-                const ci = imgs as { front: string; angle: string };
-                lib.characterImages[name] = { front: strip(ci.front), angle: strip(ci.angle) };
-              }
-              for (const [name, p] of Object.entries(lib.locationImages ?? {})) {
-                lib.locationImages[name] = strip(p as string);
-              }
-              for (const [name, p] of Object.entries(lib.objectImages ?? {})) {
-                lib.objectImages[name] = strip(p as string);
-              }
-            }
-            archive.append(JSON.stringify(rawState, null, 2), { name: "data/queue_state.json" });
-          } catch {
-            // Fallback: include the raw file
-            archive.file(queueStatePath, { name: "data/queue_state.json" });
-          }
-        }
-
-        // Add all files from the run directory except queue_state.json (already added sanitized)
-        archive.glob("**/*", {
-          cwd: absOutputDir,
-          ignore: ["queue_state.json"],
-          dot: false,
-        });
+        // Add all files from the run directory (assetLibrary now stores relative paths)
+        archive.directory(absOutputDir, "data");
 
         archive.finalize();
         return;
@@ -943,36 +911,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         // Update generatedOutputs
         qm.setGeneratedOutput(assetKey, relativePath);
 
-        // Rebuild asset library from generatedOutputs
+        // Rebuild asset library from generatedOutputs (stores relative paths)
+        qm.rebuildAssetLibrary();
         const state = qm.getState();
-        const analysis = state.storyAnalysis;
-        if (analysis) {
-          const lib: { characterImages: Record<string, { front: string; angle: string }>; locationImages: Record<string, string>; objectImages: Record<string, string> } = {
-            characterImages: {},
-            locationImages: {},
-            objectImages: {},
-          };
-          const absPath = (p: string) => join(outputDir, p);
-          for (const char of analysis.characters) {
-            const frontPath = state.generatedOutputs[`character:${char.name}:front`];
-            const anglePath = state.generatedOutputs[`character:${char.name}:angle`];
-            if (frontPath) {
-              lib.characterImages[char.name] = {
-                front: absPath(frontPath),
-                angle: absPath(anglePath ?? frontPath),
-              };
-            }
-          }
-          for (const loc of analysis.locations) {
-            const path = state.generatedOutputs[`location:${loc.name}:front`];
-            if (path) lib.locationImages[loc.name] = absPath(path);
-          }
-          for (const obj of (analysis.objects ?? [])) {
-            const path = state.generatedOutputs[`object:${obj.name}:front`];
-            if (path) lib.objectImages[obj.name] = absPath(path);
-          }
-          qm.setAssetLibrary(lib);
-        }
 
         // Find all active generate_frame items that reference this asset
         const assetName = assetKey.split(":")[1];
