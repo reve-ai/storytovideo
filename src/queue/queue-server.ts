@@ -1,5 +1,6 @@
 import "dotenv/config";
 import {
+  cpSync,
   createReadStream,
   existsSync,
   mkdirSync,
@@ -600,6 +601,60 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       return;
     }
 
+    // POST /api/runs/import-directory — Import a run from a local directory
+    if (method === "POST" && url.pathname === "/api/runs/import-directory") {
+      try {
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const dirPath = body.path;
+        if (typeof dirPath !== "string" || dirPath.trim().length === 0) {
+          sendJson(res, 400, { error: "path is required and must be a non-empty string" });
+          return;
+        }
+
+        const absDir = resolve(dirPath);
+        if (!existsSync(absDir) || !statSync(absDir).isDirectory()) {
+          sendJson(res, 400, { error: `Directory not found: ${absDir}` });
+          return;
+        }
+
+        const queueStatePath = join(absDir, "queue_state.json");
+        if (!existsSync(queueStatePath)) {
+          sendJson(res, 400, { error: "Directory is missing queue_state.json" });
+          return;
+        }
+
+        // Read queue_state to extract run info for the run record
+        const rawState = JSON.parse(readFileSync(queueStatePath, "utf-8"));
+
+        // Build a synthetic run record from the queue state
+        const runRecord = {
+          id: rawState.runId ?? randomUUID(),
+          name: rawState.runName ?? null,
+          storyText: rawState.storyFile === "(api-input)"
+            ? (rawState.workItems?.find((i: Record<string, unknown>) => i.type === "analyze_story" || i.type === "story_to_script")?.inputs?.storyText ?? "")
+            : rawState.storyFile ?? "",
+          outputDir: rawState.outputDir ?? "",
+          status: "stopped" as const,
+          createdAt: rawState.createdAt ?? new Date().toISOString(),
+          startedAt: rawState.createdAt ?? undefined,
+          completedAt: rawState.updatedAt ?? undefined,
+          options: rawState.options ?? {},
+        };
+
+        // Copy the directory to a temp location (don't move the original)
+        const tmpDir = join(resolveOutputDir("output/runs"), `.import-${randomUUID()}`);
+        cpSync(absDir, tmpDir, { recursive: true });
+
+        const record = runManager.importRun(tmpDir, runRecord);
+        sendJson(res, 201, record);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[import-directory] Error:", msg);
+        sendJson(res, 500, { error: `Import failed: ${msg}` });
+      }
+      return;
+    }
+
     // GET /api/runs — List all runs
     if (method === "GET" && url.pathname === "/api/runs") {
       sendJson(res, 200, { runs: runManager.listRuns() });
@@ -681,8 +736,40 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         // Add run record metadata
         archive.append(JSON.stringify(run, null, 2), { name: "run-record.json" });
 
-        // Add all files from the run directory
-        archive.directory(absOutputDir, "data");
+        // Sanitize queue_state.json: strip absolute paths from assetLibrary so export is portable
+        const queueStatePath = join(absOutputDir, "queue_state.json");
+        if (existsSync(queueStatePath)) {
+          try {
+            const rawState = JSON.parse(readFileSync(queueStatePath, "utf-8"));
+            // Strip absolute outputDir prefix from assetLibrary paths
+            if (rawState.assetLibrary) {
+              const prefix = absOutputDir.endsWith("/") ? absOutputDir : absOutputDir + "/";
+              const strip = (v: string) => v.startsWith(prefix) ? v.slice(prefix.length) : v;
+              const lib = rawState.assetLibrary;
+              for (const [name, imgs] of Object.entries(lib.characterImages ?? {})) {
+                const ci = imgs as { front: string; angle: string };
+                lib.characterImages[name] = { front: strip(ci.front), angle: strip(ci.angle) };
+              }
+              for (const [name, p] of Object.entries(lib.locationImages ?? {})) {
+                lib.locationImages[name] = strip(p as string);
+              }
+              for (const [name, p] of Object.entries(lib.objectImages ?? {})) {
+                lib.objectImages[name] = strip(p as string);
+              }
+            }
+            archive.append(JSON.stringify(rawState, null, 2), { name: "data/queue_state.json" });
+          } catch {
+            // Fallback: include the raw file
+            archive.file(queueStatePath, { name: "data/queue_state.json" });
+          }
+        }
+
+        // Add all files from the run directory except queue_state.json (already added sanitized)
+        archive.glob("**/*", {
+          cwd: absOutputDir,
+          ignore: ["queue_state.json"],
+          dot: false,
+        });
 
         archive.finalize();
         return;

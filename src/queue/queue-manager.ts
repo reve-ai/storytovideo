@@ -64,61 +64,75 @@ export class QueueManager {
     return mgr;
   }
 
-  /** Migrate any absolute paths in generatedOutputs, work item inputs/outputs, and outputDir to relative. */
+  /** Migrate any absolute paths in generatedOutputs, work item inputs/outputs, assetLibrary, and outputDir to relative. */
   private migrateAbsolutePaths(): void {
     let changed = false;
 
-    // Migrate outputDir itself from absolute → relative to process.cwd()
+    // Determine the absolute prefix to strip
+    let absPrefix: string;
     if (isAbsolute(this.state.outputDir)) {
-      const absOutputDir = this.state.outputDir;
-      this.state.outputDir = relative(process.cwd(), absOutputDir);
+      absPrefix = this.state.outputDir;
+      this.state.outputDir = relative(process.cwd(), absPrefix);
       changed = true;
-
-      // Strip the old absolute outputDir prefix from generatedOutputs and work items
-      for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
-        if (val.startsWith(absOutputDir)) {
-          this.state.generatedOutputs[key] = val.slice(absOutputDir.length).replace(/^\//, '');
-          changed = true;
-        }
-      }
-
-      for (const item of this.state.workItems) {
-        for (const [key, val] of Object.entries(item.outputs)) {
-          if (typeof val === 'string' && val.startsWith(absOutputDir)) {
-            (item.outputs as Record<string, unknown>)[key] = val.slice(absOutputDir.length).replace(/^\//, '');
-            changed = true;
-          }
-        }
-        for (const [key, val] of Object.entries(item.inputs)) {
-          if (typeof val === 'string' && val.startsWith(absOutputDir)) {
-            (item.inputs as Record<string, unknown>)[key] = val.slice(absOutputDir.length).replace(/^\//, '');
-            changed = true;
-          }
-        }
-      }
     } else {
-      // outputDir is already relative; still strip any lingering absolute prefixes using resolved path
-      const resolvedDir = resolve(process.cwd(), this.state.outputDir);
-      for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
-        if (val.startsWith(resolvedDir)) {
-          this.state.generatedOutputs[key] = val.slice(resolvedDir.length).replace(/^\//, '');
-          changed = true;
+      absPrefix = resolve(process.cwd(), this.state.outputDir);
+    }
+
+    // Helper: strip absolute prefix from a string value
+    const stripPrefix = (val: string): string | null => {
+      if (val.startsWith(absPrefix)) {
+        return val.slice(absPrefix.length).replace(/^\//, '');
+      }
+      return null;
+    };
+
+    // Strip from generatedOutputs
+    for (const [key, val] of Object.entries(this.state.generatedOutputs)) {
+      const rel = stripPrefix(val);
+      if (rel !== null) {
+        this.state.generatedOutputs[key] = rel;
+        changed = true;
+      }
+    }
+
+    // Strip from work item inputs/outputs
+    for (const item of this.state.workItems) {
+      for (const [key, val] of Object.entries(item.outputs)) {
+        if (typeof val === 'string') {
+          const rel = stripPrefix(val);
+          if (rel !== null) {
+            (item.outputs as Record<string, unknown>)[key] = rel;
+            changed = true;
+          }
         }
       }
+      for (const [key, val] of Object.entries(item.inputs)) {
+        if (typeof val === 'string') {
+          const rel = stripPrefix(val);
+          if (rel !== null) {
+            (item.inputs as Record<string, unknown>)[key] = rel;
+            changed = true;
+          }
+        }
+      }
+    }
 
-      for (const item of this.state.workItems) {
-        for (const [key, val] of Object.entries(item.outputs)) {
-          if (typeof val === 'string' && val.startsWith(resolvedDir)) {
-            (item.outputs as Record<string, unknown>)[key] = val.slice(resolvedDir.length).replace(/^\//, '');
-            changed = true;
-          }
-        }
-        for (const [key, val] of Object.entries(item.inputs)) {
-          if (typeof val === 'string' && val.startsWith(resolvedDir)) {
-            (item.inputs as Record<string, unknown>)[key] = val.slice(resolvedDir.length).replace(/^\//, '');
-            changed = true;
-          }
-        }
+    // Strip from assetLibrary paths
+    if (this.state.assetLibrary) {
+      const lib = this.state.assetLibrary;
+      for (const [name, imgs] of Object.entries(lib.characterImages)) {
+        const frontRel = stripPrefix(imgs.front);
+        const angleRel = stripPrefix(imgs.angle);
+        if (frontRel !== null) { lib.characterImages[name] = { ...imgs, front: frontRel }; changed = true; }
+        if (angleRel !== null) { lib.characterImages[name] = { ...lib.characterImages[name], angle: angleRel }; changed = true; }
+      }
+      for (const [name, path] of Object.entries(lib.locationImages)) {
+        const rel = stripPrefix(path);
+        if (rel !== null) { lib.locationImages[name] = rel; changed = true; }
+      }
+      for (const [name, path] of Object.entries(lib.objectImages)) {
+        const rel = stripPrefix(path);
+        if (rel !== null) { lib.objectImages[name] = rel; changed = true; }
       }
     }
 
@@ -711,12 +725,53 @@ export class QueueManager {
     this.touch();
   }
 
-  /** Remap runId and outputDir after import. */
+  /** Remap runId and outputDir after import. Rebuilds assetLibrary with correct paths. */
   remapRunId(newRunId: string, newOutputDir: string): void {
     this.state.runId = newRunId;
     this.state.outputDir = newOutputDir;
     const absOutputDir = isAbsolute(newOutputDir) ? newOutputDir : resolve(process.cwd(), newOutputDir);
     this.stateFilePath = join(absOutputDir, 'queue_state.json');
+
+    // Rebuild assetLibrary from generatedOutputs with correct absolute paths for the new location
+    this.rebuildAssetLibrary(absOutputDir);
+  }
+
+  /** Rebuild the assetLibrary from generatedOutputs and storyAnalysis, using the given absolute output dir. */
+  rebuildAssetLibrary(absOutputDir?: string): void {
+    const analysis = this.state.storyAnalysis;
+    if (!analysis) return;
+
+    const resolvedDir = absOutputDir ?? (isAbsolute(this.state.outputDir) ? this.state.outputDir : resolve(process.cwd(), this.state.outputDir));
+    const toAbsPath = (relPath: string) => isAbsolute(relPath) ? relPath : join(resolvedDir, relPath);
+
+    const lib: import('../types.js').AssetLibrary = {
+      characterImages: {},
+      locationImages: {},
+      objectImages: {},
+    };
+
+    for (const char of analysis.characters) {
+      const frontPath = this.state.generatedOutputs[`character:${char.name}:front`];
+      const anglePath = this.state.generatedOutputs[`character:${char.name}:angle`];
+      if (frontPath) {
+        lib.characterImages[char.name] = {
+          front: toAbsPath(frontPath),
+          angle: toAbsPath(anglePath ?? frontPath),
+        };
+      }
+    }
+
+    for (const loc of analysis.locations) {
+      const p = this.state.generatedOutputs[`location:${loc.name}:front`];
+      if (p) lib.locationImages[loc.name] = toAbsPath(p);
+    }
+
+    for (const obj of (analysis.objects ?? [])) {
+      const p = this.state.generatedOutputs[`object:${obj.name}:front`];
+      if (p) lib.objectImages[obj.name] = toAbsPath(p);
+    }
+
+    this.state.assetLibrary = lib;
   }
 
   // --- Persistence ---
