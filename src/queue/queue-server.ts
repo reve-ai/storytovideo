@@ -10,7 +10,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from "fs";
-import cluster from "node:cluster";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import { join, resolve, extname } from "path";
 import { randomUUID } from "crypto";
@@ -2181,7 +2180,7 @@ process.on("unhandledRejection", (reason) => {
 
 // In cluster worker mode, handle disconnect from the primary gracefully:
 // let in-flight requests finish, then exit.
-if (cluster.isWorker) {
+if (process.env.NODE_UNIQUE_ID) {
   process.on("disconnect", () => {
     console.log(`[worker ${process.pid}] Disconnecting, closing server...`);
     server.close(() => process.exit(0));
@@ -2247,8 +2246,9 @@ export async function startServer(opts?: { skipGitAutoPull?: boolean }): Promise
 // ---------------------------------------------------------------------------
 // Auto-start when run directly (not imported by cluster-entry)
 // ---------------------------------------------------------------------------
+// Use NODE_UNIQUE_ID (set by Node's cluster module for workers) instead of
+// cluster.isWorker, which can have initialization-order issues under tsx/ESM.
 
-const isClusterWorker = cluster.isWorker;
-if (!isClusterWorker) {
+if (!process.env.NODE_UNIQUE_ID) {
   void startServer();
 }
