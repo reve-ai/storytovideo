@@ -8,7 +8,8 @@
     "build": "tsc",
     "dev:queue-server": "tsx src/queue/queue-server.ts",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx src/queue/queue-server.ts"
+    "dev": "tsx src/queue/queue-server.ts",
+    "start:cluster": "tsx src/queue/cluster-entry.ts"
   },
   "keywords": [
     "story",

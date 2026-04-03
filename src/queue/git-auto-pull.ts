@@ -2,11 +2,50 @@ import { execSync, spawn } from "child_process";
 import type { Server } from "http";
 import type { RunManager } from "./run-manager.js";
 
+// ---------------------------------------------------------------------------
+// Git auto-pull & local-change detection: periodically pull when idle,
+// and restart whenever the local HEAD sha changes (pull, commit, checkout…).
+// ---------------------------------------------------------------------------
+
+export const POLL_INTERVAL_MS = Number(process.env.GIT_PULL_INTERVAL_MS ?? 60_000); // default 60s
+
+/** Check whether the current working directory is inside a git repository. */
+export function isGitRepo(): boolean {
+  try {
+    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Return the current HEAD commit hash. */
+export function currentHead(): string {
+  return execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
+}
+
+/** Run `git pull --ff-only`. Errors are logged but not thrown. */
+export function gitPull(): void {
+  try {
+    execSync("git pull --ff-only", { stdio: "inherit" });
+  } catch (err) {
+    console.error("[git-auto-pull] git pull failed:", err);
+  }
+}
+
+/** Returns true when no run is actively processing. */
+export function isIdle(runManager: RunManager): boolean {
+  const runs = runManager.listRuns();
+  return runs.every((r) => r.status !== "running" && r.status !== "stopping");
+}
+
 
 /**
  * Close the HTTP server, then spawn a replacement process that inherits
  * the terminal (not detached). The parent waits for the child to exit
  * and forwards its exit code, so the shell never reclaims the prompt.
+ *
+ * Used in non-cluster (standalone) mode only.
  */
 function restart(httpServer: Server): void {
   const args = [...process.execArgv, ...process.argv.slice(1)];
@@ -22,43 +61,6 @@ function restart(httpServer: Server): void {
   httpServer.closeAllConnections?.();
 }
 
-// ---------------------------------------------------------------------------
-// Git auto-pull & local-change detection: periodically pull when idle,
-// and restart whenever the local HEAD sha changes (pull, commit, checkout…).
-// ---------------------------------------------------------------------------
-
-const POLL_INTERVAL_MS = Number(process.env.GIT_PULL_INTERVAL_MS ?? 60_000); // default 60s
-
-/** Check whether the current working directory is inside a git repository. */
-function isGitRepo(): boolean {
-  try {
-    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Return the current HEAD commit hash. */
-function currentHead(): string {
-  return execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
-}
-
-/** Run `git pull --ff-only`. Errors are logged but not thrown. */
-function gitPull(): void {
-  try {
-    execSync("git pull --ff-only", { stdio: "inherit" });
-  } catch (err) {
-    console.error("[git-auto-pull] git pull failed:", err);
-  }
-}
-
-/** Returns true when no run is actively processing. */
-function isIdle(runManager: RunManager): boolean {
-  const runs = runManager.listRuns();
-  return runs.every((r) => r.status !== "running" && r.status !== "stopping");
-}
-
 
 /**
  * Start the auto-pull loop. Call once at server startup.
@@ -67,6 +69,9 @@ function isIdle(runManager: RunManager): boolean {
  *  1. If idle, run `git pull --ff-only`.
  *  2. Compare current HEAD sha to the one recorded at startup (or last check).
  *     If it changed — from a pull, a local commit, a checkout, etc. — restart.
+ *
+ * NOTE: When running under the cluster primary (cluster-entry.ts), the primary
+ * handles git polling directly and this function is NOT called from the worker.
  */
 export function startGitAutoPull(runManager: RunManager, httpServer: Server): void {
   if (!isGitRepo()) {

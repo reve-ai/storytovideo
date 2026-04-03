@@ -10,7 +10,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import cluster from "node:cluster";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import { join, resolve, extname } from "path";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
@@ -2111,7 +2112,7 @@ const server = createServer((req, res) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let viteDevServer: any;
 
-async function setupViteDevServer(): Promise<void> {
+async function setupViteDevServer(httpServer: Server): Promise<void> {
   if (process.env.NODE_ENV === "production") return;
   try {
     const vite = await (import("vite") as Promise<typeof import("vite")>);
@@ -2121,7 +2122,7 @@ async function setupViteDevServer(): Promise<void> {
       configFile: resolve(webUiRoot, "vite.config.ts"),
       server: {
         middlewareMode: true,
-        hmr: { server },
+        hmr: { server: httpServer },
       },
     });
     console.log("[queue-server] Vite dev middleware attached (HMR enabled)");
@@ -2178,13 +2179,31 @@ process.on("unhandledRejection", (reason) => {
   initiateShutdown("unhandled_rejection", 1);
 });
 
-async function start(): Promise<void> {
+// In cluster worker mode, handle disconnect from the primary gracefully:
+// let in-flight requests finish, then exit.
+if (cluster.isWorker) {
+  process.on("disconnect", () => {
+    console.log(`[worker ${process.pid}] Disconnecting, closing server...`);
+    server.close(() => process.exit(0));
+    // Force exit fallback in case close() hangs
+    const forceTimer = setTimeout(() => process.exit(0), 5000);
+    forceTimer.unref();
+  });
+}
+
+/**
+ * Start the queue server. Returns the http.Server instance.
+ *
+ * When running under cluster (cluster-entry.ts), the primary manages git
+ * auto-pull, so `skipGitAutoPull` should be true.
+ */
+export async function startServer(opts?: { skipGitAutoPull?: boolean }): Promise<Server> {
   // Load persisted settings and apply LLM provider
   const settings = loadSettings();
   setLlmProvider(settings.llmProvider);
   setLlmProviderImpl(settings.llmProvider);
 
-  await setupViteDevServer();
+  await setupViteDevServer(server);
 
   // Retry binding the port in case the previous process hasn't fully released it yet
   const MAX_BIND_RETRIES = 5;
@@ -2217,8 +2236,19 @@ async function start(): Promise<void> {
     }
   }
 
-  // Start periodic git pull when idle
-  startGitAutoPull(runManager, server);
+  // Start periodic git pull when idle (standalone mode only)
+  if (!opts?.skipGitAutoPull) {
+    startGitAutoPull(runManager, server);
+  }
+
+  return server;
 }
 
-void start();
+// ---------------------------------------------------------------------------
+// Auto-start when run directly (not imported by cluster-entry)
+// ---------------------------------------------------------------------------
+
+const isClusterWorker = cluster.isWorker;
+if (!isClusterWorker) {
+  void startServer();
+}
