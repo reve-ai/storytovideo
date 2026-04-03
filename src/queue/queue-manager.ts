@@ -136,6 +136,11 @@ export class QueueManager {
       }
     }
 
+    // Always rebuild assetLibrary from the (now-relative) generatedOutputs.
+    // This fixes runs that were saved with absolute assetLibrary paths,
+    // regardless of whether the prefix matched for stripping.
+    this.rebuildAssetLibrary();
+
     if (changed) this.save();
   }
 
