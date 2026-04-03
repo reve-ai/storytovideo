@@ -6,10 +6,9 @@
   "main": "dist/queue/queue-server.js",
   "scripts": {
     "build": "tsc",
-    "dev:queue-server": "tsx src/queue/standalone-entry.ts",
+    "dev:standalone": "tsx src/queue/standalone-entry.ts",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx src/queue/standalone-entry.ts",
-    "start:cluster": "tsx src/queue/cluster-entry.ts"
+    "dev": "tsx src/queue/cluster-entry.ts"
   },
   "keywords": [
     "story",
