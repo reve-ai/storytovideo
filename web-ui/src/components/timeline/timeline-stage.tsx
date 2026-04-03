@@ -1,7 +1,7 @@
 "use client";
 
 import Konva from "konva";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Group,
   Image as KonvaImage,
@@ -2197,6 +2197,15 @@ export function TimelineStage({
     setPendingRegen(null);
   }, [pendingRegen, trimRight]);
 
+  // Suppress native browser context menu on the canvas element
+  useEffect(() => {
+    const container = stageRef.current?.container();
+    if (!container) return;
+    const handler = (e: MouseEvent) => e.preventDefault();
+    container.addEventListener("contextmenu", handler);
+    return () => container.removeEventListener("contextmenu", handler);
+  }, []);
+
   return (
     <>
     <Stage
@@ -2209,7 +2218,6 @@ export function TimelineStage({
       onMouseMove={handleStageMouseMove}
       onMouseUp={handleStageMouseUp}
       onMouseLeave={handleStageMouseUp}
-      onContextMenu={(e) => e.evt.preventDefault()}
     >
       <Layer>
         {/* Background */}
