@@ -2178,18 +2178,6 @@ process.on("unhandledRejection", (reason) => {
   initiateShutdown("unhandled_rejection", 1);
 });
 
-// In cluster worker mode, handle disconnect from the primary gracefully:
-// let in-flight requests finish, then exit.
-if (process.env.NODE_UNIQUE_ID) {
-  process.on("disconnect", () => {
-    console.log(`[worker ${process.pid}] Disconnecting, closing server...`);
-    server.close(() => process.exit(0));
-    // Force exit fallback in case close() hangs
-    const forceTimer = setTimeout(() => process.exit(0), 5000);
-    forceTimer.unref();
-  });
-}
-
 /**
  * Start the queue server. Returns the http.Server instance.
  *
@@ -2197,6 +2185,18 @@ if (process.env.NODE_UNIQUE_ID) {
  * auto-pull, so `skipGitAutoPull` should be true.
  */
 export async function startServer(opts?: { skipGitAutoPull?: boolean }): Promise<Server> {
+  // In cluster worker mode, handle disconnect from the primary gracefully:
+  // let in-flight requests finish, then exit.
+  if (opts?.skipGitAutoPull) {
+    process.on("disconnect", () => {
+      console.log(`[worker ${process.pid}] Disconnecting, closing server...`);
+      server.close(() => process.exit(0));
+      // Force exit fallback in case close() hangs
+      const forceTimer = setTimeout(() => process.exit(0), 5000);
+      forceTimer.unref();
+    });
+  }
+
   // Load persisted settings and apply LLM provider
   const settings = loadSettings();
   setLlmProvider(settings.llmProvider);
@@ -2243,12 +2243,3 @@ export async function startServer(opts?: { skipGitAutoPull?: boolean }): Promise
   return server;
 }
 
-// ---------------------------------------------------------------------------
-// Auto-start when run directly (not imported by cluster-entry)
-// ---------------------------------------------------------------------------
-// Use NODE_UNIQUE_ID (set by Node's cluster module for workers) instead of
-// cluster.isWorker, which can have initialization-order issues under tsx/ESM.
-
-if (!process.env.NODE_UNIQUE_ID) {
-  void startServer();
-}
