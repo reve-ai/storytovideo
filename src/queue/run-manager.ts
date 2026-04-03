@@ -27,7 +27,7 @@ export function resolveOutputDir(outputDir: string): string {
 // Run record persisted to queue-runs.json
 // ---------------------------------------------------------------------------
 
-export type QueueRunStatus = "running" | "stopping" | "stopped" | "completed" | "failed";
+export type QueueRunStatus = "running" | "stopping" | "stopped" | "done" | "completed" | "failed";
 
 export interface QueueRunRecord {
   id: string;
@@ -288,13 +288,13 @@ export class RunManager extends EventEmitter {
     const allDone = activeItems.length > 0 && activeItems.every((i) => i.status === "completed");
     if (!allDone) return;
 
-    // All work is done — stop processors but don't mark as "completed"
+    // All work is done — stop processors and mark as "done"
     // (user can always resume to redo items)
     const procs = this.processors.get(runId);
     if (procs) {
       void Promise.allSettled(procs.map((p) => p.stop()));
     }
-    this.patchRun(runId, { status: "stopped" });
+    this.patchRun(runId, { status: "done" });
   }
 
   // -- Stop / Resume --------------------------------------------------------
@@ -338,7 +338,7 @@ export class RunManager extends EventEmitter {
     return this.withRunLock(runId, async () => {
       const record = this.runs.get(runId);
       if (!record) return false;
-      if (record.status !== "stopped" && record.status !== "stopping" && record.status !== "completed") return false;
+      if (record.status !== "stopped" && record.status !== "stopping" && record.status !== "done" && record.status !== "completed") return false;
 
       let qm = this.queueManagers.get(runId);
       if (!qm) {
@@ -472,7 +472,7 @@ export class RunManager extends EventEmitter {
   loadExistingRuns(): void {
     // Re-attach QueueManagers for persisted runs that have state on disk
     for (const [runId, record] of this.runs) {
-      if (record.status === "running" || record.status === "stopped" || record.status === "stopping" || record.status === "completed") {
+      if (record.status === "running" || record.status === "stopped" || record.status === "stopping" || record.status === "done" || record.status === "completed") {
         try {
           const stateFile = join(resolveOutputDir(record.outputDir), "queue_state.json");
           if (!existsSync(stateFile)) continue;

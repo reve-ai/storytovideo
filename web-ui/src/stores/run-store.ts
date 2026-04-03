@@ -22,6 +22,7 @@ export type RunStatus =
   | "running"
   | "stopping"
   | "stopped"
+  | "done"
   | "completed"
   | "failed";
 
@@ -179,7 +180,7 @@ export const useRunStore = create<RunStore>((set, get) => ({
     if (runStatus === "running") {
       set({ runStatus: "stopping" });
       await fetch(`/api/runs/${activeRunId}/stop`, { method: "POST" });
-    } else if (runStatus === "stopped" || runStatus === "stopping") {
+    } else if (runStatus === "stopped" || runStatus === "stopping" || runStatus === "done") {
       set({ runStatus: "running" });
       await fetch(`/api/runs/${activeRunId}/resume`, { method: "POST" });
     }

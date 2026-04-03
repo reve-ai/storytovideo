@@ -85,8 +85,9 @@ export default function TopBar() {
   const showPlayPause =
     runStatus === "running" ||
     runStatus === "stopped" ||
-    runStatus === "stopping";
-  const playDisabled = runStatus === "stopped" && !hasPendingWork;
+    runStatus === "stopping" ||
+    runStatus === "done";
+  const playDisabled = (runStatus === "stopped" || runStatus === "done") && !hasPendingWork;
   const activeRun = runs.find((run) => run.id === activeRunId);
   const clearActiveRun = useRunStore((s) => s.clearActiveRun);
 
