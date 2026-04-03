@@ -65,14 +65,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
     });
   }, [loadRuns, selectRun, navigate]);
 
-  const handleRunChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const runId = e.target.value;
-      if (runId) selectRun(runId);
-    },
-    [selectRun],
-  );
-
   const exportRun = useRunStore((s) => s.exportRun);
   const importRun = useRunStore((s) => s.importRun);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -187,19 +179,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
       <div className="top-bar-right">
         {activeRunId && (
           <>
-            <select
-              value={activeRunId ?? ""}
-              onChange={handleRunChange}
-              aria-label="Select project"
-            >
-              <option value="">— select project —</option>
-              {runs.map((run) => (
-                <option key={run.id} value={run.id}>
-                  {run.name || run.id.slice(0, 8)}
-                </option>
-              ))}
-            </select>
-
             {runStatus && (
               <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
             )}
