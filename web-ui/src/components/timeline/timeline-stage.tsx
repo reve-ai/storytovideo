@@ -321,6 +321,15 @@ export function TimelineStage({
     newDuration: number;
   } | null>(null);
 
+  // Right-click context menu
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    clipId: string;
+    hasLinkedClip: boolean;
+    clipType: string;
+  } | null>(null);
+
   // Store state
   const zoom = useVideoEditorStore((s) => s.zoom);
   const scrollX = useVideoEditorStore((s) => s.scrollX);
@@ -358,6 +367,12 @@ export function TimelineStage({
   const updateClipAssetDuration = useVideoEditorStore((s) => s.updateClipAssetDuration);
   const selectedTrackId = useVideoEditorStore((s) => s.selectedTrackId);
   const setSelectedTrackId = useVideoEditorStore((s) => s.setSelectedTrackId);
+  const copySelectedClips = useVideoEditorStore((s) => s.copySelectedClips);
+  const cutSelectedClips = useVideoEditorStore((s) => s.cutSelectedClips);
+  const pasteClipsAtPlayhead = useVideoEditorStore((s) => s.pasteClipsAtPlayhead);
+  const clipboard = useVideoEditorStore((s) => s.clipboard);
+  const removeClip = useVideoEditorStore((s) => s.removeClip);
+  const unlinkClipPair = useVideoEditorStore((s) => s.unlinkClipPair);
 
   // Combine tracks with full IDs - video tracks first (sorted by index descending), then audio tracks (sorted by index ascending)
   const allTracks = useMemo<TimelineTrack[]>(() => {
@@ -633,11 +648,36 @@ export function TimelineStage({
       const pos = stage.getPointerPosition();
       if (!pos) return;
 
+      // Close context menu on any click
+      setContextMenu(null);
+
       // Middle mouse button - start panning
       if (e.evt.button === 1) {
         e.evt.preventDefault();
         middlePanRef.current = { startX: pos.x, startY: pos.y, scrollX, scrollY };
         setCursor("grabbing");
+        return;
+      }
+
+      // Right mouse button - open context menu on clip
+      if (e.evt.button === 2) {
+        e.evt.preventDefault();
+        const clipHit = getClipAtPosition(pos.x, pos.y);
+        if (clipHit) {
+          const { clip } = clipHit;
+          // Select the clip if not already selected
+          if (!selectedClipIds.includes(clip.id)) {
+            setSelectedClipIds([clip.id]);
+          }
+          const hasLinkedClip = !!(clip.linkedClipId || clips.find((c) => c.linkedClipId === clip.id));
+          setContextMenu({
+            x: e.evt.clientX,
+            y: e.evt.clientY,
+            clipId: clip.id,
+            hasLinkedClip,
+            clipType: clip.type,
+          });
+        }
         return;
       }
 
@@ -2169,6 +2209,7 @@ export function TimelineStage({
       onMouseMove={handleStageMouseMove}
       onMouseUp={handleStageMouseUp}
       onMouseLeave={handleStageMouseUp}
+      onContextMenu={(e) => e.evt.preventDefault()}
     >
       <Layer>
         {/* Background */}
@@ -2708,6 +2749,84 @@ export function TimelineStage({
         )}
       </Layer>
     </Stage>
+
+    {/* Right-click context menu */}
+    {contextMenu && (
+      <div
+        className="fixed z-50"
+        style={{ left: contextMenu.x, top: contextMenu.y }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="bg-zinc-800 border border-zinc-600 rounded-md py-1 shadow-xl min-w-48 text-sm">
+          <button
+            className="w-full px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-700 flex justify-between items-center"
+            onClick={() => { copySelectedClips(); setContextMenu(null); }}
+          >
+            Copy <span className="text-zinc-500 text-xs">⌘C</span>
+          </button>
+          <button
+            className="w-full px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-700 flex justify-between items-center"
+            onClick={() => { cutSelectedClips(); setContextMenu(null); }}
+          >
+            Cut <span className="text-zinc-500 text-xs">⌘X</span>
+          </button>
+          {contextMenu.hasLinkedClip && (
+            <>
+              <div className="border-t border-zinc-700 my-1" />
+              <button
+                className="w-full px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-700"
+                onClick={() => { cutSelectedClips("audio"); setContextMenu(null); }}
+              >
+                Cut Audio Only
+              </button>
+              <button
+                className="w-full px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-700"
+                onClick={() => { cutSelectedClips("video"); setContextMenu(null); }}
+              >
+                Cut Video Only
+              </button>
+            </>
+          )}
+          <div className="border-t border-zinc-700 my-1" />
+          <button
+            className={`w-full px-3 py-1.5 text-left flex justify-between items-center ${clipboard.length > 0 ? "text-zinc-200 hover:bg-zinc-700" : "text-zinc-500 cursor-not-allowed"}`}
+            onClick={() => { if (clipboard.length > 0) { pasteClipsAtPlayhead(); } setContextMenu(null); }}
+            disabled={clipboard.length === 0}
+          >
+            Paste <span className="text-zinc-500 text-xs">⌘V</span>
+          </button>
+          <div className="border-t border-zinc-700 my-1" />
+          {contextMenu.hasLinkedClip && (
+            <button
+              className="w-full px-3 py-1.5 text-left text-zinc-200 hover:bg-zinc-700"
+              onClick={() => { unlinkClipPair(contextMenu.clipId); setContextMenu(null); }}
+            >
+              Unlink Audio/Video
+            </button>
+          )}
+          <button
+            className="w-full px-3 py-1.5 text-left text-red-400 hover:bg-zinc-700 flex justify-between items-center"
+            onClick={() => {
+              const clip = clips.find((c) => c.id === contextMenu.clipId);
+              if (clip?.linkedClipId) removeClip(clip.linkedClipId);
+              removeClip(contextMenu.clipId);
+              setContextMenu(null);
+            }}
+          >
+            Delete <span className="text-zinc-500 text-xs">⌫</span>
+          </button>
+        </div>
+      </div>
+    )}
+
+    {/* Click-away listener for context menu */}
+    {contextMenu && (
+      <div
+        className="fixed inset-0 z-40"
+        onClick={() => setContextMenu(null)}
+        onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+      />
+    )}
 
     {/* Regeneration confirmation dialog */}
     {pendingRegen && (
