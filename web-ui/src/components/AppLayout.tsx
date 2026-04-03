@@ -13,7 +13,7 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      <TopBar onNewRun={() => setDialogOpen(true)} />
+      <TopBar />
       <main className="view-content">
         {activeRunId ? <Outlet /> : <HomeView onNewRun={() => setDialogOpen(true)} />}
       </main>

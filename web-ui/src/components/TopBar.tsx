@@ -1,12 +1,8 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useUIStore, type ViewName } from "../stores/ui-store";
-
-interface TopBarProps {
-  onNewRun: () => void;
-}
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
@@ -19,7 +15,7 @@ const VIEW_TABS = [
   { to: "/assets", label: "Assets", end: false },
 ] as const;
 
-export default function TopBar({ onNewRun }: TopBarProps) {
+export default function TopBar() {
   const runs = useRunStore((s) => s.runs);
   const activeRunId = useRunStore((s) => s.activeRunId);
   const runStatus = useRunStore((s) => s.runStatus);
@@ -66,20 +62,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   }, [loadRuns, selectRun, navigate]);
 
   const exportRun = useRunStore((s) => s.exportRun);
-  const importRun = useRunStore((s) => s.importRun);
-  const importInputRef = useRef<HTMLInputElement>(null);
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMenu]);
 
   const handleDelete = useCallback(async () => {
     if (!activeRunId) return;
@@ -91,18 +73,6 @@ export default function TopBar({ onNewRun }: TopBarProps) {
   const handleExport = useCallback(() => {
     if (activeRunId) exportRun(activeRunId);
   }, [activeRunId, exportRun]);
-
-  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      await importRun(file);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Import failed");
-    }
-    // Reset input so the same file can be re-selected
-    if (importInputRef.current) importInputRef.current.value = "";
-  }, [importRun]);
 
   const queues = usePipelineStore((s) => s.queues);
 
@@ -201,45 +171,19 @@ export default function TopBar({ onNewRun }: TopBarProps) {
               </button>
             )}
 
-            <button type="button" onClick={onNewRun} title="New project">
-              +
+            <button type="button" onClick={handleExport} title="Export project">
+              📦
             </button>
 
-            <div className="top-bar-menu-wrapper" ref={menuRef}>
-              <button
-                type="button"
-                onClick={() => setShowMenu((v) => !v)}
-                className="top-bar-menu-btn"
-                title="More actions"
-              >
-                ⋯
-              </button>
-              {showMenu && (
-                <div className="top-bar-menu-dropdown" style={{ background: "#0f1117" }}>
-                  <button type="button" onClick={() => { handleExport(); setShowMenu(false); }}>
-                    📦 Export project
-                  </button>
-                  <button type="button" onClick={() => { importInputRef.current?.click(); setShowMenu(false); }}>
-                    📥 Import project
-                  </button>
-                  <button
-                    type="button"
-                    disabled={runStatus === "running"}
-                    onClick={() => { handleDelete(); setShowMenu(false); }}
-                    className="top-bar-menu-danger"
-                  >
-                    🗑 Delete project
-                  </button>
-                </div>
-              )}
-            </div>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".zip"
-              style={{ display: "none" }}
-              onChange={handleImport}
-            />
+            <button
+              type="button"
+              className="delete-run-btn"
+              disabled={runStatus === "running"}
+              onClick={handleDelete}
+              title="Delete project"
+            >
+              🗑
+            </button>
 
             <span
               className={`sse-dot ${sseStatus}`}
