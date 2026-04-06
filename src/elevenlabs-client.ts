@@ -114,9 +114,11 @@ export async function mixMusicIntoVideo(
       `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[orig];[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${volume},apad[music];[orig][music]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[out]`,
       "-map", "0:v",
       "-map", "[out]",
+      "-map", "0:s?",
       "-c:v", "copy",
       "-c:a", "aac",
       "-b:a", "192k",
+      "-c:s", "copy",
       "-shortest",
       outputPath,
     ]);
