@@ -242,6 +242,8 @@ Rules:
 - Each scene should have a clear visual setting, character actions, and sensory details.
 - Preserve all important plot points, characters, and narrative beats from the original.
 
+IMPORTANT: Your only available tool is web search, which you may use to research source material. You have NO ability to save files, export documents, create artifacts, or write to disk. Your entire output IS the script — return the complete prose script as your text response.
+
 Convert the following story into a visual prose script:
 
 `;
