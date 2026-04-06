@@ -252,6 +252,59 @@ async function padImageToAspectRatio(imageBuffer: Buffer, targetAspectRatio: str
     .toBuffer();
 }
 
+/**
+ * Create a collage from multiple image buffers arranged in a grid.
+ * Images are resized to equal cells and composed onto a single canvas.
+ * Returns a JPEG buffer of the collage.
+ */
+async function createImageCollage(imageBuffers: Buffer[]): Promise<Buffer> {
+  const count = imageBuffers.length;
+  if (count === 1) return imageBuffers[0];
+
+  // Determine grid layout: prefer wider grids
+  let cols: number, rows: number;
+  if (count <= 2) { cols = 2; rows = 1; }
+  else if (count <= 4) { cols = 2; rows = 2; }
+  else if (count <= 6) { cols = 3; rows = 2; }
+  else if (count <= 9) { cols = 3; rows = 3; }
+  else { cols = 4; rows = Math.ceil(count / 4); }
+
+  const cellSize = 512; // Each cell is 512x512
+  const gap = 4;
+  const canvasWidth = cols * cellSize + (cols - 1) * gap;
+  const canvasHeight = rows * cellSize + (rows - 1) * gap;
+
+  // Resize each image to cell size
+  const resizedImages = await Promise.all(
+    imageBuffers.map(buf =>
+      sharp(buf)
+        .resize(cellSize, cellSize, { fit: "cover" })
+        .png()
+        .toBuffer()
+    )
+  );
+
+  // Build composite operations
+  const composites: sharp.OverlayOptions[] = resizedImages.map((buf, i) => ({
+    input: buf,
+    left: (i % cols) * (cellSize + gap),
+    top: Math.floor(i / cols) * (cellSize + gap),
+  }));
+
+  return sharp({
+    create: {
+      width: canvasWidth,
+      height: canvasHeight,
+      channels: 3,
+      background: { r: 0, g: 0, b: 0 },
+    },
+  })
+    .composite(composites)
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+
 // ---------------------------------------------------------------------------
 // Wire processor events (forwarded through RunManager)
 // ---------------------------------------------------------------------------
@@ -848,6 +901,9 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       }
 
       // POST /api/runs/:id/assets/replace — Replace an asset image with a user-uploaded one
+      // Accepts either:
+      //   - Single image as raw body (Content-Type: image/*)
+      //   - Multiple images as JSON: { "images": ["data:image/...;base64,...", ...] } — collaged into a grid
       if (method === "POST" && action === "assets" && pathParts.length >= 5 && pathParts[4] === "replace") {
         const run = runManager.getRun(runId);
         if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
@@ -858,12 +914,6 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           return;
         }
 
-        const imageData = await readRawBody(req);
-        if (imageData.length === 0) {
-          sendJson(res, 400, { error: "Empty request body" });
-          return;
-        }
-
         const qm = runManager.getQueueManager(runId);
         if (!qm) { sendJson(res, 404, { error: `Run not found or not initialized: ${runId}` }); return; }
 
@@ -871,6 +921,37 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         const [assetType] = assetKey.split(":");
         if (!["character", "location", "object"].includes(assetType)) {
           sendJson(res, 400, { error: `Invalid asset type: ${assetType}. Must be character, location, or object.` });
+          return;
+        }
+
+        // Read image data — either single raw body or multiple base64 images from JSON
+        let imageData: Buffer;
+        const contentType = req.headers["content-type"] ?? "";
+        if (contentType.includes("application/json")) {
+          const body = JSON.parse((await readRawBody(req)).toString("utf-8")) as { images?: string[] };
+          const images = body.images;
+          if (!images || !Array.isArray(images) || images.length === 0) {
+            sendJson(res, 400, { error: "JSON body must include a non-empty 'images' array of base64 data URLs" });
+            return;
+          }
+          // Decode base64 data URLs to buffers
+          const buffers = images.map((dataUrl: string) => {
+            const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
+            if (match) return Buffer.from(match[1], "base64");
+            return Buffer.from(dataUrl, "base64");
+          });
+          if (buffers.length === 1) {
+            imageData = buffers[0];
+          } else {
+            // Collage multiple images into a grid
+            imageData = await createImageCollage(buffers);
+          }
+        } else {
+          imageData = await readRawBody(req);
+        }
+
+        if (imageData.length === 0) {
+          sendJson(res, 400, { error: "Empty image data" });
           return;
         }
 

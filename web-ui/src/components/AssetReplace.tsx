@@ -26,15 +26,17 @@ export default function AssetReplace({ assetKey, label, onSuccess }: AssetReplac
 
   const handleChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !activeRunId) return;
+      const fileList = e.target.files;
+      if (!fileList || fileList.length === 0 || !activeRunId) return;
       setUploading(true);
       setMessage(null);
       try {
-        const result = await replaceAsset(activeRunId, assetKey, file);
+        const files = Array.from(fileList);
+        const result = await replaceAsset(activeRunId, assetKey, files.length === 1 ? files[0] : files);
         if (result) {
           const assetName = assetKey.split(":")[1] ?? assetKey;
-          setMessage(`Replaced ${assetName}. Regenerating ${result.framesRequeued} frame${result.framesRequeued !== 1 ? "s" : ""}.`);
+          const collageNote = files.length > 1 ? ` (${files.length} images collaged)` : "";
+          setMessage(`Replaced ${assetName}${collageNote}. Regenerating ${result.framesRequeued} frame${result.framesRequeued !== 1 ? "s" : ""}.`);
           setTimeout(() => setMessage(null), 5000);
           onSuccess?.();
         }
@@ -83,6 +85,7 @@ export default function AssetReplace({ assetKey, label, onSuccess }: AssetReplac
         ref={inputRef}
         type="file"
         accept="image/*"
+        multiple
         style={{ display: "none" }}
         onChange={handleChange}
       />

@@ -149,7 +149,7 @@ interface PipelineActions {
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
-  replaceAsset: (runId: string, assetKey: string, file: File) => Promise<{ framesRequeued: number } | null>;
+  replaceAsset: (runId: string, assetKey: string, files: File | File[]) => Promise<{ framesRequeued: number } | null>;
   redoAsset: (runId: string, assetKey: string, description?: string, directorsNote?: string) => Promise<boolean>;
   enqueueAllAnalysis: (runId: string) => Promise<number>;
   fetchCosts: (runId: string) => Promise<void>;
@@ -423,14 +423,34 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     }
   },
 
-  replaceAsset: async (runId: string, assetKey: string, file: File) => {
+  replaceAsset: async (runId: string, assetKey: string, filesInput: File | File[]) => {
     try {
+      const files = Array.isArray(filesInput) ? filesInput : [filesInput];
       const params = new URLSearchParams({ assetKey });
-      const res = await fetch(`/api/runs/${runId}/assets/replace?${params}`, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
+
+      let res: Response;
+      if (files.length === 1) {
+        // Single file: send as raw body (existing behavior)
+        res = await fetch(`/api/runs/${runId}/assets/replace?${params}`, {
+          method: "POST",
+          headers: { "Content-Type": files[0].type || "application/octet-stream" },
+          body: files[0],
+        });
+      } else {
+        // Multiple files: encode as base64 data URLs, server will collage them
+        const images = await Promise.all(files.map(f => new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(f);
+        })));
+        res = await fetch(`/api/runs/${runId}/assets/replace?${params}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images }),
+        });
+      }
+
       if (!res.ok) {
         console.error("replaceAsset failed:", await res.text());
         return null;
