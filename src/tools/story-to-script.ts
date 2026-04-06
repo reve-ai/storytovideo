@@ -15,9 +15,16 @@ export function buildStoryToScriptPrompt(storyText: string): string {
   return `${STORY_TO_SCRIPT_PROMPT_PREFIX}${storyText}`;
 }
 
+export interface StoryToScriptToolCall {
+  toolName: string;
+  args?: unknown;
+  result?: unknown;
+}
+
 export interface StoryToScriptResult {
   text: string;
   usage?: { promptTokens: number; completionTokens: number };
+  toolCalls?: StoryToScriptToolCall[];
 }
 
 export async function storyToScript(storyText: string): Promise<StoryToScriptResult> {
@@ -28,7 +35,7 @@ export async function storyToScript(storyText: string): Promise<StoryToScriptRes
   try {
     const providerOptions = getLlmProviderOptions();
     const tools = getWebSearchTools();
-    const { text, usage } = await generateText({
+    const result = await generateText({
       model: getLlmModel('strong'),
       prompt,
       maxTokens: 16384,
@@ -36,9 +43,30 @@ export async function storyToScript(storyText: string): Promise<StoryToScriptRes
       ...(tools ? { tools, maxSteps: 3 } : {}),
     } as any);
 
+    const { text, usage, steps } = result as any;
+
+    // Collect tool calls from all steps
+    const allToolCalls: StoryToScriptToolCall[] = [];
+    if (steps) {
+      for (const step of steps) {
+        if (step.toolCalls) {
+          for (const tc of step.toolCalls) {
+            allToolCalls.push({ toolName: tc.toolName, args: tc.args });
+          }
+        }
+        if (step.toolResults) {
+          for (const tr of step.toolResults) {
+            const existing = allToolCalls.find(tc => tc.toolName === tr.toolName && !tc.result);
+            if (existing) existing.result = tr.result;
+          }
+        }
+      }
+    }
+
     return {
       text,
       usage: usage ? { promptTokens: usage.inputTokens ?? 0, completionTokens: usage.outputTokens ?? 0 } : undefined,
+      toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
     };
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {

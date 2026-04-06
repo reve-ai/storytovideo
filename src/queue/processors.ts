@@ -263,6 +263,10 @@ export class QueueProcessor extends EventEmitter {
     const modelName = getLlmModelName('strong');
     this.promptLogger.log(item.itemKey, 'story_to_script', buildStoryToScriptPrompt(storyText), { model: modelName });
     const result = await storyToScript(storyText);
+    this.promptLogger.logResponse(item.itemKey, 'story_to_script', result.text, { model: modelName });
+    if (result.toolCalls) {
+      this.promptLogger.logToolCalls(item.itemKey, 'story_to_script', result.toolCalls);
+    }
     this.queueManager.setConvertedScript(result.text);
     if (result.usage) {
       this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
@@ -280,6 +284,7 @@ export class QueueProcessor extends EventEmitter {
     const modelName = getLlmModelName('strong');
     this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: modelName });
     const result = await analyzeStory(textToAnalyze);
+    this.promptLogger.logResponse(item.itemKey, 'analyze_story', JSON.stringify(result.analysis, null, 2), { model: modelName });
     this.queueManager.setStoryAnalysis(result.analysis);
     if (result.usage) {
       this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
@@ -357,6 +362,7 @@ export class QueueProcessor extends EventEmitter {
         maxTokens: 30,
       } as any);
       const name = text.trim().replace(/\*+/g, '').replace(/^["']+|["']+$/g, '').trim();
+      this.promptLogger.logResponse(item.itemKey, 'name_run', text, { model: modelName });
       this.queueManager.setRunName(name);
       if (usage) {
         this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
@@ -426,6 +432,7 @@ ${JSON.stringify(scene, null, 2)}`;
     }
 
     const { object, usage } = planResult;
+    this.promptLogger.logResponse(item.itemKey, 'plan_shots', JSON.stringify(object, null, 2), { model: modelName, sceneNumber });
     if (usage) {
       this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
     }
@@ -662,6 +669,7 @@ ${JSON.stringify(scene, null, 2)}`;
     });
 
     const { analysis } = analyzeResult;
+    this.promptLogger.logResponse(item.itemKey, 'analyze_video', JSON.stringify(analysis, null, 2), { model: 'gemini-2.5-flash', shotNumber });
     if (analyzeResult.usage) {
       this.recordLlmCost(item, 'gemini-3.1-pro-preview', analyzeResult.usage.promptTokens, analyzeResult.usage.completionTokens);
     }
