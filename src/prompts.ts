@@ -133,7 +133,8 @@ For this scene:
    - EARN EVERY SECOND: Before finalizing any shot longer than 4 seconds, verify that something is happening for the ENTIRE duration — not just the first half. A 6-second shot where the character acts for 3 seconds then holds still is really a 3-second shot.
    - ESTABLISHING SHOTS ARE SHORT: Wide establishing shots should be 2-3 seconds — just long enough to orient the viewer — then cut to the action. Don't linger.
    - REACTION SHOTS ARE SHORT: A character reacting (nodding, smiling, looking surprised) is 2-3 seconds, not 5.
-   - PREFER MORE CUTS OVER LONGER SHOTS: 3 shots at 3 seconds each is almost always better than 1 shot at 9 seconds. More angles = more visual energy.`;
+   - PREFER MORE CUTS OVER LONGER SHOTS: 3 shots at 3 seconds each is almost always better than 1 shot at 9 seconds. More angles = more visual energy.
+23. SCREENS AND DISPLAYS: If a shot includes a computer, phone, tablet, TV, monitor, or any device with a screen, add this instruction to BOTH the startFramePrompt and videoPrompt: "Images appear only on the screen. Not the back." This prevents the video model from hallucinating content on the wrong surface of the device. Apply this whenever any screen-bearing object is visible in the shot — whether held by a character, sitting on a desk, mounted on a wall, etc.`;
 
 // ---- Video prompt constants (from generate-video.ts) ----
 
