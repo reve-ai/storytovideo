@@ -1019,11 +1019,10 @@ ${JSON.stringify(scene, null, 2)}`;
     const shots = outputs.shots as Shot[] | undefined;
     if (!shots || shots.length === 0) return;
 
-    // Collect asset item IDs that frames depend on
-    const assetItemIds = this.getAssetItemIds(analysis);
-
     for (const shot of shots) {
-      const frameDeps = [planItem.id, ...assetItemIds];
+      // Only depend on assets this shot actually uses
+      const shotAssetIds = this.getAssetItemIdsForShot(shot);
+      const frameDeps = [planItem.id, ...shotAssetIds];
 
       if (shot.continuousFromPrevious && shot.shotInScene > 1) {
         frameDeps.push(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`);
@@ -1179,29 +1178,37 @@ ${JSON.stringify(scene, null, 2)}`;
   // Helpers
   // ---------------------------------------------------------------------------
 
-  private getAssetItemIds(analysis: StoryAnalysis): string[] {
+  /**
+   * Return asset item IDs for only the characters, location, and objects
+   * that a specific shot references.  This lets frames start generating as
+   * soon as their own assets are ready instead of waiting for every asset
+   * in the whole story.
+   */
+  private getAssetItemIdsForShot(shot: Shot): string[] {
     const ids: string[] = [];
 
-    for (const char of analysis.characters) {
-      const items = this.queueManager.getItemsByKey(`asset:character:${char.name}:front`);
+    for (const charName of shot.charactersPresent) {
+      const items = this.queueManager.getItemsByKey(`asset:character:${charName}:front`);
       const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
       if (active) ids.push(active.id);
     }
 
-    for (const loc of analysis.locations) {
-      const items = this.queueManager.getItemsByKey(`asset:location:${loc.name}`);
+    if (shot.location) {
+      const items = this.queueManager.getItemsByKey(`asset:location:${shot.location}`);
       const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
       if (active) ids.push(active.id);
     }
 
-    for (const obj of (analysis.objects ?? [])) {
-      const items = this.queueManager.getItemsByKey(`asset:object:${obj.name}`);
+    for (const objName of (shot.objectsPresent ?? [])) {
+      const items = this.queueManager.getItemsByKey(`asset:object:${objName}`);
       const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
       if (active) ids.push(active.id);
     }
 
     return ids;
   }
+
+
 
   private rebuildAssetLibrary(): void {
     // Delegate to QueueManager which stores relative paths
