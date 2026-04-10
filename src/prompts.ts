@@ -245,7 +245,9 @@ Rules:
 
 IMPORTANT: Your only available tool is web search, which you may use to research source material. You have NO ability to save files, export documents, create artifacts, or write to disk. Your entire output IS the script — return the complete prose script as your text response.
 
-Convert the following story into a visual prose script:
+If the input below is a short concept, idea, or description (rather than a full story or prose), create an original visual prose script inspired by it. Write 3-5 scenes that bring the concept to life with vivid characters, natural dialogue, and specific visual details. Apply all the same rules above — show don't tell, tight pacing, no dead air. If the input is a full story or prose, adapt it into a visual script as described above.
+
+Process the following input into a visual prose script:
 
 `;
 
