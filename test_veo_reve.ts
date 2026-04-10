@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { GoogleGenAI } from '@google/genai';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const keyFile = process.env.VEO_REVE_CREDENTIALS;
@@ -53,17 +53,11 @@ async function testTextToVideo() {
       console.log(`[veo-reve] Poll status: done=${operation.done}`);
     }
 
-    console.log('[veo-reve] Full response:', JSON.stringify(operation.response, null, 2));
-
     const generatedVideo = operation.response?.generatedVideos?.[0];
     if (generatedVideo?.video) {
-      console.log(`[veo-reve] Video URI: ${generatedVideo.video.uri}`);
-      console.log('[veo-reve] Full generatedVideo:', JSON.stringify(generatedVideo, null, 2));
       const downloadPath = join(outputDir, 'test_veo_reve_text_to_video.mp4');
-      await client.files.download({
-        file: generatedVideo.video,
-        downloadPath,
-      });
+      const videoBuffer = Buffer.from(generatedVideo.video.videoBytes, 'base64');
+      writeFileSync(downloadPath, videoBuffer);
       console.log(`[veo-reve] ✅ Downloaded to ${downloadPath}`);
     } else {
       console.error('[veo-reve] ❌ No video in response:', JSON.stringify(operation.response, null, 2));

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { mkdir } from "fs/promises";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { getGoogleClient } from "../google-client";
 import { getGoogleVertexClient } from "../google-vertex-client";
@@ -425,10 +425,14 @@ async function generateVideoVeoReve(params: GenerateVideoParams): Promise<Genera
 
         // Download the video to disk
         console.log(`[generateVideo] veo-reve downloading video for ${shotContext}`);
-        await client.files.download({
-          file: generatedVideo.video,
-          downloadPath: outputPath,
-        });
+        if (generatedVideo.video.videoBytes) {
+          writeFileSync(outputPath, Buffer.from(generatedVideo.video.videoBytes, 'base64'));
+        } else {
+          await client.files.download({
+            file: generatedVideo.video,
+            downloadPath: outputPath,
+          });
+        }
 
         console.log(`[generateVideo] veo-reve ${shotContext} saved to ${outputPath}`);
 		        return { shotNumber, path: outputPath, duration: clampedDuration, finalPrompt };
