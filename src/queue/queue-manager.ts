@@ -167,6 +167,9 @@ export class QueueManager {
       if (item.dependencies.some(d => d.startsWith('video:'))) {
         console.log(`[claim] Claimed ${item.itemKey} with video deps: ${item.dependencies.filter(d => d.startsWith('video:')).join(', ')}`);
       }
+      if (item.type === 'generate_frame') {
+        console.log(`[claim] Claimed generate_frame ${item.itemKey} id=${item.id}, set status=in_progress`);
+      }
       item.startedAt = new Date().toISOString();
       this.touch();
       return this.snapshot(item);
@@ -517,10 +520,17 @@ export class QueueManager {
 
   getQueueSnapshot(queue: QueueName): QueueSnapshot {
     const items = this.state.workItems.filter(i => i.queue === queue);
+    const inProgress = items.filter(i => i.status === 'in_progress');
+    if (queue === 'image' && inProgress.length > 0) {
+      const frameItems = inProgress.filter(i => i.type === 'generate_frame');
+      if (frameItems.length > 0) {
+        console.log(`[getQueueSnapshot] image queue has ${frameItems.length} generate_frame items in_progress: ${frameItems.map(i => i.itemKey).join(', ')}`);
+      }
+    }
     return this.snapshot({
       queue,
       pending: items.filter(i => i.status === 'pending'),
-      inProgress: items.filter(i => i.status === 'in_progress'),
+      inProgress,
       completed: items.filter(i => i.status === 'completed'),
       failed: items.filter(i => i.status === 'failed'),
       cancelled: items.filter(i => i.status === 'cancelled'),
