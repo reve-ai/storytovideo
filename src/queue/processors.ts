@@ -150,8 +150,6 @@ export class QueueProcessor extends EventEmitter {
         continue;
       }
 
-      console.log(`[worker:${this.queueName}:${_workerId}] Claimed ${item.type} ${item.itemKey} (id=${item.id}) status=${item.status}`);
-
       const abortController = new AbortController();
       this.activeAbortControllers.set(item.id, abortController);
 
