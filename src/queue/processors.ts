@@ -11,6 +11,7 @@ import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
 import { rateLimiters } from './rate-limiter-registry.js';
 import { PromptLogger } from './prompt-logger.js';
+import { ConversationLogger } from './conversation-logger.js';
 import { analyzeStory, buildAnalyzeStoryPrompt } from '../tools/analyze-story.js';
 import { storyToScript, buildStoryToScriptPrompt } from '../tools/story-to-script.js';
 import { planShotsForScene } from '../tools/plan-shots.js';
@@ -75,6 +76,7 @@ export class QueueProcessor extends EventEmitter {
   private workerPromises: Promise<void>[] = [];
   private activeAbortControllers = new Map<string, AbortController>();
   private promptLogger: PromptLogger;
+  private conversationLogger: ConversationLogger;
 
   constructor(
     private readonly queueName: QueueName,
@@ -84,6 +86,7 @@ export class QueueProcessor extends EventEmitter {
   ) {
     super();
     this.promptLogger = new PromptLogger(this.resolvedOutputDir());
+    this.conversationLogger = new ConversationLogger(this.resolvedOutputDir());
   }
 
   /** Resolve the run's outputDir to an absolute path. */
@@ -267,6 +270,16 @@ export class QueueProcessor extends EventEmitter {
     if (result.toolCalls) {
       this.promptLogger.logToolCalls(item.itemKey, 'story_to_script', result.toolCalls);
     }
+    this.conversationLogger.logTurn({
+      itemKey: item.itemKey,
+      category: 'story_to_script',
+      model: modelName,
+      provider: llmProvider,
+      userMessage: buildStoryToScriptPrompt(storyText),
+      assistantMessage: result.text,
+      toolCalls: result.toolCalls,
+      usage: result.usage,
+    });
     this.queueManager.setConvertedScript(result.text);
     if (result.usage) {
       this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
@@ -285,6 +298,15 @@ export class QueueProcessor extends EventEmitter {
     this.promptLogger.log(item.itemKey, 'analyze_story', buildAnalyzeStoryPrompt(textToAnalyze), { model: modelName });
     const result = await analyzeStory(textToAnalyze);
     this.promptLogger.logResponse(item.itemKey, 'analyze_story', JSON.stringify(result.analysis, null, 2), { model: modelName });
+    this.conversationLogger.logTurn({
+      itemKey: item.itemKey,
+      category: 'analyze_story',
+      model: modelName,
+      provider: llmProvider,
+      userMessage: buildAnalyzeStoryPrompt(textToAnalyze),
+      assistantMessage: JSON.stringify(result.analysis, null, 2),
+      usage: result.usage,
+    });
     this.queueManager.setStoryAnalysis(result.analysis);
     if (result.usage) {
       this.recordLlmCost(item, modelName, result.usage.promptTokens, result.usage.completionTokens);
@@ -363,6 +385,15 @@ export class QueueProcessor extends EventEmitter {
       } as any);
       const name = text.trim().replace(/\*+/g, '').replace(/^["']+|["']+$/g, '').trim();
       this.promptLogger.logResponse(item.itemKey, 'name_run', text, { model: modelName });
+      this.conversationLogger.logTurn({
+        itemKey: item.itemKey,
+        category: 'name_run',
+        model: modelName,
+        provider: llmProvider,
+        userMessage: namePrompt,
+        assistantMessage: text,
+        usage: usage ? { promptTokens: usage.inputTokens ?? 0, completionTokens: usage.outputTokens ?? 0 } : undefined,
+      });
       this.queueManager.setRunName(name);
       if (usage) {
         this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
@@ -433,6 +464,16 @@ ${JSON.stringify(scene, null, 2)}`;
 
     const { object, usage } = planResult;
     this.promptLogger.logResponse(item.itemKey, 'plan_shots', JSON.stringify(object, null, 2), { model: modelName, sceneNumber });
+    this.conversationLogger.logTurn({
+      itemKey: item.itemKey,
+      category: 'plan_shots',
+      model: modelName,
+      provider: llmProvider,
+      userMessage: planShotsPrompt,
+      assistantMessage: JSON.stringify(object, null, 2),
+      usage: usage ? { promptTokens: usage.inputTokens ?? 0, completionTokens: usage.outputTokens ?? 0 } : undefined,
+      metadata: { sceneNumber },
+    });
     if (usage) {
       this.recordLlmCost(item, modelName, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
     }
@@ -670,6 +711,25 @@ ${JSON.stringify(scene, null, 2)}`;
 
     const { analysis } = analyzeResult;
     this.promptLogger.logResponse(item.itemKey, 'analyze_video', JSON.stringify(analysis, null, 2), { model: 'gemini-2.5-flash', shotNumber });
+    this.conversationLogger.logTurn({
+      itemKey: item.itemKey,
+      category: 'analyze_video',
+      model: 'gemini-3.1-pro-preview',
+      provider: 'gemini',
+      userMessage: buildAnalyzeVideoPrompt({
+        shotNumber,
+        dialogue: shot.dialogue,
+        videoPrompt: shot.videoPrompt,
+        durationSeconds: shot.durationSeconds,
+        cameraDirection: shot.cameraDirection,
+        startFramePrompt: shot.startFramePrompt,
+        referenceImagePaths,
+        hasStartFrame: startFrameExists,
+      }),
+      assistantMessage: JSON.stringify(analysis, null, 2),
+      usage: analyzeResult.usage,
+      metadata: { shotNumber, note: 'Video and image content not included in conversation log — only the text prompt and response are captured.' },
+    });
     if (analyzeResult.usage) {
       this.recordLlmCost(item, 'gemini-3.1-pro-preview', analyzeResult.usage.promptTokens, analyzeResult.usage.completionTokens);
     }
