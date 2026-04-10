@@ -11,6 +11,7 @@ export type ProviderName =
   | 'openai'
   | 'gemini'
   | 'veo'
+  | 'veo-reve'
   | 'ltx'
   | 'reve';
 
@@ -28,6 +29,7 @@ const DEFAULT_CONFIGS: Record<ProviderName, Pick<RateLimiterConfig, 'maxRPS' | '
   'openai':      { maxRPS: 3,     maxConcurrent: 4 },
   'gemini':      { maxRPS: 5,     maxConcurrent: 5 },
   'veo':         { maxRPS: 0.033, maxConcurrent: 1 },  // ~1 per 30s
+  'veo-reve':    { maxRPS: 0.033, maxConcurrent: 1 },  // ~1 per 30s (vertex AI)
   'ltx':         { maxRPS: 1,     maxConcurrent: 1 },  // queue-based, one at a time
   'reve':        { maxRPS: 2,     maxConcurrent: 3 },
 };

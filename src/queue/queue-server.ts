@@ -49,7 +49,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const IMAGE_BACKENDS: readonly ImageBackend[] = ["grok", "reve", "nano-banana"];
-const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo", "ltx-full", "ltx-distilled"];
+const VIDEO_BACKENDS: readonly VideoBackend[] = ["grok", "veo", "veo-reve", "ltx-full", "ltx-distilled"];
 const LLM_PROVIDERS = ["anthropic", "openai"] as const;
 
 function parseImageBackend(value: unknown): ImageBackend | undefined {

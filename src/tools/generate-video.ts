@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getGoogleClient } from "../google-client";
+import { getGoogleVertexClient } from "../google-vertex-client";
 import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
 import { generateVideoLtx as ltxGenerateVideo, type LtxProgressInfo } from "../ltx-client";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
@@ -109,6 +110,8 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
 
   if (backend === "veo") {
     return generateVideoVeo(params);
+  } else if (backend === "veo-reve") {
+    return generateVideoVeoReve(params);
   } else if (backend === "grok") {
     return generateVideoGrok(params);
   } else if (backend === "ltx-full") {
@@ -116,7 +119,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
   } else if (backend === "ltx-distilled") {
     return generateVideoLtxBackend(params, "distilled");
   } else {
-    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "grok", "ltx-full", or "ltx-distilled".`);
+    throw new Error(`[generateVideo] Unknown VIDEO_BACKEND: "${backend}". Use "veo", "veo-reve", "grok", "ltx-full", or "ltx-distilled".`);
   }
 }
 
@@ -294,6 +297,172 @@ async function generateVideoVeo(params: GenerateVideoParams): Promise<GenerateVi
     throw error;
   }
 }
+
+/**
+ * Veo 3.1 backend via Vertex AI with service account credentials.
+ */
+async function generateVideoVeoReve(params: GenerateVideoParams): Promise<GenerateVideoResult> {
+  const {
+    shotNumber,
+    sceneNumber,
+    shotInScene,
+    shotType,
+    durationSeconds,
+    startFramePath,
+    outputDir,
+    dryRun = false,
+    abortSignal,
+    version = 1,
+  } = params;
+
+  // Ensure output directory exists
+  await mkdir(outputDir, { recursive: true });
+
+  const shotContext = formatShotContext({ shotNumber, sceneNumber, shotInScene });
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
+
+	const finalPrompt = buildVideoPrompt(params);
+
+  // Dry-run mode: return placeholder
+  if (dryRun) {
+    console.log(`[generateVideo] DRY-RUN (veo-reve): ${shotContext} (${shotType}, ${durationSeconds}s)`);
+		  console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
+		  return { shotNumber, path: outputPath, duration: durationSeconds, finalPrompt };
+  }
+
+  console.log(`[generateVideo] Generating via veo-reve ${shotContext} (${shotType}, ${durationSeconds}s)`);
+		console.log(`[generateVideo] Prompt sent to API: ${finalPrompt}`);
+
+  try {
+    const client = getGoogleVertexClient();
+    const maxRetries = 5;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!startFramePath) {
+          throw new Error("startFramePath required");
+        }
+
+        // Load start image as base64 (start frame)
+        const startImageBuffer = readFileSync(startFramePath);
+        const startImage = {
+          imageBytes: startImageBuffer.toString("base64"),
+          mimeType: "image/png",
+        };
+
+        // Veo 3.1 image-to-video supports 4, 6, or 8 second durations.
+        const validDurations = [4, 6, 8];
+        const clampedDuration = validDurations.reduce((prev, curr) =>
+          Math.abs(curr - durationSeconds) < Math.abs(prev - durationSeconds) ? curr : prev
+        );
+        const aspectRatio = params.aspectRatio || "16:9";
+        const config: Record<string, unknown> = {
+          durationSeconds: clampedDuration,
+          aspectRatio,
+          personGeneration: "allow_adult",
+        };
+
+        console.log(`[generateVideo] veo-reve config: durationSeconds=${clampedDuration} (requested ${durationSeconds}), aspectRatio=${aspectRatio}`);
+
+        const limiter = rateLimiters.get('veo-reve');
+        await limiter.acquire();
+        let veoReleased = false;
+        try {
+
+        console.log(`[generateVideo] ${shotContext}: Calling veo-reve API (attempt ${attempt}/${maxRetries})...`);
+
+        const veoTimeoutMs = 60000;
+        let operation: Awaited<ReturnType<typeof client.models.generateVideos>>;
+        const veoCallPromise = client.models.generateVideos({
+          model: "veo-3.1-generate-preview",
+          prompt: finalPrompt,
+          image: startImage,
+          config: {
+            ...config,
+          } as any,
+        });
+        const veoTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`veo-reve API call timed out after ${veoTimeoutMs / 1000}s for ${shotContext}`)), veoTimeoutMs)
+        );
+        operation = await Promise.race([veoCallPromise, veoTimeoutPromise]);
+
+        console.log(`[generateVideo] ${shotContext}: veo-reve API returned operation: ${operation.name}, done=${operation.done}`);
+
+        // Poll for operation completion
+        console.log(`[generateVideo] veo-reve polling for completion (operation: ${operation.name})`);
+
+        let pollCount = 0;
+        while (!operation.done) {
+          if (abortSignal?.aborted) {
+            throw new Error("Video generation cancelled due to pipeline interruption");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+          pollCount++;
+          console.log(`[generateVideo] ${shotContext}: veo-reve polling... (${pollCount * 10}s elapsed)`);
+          operation = await client.operations.getVideosOperation({ operation });
+        }
+
+        // Extract generated video from response
+        const response = operation.response;
+        const generatedVideo = response?.generatedVideos?.[0];
+        if (!generatedVideo?.video) {
+          const filterCount = response?.raiMediaFilteredCount;
+          const filterReasons = response?.raiMediaFilteredReasons;
+          const errorInfo = operation.error;
+          console.error(`[generateVideo] ${shotContext}: veo-reve no video returned.`);
+          if (filterCount) console.error(`[generateVideo]   RAI filtered count: ${filterCount}`);
+          if (filterReasons?.length) console.error(`[generateVideo]   RAI filter reasons: ${filterReasons.join(', ')}`);
+          if (errorInfo) console.error(`[generateVideo]   Operation error: ${JSON.stringify(errorInfo)}`);
+          if (!filterCount && !filterReasons?.length && !errorInfo) {
+            console.error(`[generateVideo]   Full response: ${JSON.stringify(response)}`);
+          }
+          if (filterReasons?.some((r: string) => r.toLowerCase().includes('celebrity'))) {
+            throw new RaiCelebrityError(shotNumber, `RAI celebrity filter for ${shotContext}: ${filterReasons.join(', ')}`);
+          }
+          throw new Error(`No video in response for ${shotContext}${filterReasons?.length ? ` (RAI: ${filterReasons.join(', ')})` : ''}`);
+        }
+
+        // Download the video to disk
+        console.log(`[generateVideo] veo-reve downloading video for ${shotContext}`);
+        await client.files.download({
+          file: generatedVideo.video,
+          downloadPath: outputPath,
+        });
+
+        console.log(`[generateVideo] veo-reve ${shotContext} saved to ${outputPath}`);
+		        return { shotNumber, path: outputPath, duration: clampedDuration, finalPrompt };
+
+        } finally {
+          if (!veoReleased) {
+            veoReleased = true;
+            limiter.release();
+          }
+        }
+      } catch (error: any) {
+        lastError = error;
+        console.error(`[generateVideo] ${shotContext}: veo-reve API error (attempt ${attempt}/${maxRetries}):`, error);
+        if (error?.message?.includes('cancelled due to pipeline interruption')) {
+          throw error;
+        }
+        if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+          console.warn(`[generateVideo] ${shotContext}: veo-reve rate limited (429) — backing off for 60s`);
+          rateLimiters.get('veo-reve').backoff(60000);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // All retries exhausted
+    console.error(`[generateVideo] ${shotContext}: veo-reve all ${maxRetries} retries exhausted`);
+    throw lastError;
+  } catch (error) {
+    console.error(`[generateVideo] veo-reve error generating ${shotContext}:`, error);
+    throw error;
+  }
+}
+
 
 /**
  * Vercel AI SDK tool definition for generateVideo.

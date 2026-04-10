@@ -81,7 +81,7 @@ export interface FrameReference {
 }
 
 export type ImageBackend = "grok" | "reve" | "nano-banana";
-export type VideoBackend = "veo" | "grok" | "ltx-full" | "ltx-distilled";
+export type VideoBackend = "veo" | "veo-reve" | "grok" | "ltx-full" | "ltx-distilled";
 
 export interface GeneratedFrameSet {
   start?: string;
