@@ -553,6 +553,49 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
       "item_cancelled",
     ]) {
       es.addEventListener(evt, (e: MessageEvent) => {
+        // Optimistic update: move the item between queue groups immediately
+        // so the UI reflects in_progress/completed without waiting for a fetch.
+        try {
+          const data = JSON.parse(e.data) as { payload?: { itemId?: string; queue?: QueueName; type?: string; itemKey?: string; outputs?: Record<string, unknown> } };
+          const itemId = data.payload?.itemId;
+          const queue = data.payload?.queue;
+          if (itemId && queue) {
+            set((s) => {
+              const snapshot = s.queues[queue];
+              if (!snapshot) return {};
+              const updated = { ...snapshot };
+
+              if (evt === "item_started") {
+                // Move from pending → inProgress
+                const idx = updated.pending.findIndex(i => i.id === itemId);
+                if (idx !== -1) {
+                  const [item] = updated.pending.splice(idx, 1);
+                  updated.pending = [...updated.pending];
+                  updated.inProgress = [...updated.inProgress, { ...item, status: "in_progress" as WorkItemStatus, startedAt: new Date().toISOString() }];
+                }
+              } else if (evt === "item_completed") {
+                // Move from inProgress → completed
+                const idx = updated.inProgress.findIndex(i => i.id === itemId);
+                if (idx !== -1) {
+                  const [item] = updated.inProgress.splice(idx, 1);
+                  updated.inProgress = [...updated.inProgress];
+                  updated.completed = [{ ...item, status: "completed" as WorkItemStatus, completedAt: new Date().toISOString(), outputs: data.payload?.outputs ?? item.outputs }, ...updated.completed];
+                }
+              } else if (evt === "item_failed") {
+                // Move from inProgress → failed
+                const idx = updated.inProgress.findIndex(i => i.id === itemId);
+                if (idx !== -1) {
+                  const [item] = updated.inProgress.splice(idx, 1);
+                  updated.inProgress = [...updated.inProgress];
+                  updated.failed = [{ ...item, status: "failed" as WorkItemStatus, completedAt: new Date().toISOString() }, ...updated.failed];
+                }
+              }
+
+              return { queues: { ...s.queues, [queue]: updated } };
+            });
+          }
+        } catch { /* ignore */ }
+
         // Clear progress when item finishes
         if (evt === "item_completed" || evt === "item_failed" || evt === "item_cancelled") {
           try {
