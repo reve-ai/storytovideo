@@ -375,7 +375,7 @@ async function generateVideoVeoReve(params: GenerateVideoParams): Promise<Genera
         const veoTimeoutMs = 60000;
         let operation: Awaited<ReturnType<typeof client.models.generateVideos>>;
         const veoCallPromise = client.models.generateVideos({
-          model: "veo-3.1-generate-preview",
+          model: "veo-3.1-generate-001",
           prompt: finalPrompt,
           image: startImage,
           config: {

@@ -663,7 +663,8 @@ ${JSON.stringify(scene, null, 2)}`;
 
     // Record video generation cost
     const videoModelName = videoBackend === 'grok' ? 'grok-imagine-video'
-      : (videoBackend === 'veo' || videoBackend === 'veo-reve') ? 'veo-3.1-generate-preview'
+      : videoBackend === 'veo' ? 'veo-3.1-generate-preview'
+      : videoBackend === 'veo-reve' ? 'veo-3.1-generate-001'
       : 'ltx';
     this.recordVideoCost(item, videoModelName, result.duration);
 
