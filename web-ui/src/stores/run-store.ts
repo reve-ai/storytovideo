@@ -27,7 +27,7 @@ export type RunStatus =
   | "failed";
 
 export type ImageBackend = "grok" | "reve" | "nano-banana";
-export type VideoBackend = "grok" | "veo" | "ltx-full" | "ltx-distilled";
+export type VideoBackend = "grok" | "veo" | "veo-reve" | "ltx-full" | "ltx-distilled";
 
 export interface RunRecord {
   id: string;
