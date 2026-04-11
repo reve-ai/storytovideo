@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Progress } from "../tooscut-ui/progress";
 import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
 import { useVideoEditorStore } from "../../stores/video-editor-store";
+import { generateFcpxml, downloadFcpxml } from "../../lib/fcpxml-export";
 
 // ===================== TYPES =====================
 
@@ -83,6 +84,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   // Export settings — resolution and frame rate come from project settings
   const [quality, setQuality] = useState<string>("High");
+  const [format, setFormat] = useState<"mp4" | "fcpxml">("mp4");
 
   // Export state
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -97,6 +99,23 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   }, [open, cancelExport]);
 
   const handleExport = useCallback(async () => {
+    if (format === "fcpxml") {
+      try {
+        const state = useVideoEditorStore.getState();
+        const xml = generateFcpxml({
+          clips: state.clips,
+          tracks: state.tracks,
+          settings: state.settings,
+          assets: state.assets,
+        });
+        downloadFcpxml(xml);
+        onOpenChange(false);
+      } catch (error) {
+        console.error("[ExportDialog] FCPXML export failed:", error);
+      }
+      return;
+    }
+
     const qualityPreset = QUALITY_PRESETS.find((q) => q.label === quality);
 
     const options: ExportOptions = {
@@ -116,7 +135,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       }
       console.error("[ExportDialog] Export failed:", error);
     }
-  }, [settings.width, settings.height, settings.fps, quality, startExport]);
+  }, [format, settings.width, settings.height, settings.fps, quality, startExport, onOpenChange]);
 
   const handleCancel = useCallback(() => {
     cancelExport();
@@ -151,8 +170,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Export Video</DialogTitle>
-          <DialogDescription>Configure export settings and render your video.</DialogDescription>
+          <DialogTitle>Export</DialogTitle>
+          <DialogDescription>Choose a format and configure export settings.</DialogDescription>
         </DialogHeader>
 
         <DialogPanel>
@@ -173,20 +192,41 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               </div>
 
               <div className="grid gap-2">
-                <label className="text-sm font-medium">Quality</label>
-                <Select value={quality} onValueChange={setQuality}>
+                <label className="text-sm font-medium">Format</label>
+                <Select value={format} onValueChange={(v) => setFormat(v as "mp4" | "fcpxml")}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select quality" />
+                    <SelectValue placeholder="Select format" />
                   </SelectTrigger>
                   <SelectContent>
-                    {QUALITY_PRESETS.map((preset) => (
-                      <SelectItem key={preset.label} value={preset.label}>
-                        {preset.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="mp4">MP4 Video</SelectItem>
+                    <SelectItem value="fcpxml">Final Cut Pro XML</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {format === "mp4" && (
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium">Quality</label>
+                  <Select value={quality} onValueChange={setQuality}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select quality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {QUALITY_PRESETS.map((preset) => (
+                        <SelectItem key={preset.label} value={preset.label}>
+                          {preset.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {format === "fcpxml" && (
+                <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                  Exports timeline structure as an .fcpxml file for import into Final Cut Pro. Source media files will need to be reconnected after import.
+                </div>
+              )}
             </div>
           ) : (
             // Progress display
