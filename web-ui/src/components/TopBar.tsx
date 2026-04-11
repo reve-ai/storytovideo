@@ -1,8 +1,10 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useUIStore, type ViewName } from "../stores/ui-store";
+import { useVideoEditorStore } from "../stores/video-editor-store";
+import { generateFcpxml, downloadFcpxml } from "../lib/fcpxml-export";
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
@@ -70,9 +72,44 @@ export default function TopBar() {
     navigate("/");
   }, [activeRunId, deleteRun, navigate]);
 
-  const handleExport = useCallback(() => {
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showExportMenu]);
+
+  const handleExportZip = useCallback(() => {
     if (activeRunId) exportRun(activeRunId);
+    setShowExportMenu(false);
   }, [activeRunId, exportRun]);
+
+  const handleExportFcpxml = useCallback(() => {
+    try {
+      const state = useVideoEditorStore.getState();
+      const xml = generateFcpxml({
+        clips: state.clips,
+        tracks: state.tracks,
+        settings: state.settings,
+        assets: state.assets,
+      });
+      downloadFcpxml(xml);
+    } catch (error) {
+      console.error("[TopBar] FCPXML export failed:", error);
+    }
+    setShowExportMenu(false);
+  }, []);
+
+  const editorClips = useVideoEditorStore((s) => s.clips);
+  const hasFcpxmlContent = editorClips.length > 0;
 
   const queues = usePipelineStore((s) => s.queues);
 
@@ -171,9 +208,70 @@ export default function TopBar() {
               </button>
             )}
 
-            <button type="button" onClick={handleExport} title="Export project">
-              📦
-            </button>
+            <div ref={exportMenuRef} style={{ position: "relative", display: "inline-block" }}>
+              <button type="button" onClick={() => setShowExportMenu((v) => !v)} title="Export project">
+                📦
+              </button>
+              {showExportMenu && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "0.25rem",
+                    background: "var(--surface, #1e1e1e)",
+                    border: "1px solid var(--border, #333)",
+                    borderRadius: "0.375rem",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                    zIndex: 100,
+                    minWidth: "12rem",
+                    overflow: "hidden",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={handleExportZip}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "0.5rem 0.75rem",
+                      background: "none",
+                      border: "none",
+                      color: "inherit",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, #2a2a2a)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    📦 Download ZIP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportFcpxml}
+                    disabled={!hasFcpxmlContent}
+                    title={!hasFcpxmlContent ? "No timeline content to export" : "Export Final Cut Pro XML"}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "0.5rem 0.75rem",
+                      background: "none",
+                      border: "none",
+                      color: hasFcpxmlContent ? "inherit" : "var(--muted, #666)",
+                      textAlign: "left",
+                      cursor: hasFcpxmlContent ? "pointer" : "default",
+                      fontSize: "0.85rem",
+                      opacity: hasFcpxmlContent ? 1 : 0.5,
+                    }}
+                    onMouseEnter={(e) => { if (hasFcpxmlContent) e.currentTarget.style.background = "var(--hover, #2a2a2a)"; }}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  >
+                    🎬 Final Cut Pro XML
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
