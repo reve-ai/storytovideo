@@ -177,13 +177,11 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
   let nextId = 1;
   const formatId = `r${nextId++}`;
 
-  // Collect unique asset references
+  // Register all assets as resources (including those not on the timeline)
   const assetResourceIds = new Map<string, string>();
-  for (const clip of clips) {
-    if ((clip.type === "video" || clip.type === "image" || clip.type === "audio") && clip.assetId) {
-      if (!assetResourceIds.has(clip.assetId)) {
-        assetResourceIds.set(clip.assetId, `r${nextId++}`);
-      }
+  for (const asset of assets) {
+    if (!assetResourceIds.has(asset.id)) {
+      assetResourceIds.set(asset.id, `r${nextId++}`);
     }
   }
 
