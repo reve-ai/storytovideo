@@ -199,7 +199,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="mp4">MP4 Video</SelectItem>
-                    <SelectItem value="fcpxml">Final Cut Pro XML</SelectItem>
+                    <SelectItem value="fcpxml">Premiere Pro XML</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -224,7 +224,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
               {format === "fcpxml" && (
                 <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-                  Exports timeline structure as an .fcpxml file for import into Final Cut Pro. Source media files will need to be reconnected after import.
+                  Exports timeline as FCP 7 XML (.xml) for import into Adobe Premiere Pro. Source media files will need to be reconnected after import.
                 </div>
               )}
             </div>

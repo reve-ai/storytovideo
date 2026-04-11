@@ -251,7 +251,7 @@ export default function TopBar() {
                     type="button"
                     onClick={handleExportFcpxml}
                     disabled={!hasFcpxmlContent}
-                    title={!hasFcpxmlContent ? "No timeline content to export" : "Export Final Cut Pro XML"}
+                    title={!hasFcpxmlContent ? "No timeline content to export" : "Export FCP 7 XML (Premiere)"}
                     style={{
                       display: "block",
                       width: "100%",
@@ -267,7 +267,7 @@ export default function TopBar() {
                     onMouseEnter={(e) => { if (hasFcpxmlContent) e.currentTarget.style.background = "var(--hover, #2a2a2a)"; }}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                   >
-                    🎬 Final Cut Pro XML
+                    🎬 Premiere Pro XML
                   </button>
                 </div>
               )}
