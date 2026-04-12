@@ -347,28 +347,22 @@ async function assembleWithConcat(videoPaths: string[], outputPath: string): Pro
     inputs.push("-i", vp);
   }
 
-  // Normalize each input: scale to fit within target, then pad to exact target size
+  // Normalize each input: scale to fit within target, then pad to exact target size.
+  // Apply short fade-in/fade-out to each audio stream to prevent clicks/pops at cut points.
+  // Use a SINGLE concat filter with v=1:a=1 so each clip's audio and video are paired
+  // as a segment. This prevents progressive audio drift caused by per-clip duration
+  // mismatches (e.g. AI-generated VFR clips where fps normalization subtly changes
+  // the video duration vs the audio). The concat filter pads the shorter stream in
+  // each segment to match the longer one, keeping audio/video in sync.
   let filterComplex = "";
   for (let i = 0; i < videoPaths.length; i++) {
     filterComplex += `[${i}:v]scale=${tw}:${th}:force_original_aspect_ratio=decrease,pad=${tw}:${th}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=24[v${i}];`;
+    filterComplex += `[${i}:a]afade=t=in:d=0.05,areverse,afade=t=in:d=0.05,areverse,aresample=async=1[a${i}];`;
   }
 
-  // Concat all normalized video streams
-  const videoLabels = videoPaths.map((_, i) => `[v${i}]`).join("");
-  filterComplex += `${videoLabels}concat=n=${videoPaths.length}:v=1:a=0[vout];`;
-
-  // Apply short fade-in/fade-out to each audio stream to prevent clicks/pops at cut points.
-  // 50ms is short enough to be imperceptible but eliminates waveform discontinuities.
-  // afade with enable='gte(t,TID)' for fade-out would be complex, so we use
-  // aeval to zero the first/last ~2200 samples (50ms at 44100Hz) via a simple ramp.
-  // Simpler: just use afade in + areverse+afade in+areverse for fade-out.
-  for (let i = 0; i < videoPaths.length; i++) {
-    filterComplex += `[${i}:a]afade=t=in:d=0.05,areverse,afade=t=in:d=0.05,areverse[a${i}];`;
-  }
-
-  // Concat all faded audio streams
-  const audioLabels = videoPaths.map((_, i) => `[a${i}]`).join("");
-  filterComplex += `${audioLabels}concat=n=${videoPaths.length}:v=0:a=1[aout]`;
+  // Single concat with paired video+audio segments prevents drift accumulation
+  const segmentLabels = videoPaths.map((_, i) => `[v${i}][a${i}]`).join("");
+  filterComplex += `${segmentLabels}concat=n=${videoPaths.length}:v=1:a=1[vout][aout]`;
 
   const ffmpegArgs = [
     ...inputs,
@@ -446,9 +440,15 @@ async function assembleWithXfade(
     }
   }
 
+  // Normalize each audio stream: trim to match the probed video duration and resample
+  // to prevent drift from VFR or audio/video length mismatches in AI-generated clips.
+  for (let i = 0; i < videoPaths.length; i++) {
+    filterComplex += `[${i}:a]atrim=0:${durations[i]},asetpts=PTS-STARTPTS,aresample=async=1[anorm${i}];`;
+  }
+
   // Build audio filter chain that mirrors video xfade timing
   // Use acrossfade for transitions and concat for cuts, matching the video filter
-  let previousAudioLabel = `${0}:a`;
+  let previousAudioLabel = `anorm0`;
   for (let i = 1; i < videoPaths.length; i++) {
     const transition = transitions[i - 1] || { type: "cut", durationMs: 0 };
     const transitionDurationSec = transition.durationMs / 1000;
@@ -456,10 +456,10 @@ async function assembleWithXfade(
 
     if (transition.type === "cut" || transitionDurationSec <= 0) {
       // For cuts, concatenate audio streams
-      filterComplex += `[${previousAudioLabel}][${i}:a]concat=n=2:v=0:a=1[${audioOutLabel}];`;
+      filterComplex += `[${previousAudioLabel}][anorm${i}]concat=n=2:v=0:a=1[${audioOutLabel}];`;
     } else {
       // For transitions, crossfade audio to match video xfade
-      filterComplex += `[${previousAudioLabel}][${i}:a]acrossfade=d=${transitionDurationSec}:c1=tri:c2=tri[${audioOutLabel}];`;
+      filterComplex += `[${previousAudioLabel}][anorm${i}]acrossfade=d=${transitionDurationSec}:c1=tri:c2=tri[${audioOutLabel}];`;
     }
     previousAudioLabel = audioOutLabel;
   }
