@@ -3,8 +3,6 @@ import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useUIStore, type ViewName } from "../stores/ui-store";
-import { useVideoEditorStore } from "../stores/video-editor-store";
-import { generateFcpxml, downloadFcpxml } from "../lib/fcpxml-export";
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
@@ -91,25 +89,6 @@ export default function TopBar() {
     if (activeRunId) exportRun(activeRunId);
     setShowExportMenu(false);
   }, [activeRunId, exportRun]);
-
-  const handleExportFcpxml = useCallback(() => {
-    try {
-      const state = useVideoEditorStore.getState();
-      const xml = generateFcpxml({
-        clips: state.clips,
-        tracks: state.tracks,
-        settings: state.settings,
-        assets: state.assets,
-      });
-      downloadFcpxml(xml);
-    } catch (error) {
-      console.error("[TopBar] FCPXML export failed:", error);
-    }
-    setShowExportMenu(false);
-  }, []);
-
-  const editorClips = useVideoEditorStore((s) => s.clips);
-  const hasFcpxmlContent = editorClips.length > 0;
 
   const queues = usePipelineStore((s) => s.queues);
 
@@ -246,28 +225,6 @@ export default function TopBar() {
                     onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                   >
                     📦 Download ZIP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportFcpxml}
-                    disabled={!hasFcpxmlContent}
-                    title={!hasFcpxmlContent ? "No timeline content to export" : "Export FCP 7 XML (Premiere)"}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: "0.5rem 0.75rem",
-                      background: "none",
-                      border: "none",
-                      color: hasFcpxmlContent ? "inherit" : "var(--muted, #666)",
-                      textAlign: "left",
-                      cursor: hasFcpxmlContent ? "pointer" : "default",
-                      fontSize: "0.85rem",
-                      opacity: hasFcpxmlContent ? 1 : 0.5,
-                    }}
-                    onMouseEnter={(e) => { if (hasFcpxmlContent) e.currentTarget.style.background = "var(--hover, #2a2a2a)"; }}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
-                  >
-                    🎬 Premiere Pro XML
                   </button>
                 </div>
               )}

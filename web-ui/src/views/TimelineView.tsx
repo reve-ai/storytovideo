@@ -9,6 +9,7 @@ import { useAudioEngine } from "../hooks/use-audio-engine";
 import { useAssetStore } from "../components/timeline/use-asset-store";
 import { CanvasTimeline } from "../components/timeline/canvas-timeline";
 import { VideoPreview } from "../components/timeline/VideoPreview";
+import { generateFcpxml, downloadFcpxml } from "../lib/fcpxml-export";
 
 /**
  * Bridge timeline-store data into video-editor-store so CanvasTimeline
@@ -118,6 +119,21 @@ export default function TimelineView() {
       setExportState("error");
     }
   }, [activeRunId, exportState]);
+
+  const handleExportFcpxml = useCallback(() => {
+    try {
+      const state = useVideoEditorStore.getState();
+      const xml = generateFcpxml({
+        clips: state.clips,
+        tracks: state.tracks,
+        settings: state.settings,
+        assets: state.assets,
+      });
+      downloadFcpxml(xml);
+    } catch (error) {
+      console.error("[TimelineView] FCPXML export failed:", error);
+    }
+  }, []);
 
   const handleRegenerateMusic = useCallback(async () => {
     if (!activeRunId || musicState === "loading") return;
@@ -232,6 +248,23 @@ export default function TimelineView() {
         {exportState === "error" && (
           <span style={{ fontSize: 13, color: "#ef4444" }}>✗ {exportError}</span>
         )}
+        <button
+          onClick={handleExportFcpxml}
+          disabled={clips.length === 0}
+          title={clips.length === 0 ? "No timeline content to export" : "Export FCP 7 XML for Premiere Pro"}
+          style={{
+            padding: "4px 12px",
+            fontSize: 13,
+            borderRadius: 4,
+            border: "none",
+            background: clips.length === 0 ? "#555" : "#d97706",
+            color: "#fff",
+            cursor: clips.length === 0 ? "not-allowed" : "pointer",
+            marginLeft: 4,
+          }}
+        >
+          🎬 Premiere Pro XML
+        </button>
         <button
           onClick={handleRegenerateMusic}
           disabled={musicState === "loading"}
