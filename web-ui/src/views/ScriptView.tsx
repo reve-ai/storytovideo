@@ -90,6 +90,23 @@ export default function ScriptView() {
     <div style={{ padding: "1rem", maxWidth: "900px", margin: "0 auto" }}>
       <h2 style={{ marginTop: 0 }}>Script</h2>
 
+      {scriptData.convertedScript && (
+        <div style={{
+          marginBottom: "1rem",
+          padding: "0.75rem",
+          borderRadius: "6px",
+          border: "1px solid var(--border, #444)",
+          background: "var(--surface, #1e1e1e)",
+        }}>
+          <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted, #888)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Original Prompt
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "var(--text, #eee)", whiteSpace: "pre-wrap" }}>
+            {scriptData.storyText}
+          </div>
+        </div>
+      )}
+
       <div style={{ marginBottom: "1rem" }}>
         <textarea
           value={editText}
