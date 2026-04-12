@@ -108,10 +108,21 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
   const backend = (params.videoBackend || process.env.VIDEO_BACKEND || "veo").toLowerCase();
   console.log(`[generateVideo] Using backend: ${backend}`);
 
-  if (backend === "veo") {
-    return generateVideoVeo(params);
-  } else if (backend === "veo-reve") {
-    return generateVideoVeoReve(params);
+  if (backend === "veo" || backend === "veo-reve") {
+    const veoFn = backend === "veo" ? generateVideoVeo : generateVideoVeoReve;
+    try {
+      return await veoFn(params);
+    } catch (error: any) {
+      // Don't fall back for cancellations or celebrity RAI (which triggers frame regen)
+      if (
+        error?.message?.includes("cancelled due to pipeline interruption") ||
+        error instanceof RaiCelebrityError
+      ) {
+        throw error;
+      }
+      console.warn(`[generateVideo] ${backend} failed, falling back to grok: ${error?.message ?? error}`);
+      return generateVideoGrok({ ...params, videoBackend: "grok" });
+    }
   } else if (backend === "grok") {
     return generateVideoGrok(params);
   } else if (backend === "ltx-full") {
