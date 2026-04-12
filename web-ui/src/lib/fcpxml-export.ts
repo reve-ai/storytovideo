@@ -10,7 +10,8 @@
  * - All times expressed in frames (integers)
  * - Clips go in <clipitem> inside <track> inside <video>/<audio> inside <media>
  * - File references: first occurrence has full details, subsequent are self-closing
- * - NTSC rates use rounded integer timebase with <ntsc>TRUE</ntsc>
+ * - Video clips automatically generate linked audio clipitems
+ * - Uses <link> elements to bind video and audio clipitems from the same source
  */
 
 import type { EditorClip, ProjectSettings } from "../stores/video-editor-store";
@@ -65,6 +66,27 @@ function escapeXml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+/**
+ * Extract a relative file path from an asset ID / URL.
+ * Asset IDs look like: /api/runs/{runId}/media/videos/scene_01_shot_01_v1.mp4
+ * We extract the part after /media/ to get: videos/scene_01_shot_01_v1.mp4
+ */
+function extractRelativePath(assetId: string): string {
+  const mediaIdx = assetId.indexOf("/media/");
+  if (mediaIdx >= 0) {
+    return decodeURIComponent(assetId.slice(mediaIdx + "/media/".length));
+  }
+  // If no /media/ prefix, use as-is (already a relative path or filename)
+  return decodeURIComponent(assetId);
+}
+
+/** Get just the filename from an asset path. */
+function extractFilename(assetId: string): string {
+  const rel = extractRelativePath(assetId);
+  const lastSlash = rel.lastIndexOf("/");
+  return lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel;
 }
 
 // ===================== XML BUILDER =====================
@@ -136,6 +158,54 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
   const writtenFileIds = new Set<string>();
   let clipItemCounter = 0;
 
+  // Pre-assign clipitem IDs for video clips and their linked audio so we can
+  // write <link> elements during the first pass.
+  // videoItemId → audioItemId mapping
+  const videoToLinkedAudioId = new Map<string, string>();
+  const clipIdToItemId = new Map<string, string>();
+
+  // First pass: assign IDs
+  {
+    let counter = 0;
+    for (const track of videoTracks) {
+      const trackClips = (clipsByTrack.get(track.id) ?? []).filter(
+        (c) => c.type === "video" || c.type === "image",
+      );
+      trackClips.sort((a, b) => a.startTime - b.startTime);
+      for (const clip of trackClips) {
+        counter++;
+        clipIdToItemId.set(clip.id, `clipitem-${counter}`);
+      }
+    }
+    // Linked audio track items (one per video track)
+    for (const track of videoTracks) {
+      const trackClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "video");
+      trackClips.sort((a, b) => a.startTime - b.startTime);
+      for (const clip of trackClips) {
+        counter++;
+        const audioItemId = `clipitem-${counter}`;
+        const videoItemId = clipIdToItemId.get(clip.id)!;
+        videoToLinkedAudioId.set(videoItemId, audioItemId);
+        // Also map the linked audio clip's id if it exists
+        if (clip.type === "video" && clip.linkedClipId) {
+          clipIdToItemId.set(clip.linkedClipId, audioItemId);
+        }
+      }
+    }
+    // Standalone audio clips
+    for (const track of audioTracks) {
+      const trackClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "audio");
+      for (const clip of trackClips) {
+        if (clip.type === "audio" && clip.linkedClipId) {
+          const linkedClip = clips.find((c) => c.id === clip.linkedClipId);
+          if (linkedClip && linkedClip.type === "video") continue;
+        }
+        counter++;
+        clipIdToItemId.set(clip.id, `clipitem-${counter}`);
+      }
+    }
+  }
+
   const xml = new XmlBuilder();
 
   xml.line(`<?xml version="1.0" encoding="UTF-8"?>`);
@@ -170,7 +240,6 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
     const trackClips = (clipsByTrack.get(track.id) ?? []).filter(
       (c) => c.type === "video" || c.type === "image",
     );
-    // Sort by start time
     trackClips.sort((a, b) => a.startTime - b.startTime);
 
     xml.open(`<track>`);
@@ -178,9 +247,11 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
       if (clip.type !== "video" && clip.type !== "image") continue;
       clipItemCounter++;
       const itemId = `clipitem-${clipItemCounter}`;
+
       const asset = assetMap.get(clip.assetId);
-      const clipName = escapeXml(clip.name || asset?.name || clip.assetId);
+      const clipName = escapeXml(clip.name || asset?.name || extractFilename(clip.assetId));
       const fileId = `file-${clip.assetId}`;
+      const relativePath = extractRelativePath(clip.assetId);
 
       const inPoint = clip.inPoint || 0;
       const startFrame = secondsToFrames(clip.startTime, fps);
@@ -201,8 +272,8 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
       if (!writtenFileIds.has(fileId)) {
         writtenFileIds.add(fileId);
         xml.open(`<file id="${fileId}">`);
-        xml.line(`<name>${clipName}</name>`);
-        xml.line(`<pathurl>file://localhost/${escapeXml(asset?.name || clip.assetId)}</pathurl>`);
+        xml.line(`<name>${escapeXml(extractFilename(clip.assetId))}</name>`);
+        xml.line(`<pathurl>file://localhost/${escapeXml(relativePath)}</pathurl>`);
         xml.line(`<duration>${assetDurFrames}</duration>`);
         writeRate(xml, fps);
         xml.open(`<media>`);
@@ -212,10 +283,35 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
         xml.line(`<height>${height}</height>`);
         xml.close(`</samplecharacteristics>`);
         xml.close(`</video>`);
+        if (clip.type === "video") {
+          xml.open(`<audio>`);
+          xml.open(`<samplecharacteristics>`);
+          xml.line(`<depth>16</depth>`);
+          xml.line(`<samplerate>48000</samplerate>`);
+          xml.close(`</samplecharacteristics>`);
+          xml.close(`</audio>`);
+        }
         xml.close(`</media>`);
         xml.close(`</file>`);
       } else {
         xml.line(`<file id="${fileId}"/>`);
+      }
+
+      // Write link elements to bind this video clipitem with its linked audio
+      const linkedAudioItemId = videoToLinkedAudioId.get(itemId);
+      if (linkedAudioItemId) {
+        xml.open(`<link>`);
+        xml.line(`<linkclipref>${itemId}</linkclipref>`);
+        xml.line(`<mediatype>video</mediatype>`);
+        xml.line(`<trackindex>1</trackindex>`);
+        xml.line(`<clipindex>1</clipindex>`);
+        xml.close(`</link>`);
+        xml.open(`<link>`);
+        xml.line(`<linkclipref>${linkedAudioItemId}</linkclipref>`);
+        xml.line(`<mediatype>audio</mediatype>`);
+        xml.line(`<trackindex>1</trackindex>`);
+        xml.line(`<clipindex>1</clipindex>`);
+        xml.close(`</link>`);
       }
 
       xml.close(`</clipitem>`);
@@ -233,17 +329,29 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
 
   // ---- Audio ----
   xml.open(`<audio>`);
-  for (const track of audioTracks) {
-    const trackClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "audio");
+  xml.open(`<format>`);
+  xml.open(`<samplecharacteristics>`);
+  xml.line(`<depth>16</depth>`);
+  xml.line(`<samplerate>48000</samplerate>`);
+  xml.close(`</samplecharacteristics>`);
+  xml.close(`</format>`);
+
+  // Track 1: Linked audio from video clips (embedded audio from video files)
+  // For each video track, create a corresponding audio track with linked audio
+  for (const track of videoTracks) {
+    const trackClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "video");
+    if (trackClips.length === 0) continue;
     trackClips.sort((a, b) => a.startTime - b.startTime);
 
     xml.open(`<track>`);
     for (const clip of trackClips) {
-      if (clip.type !== "audio") continue;
+      if (clip.type !== "video") continue;
       clipItemCounter++;
       const itemId = `clipitem-${clipItemCounter}`;
+      const videoItemId = clipIdToItemId.get(clip.id)!;
+
       const asset = assetMap.get(clip.assetId);
-      const clipName = escapeXml(clip.name || asset?.name || clip.assetId);
+      const clipName = escapeXml(clip.name || asset?.name || extractFilename(clip.assetId));
       const fileId = `file-${clip.assetId}`;
 
       const inPoint = clip.inPoint || 0;
@@ -261,38 +369,51 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
       xml.line(`<end>${endFrame}</end>`);
       xml.line(`<in>${inFrame}</in>`);
       xml.line(`<out>${outFrame}</out>`);
+      xml.line(`<file id="${fileId}"/>`);
 
-      if (!writtenFileIds.has(fileId)) {
-        writtenFileIds.add(fileId);
-        xml.open(`<file id="${fileId}">`);
-        xml.line(`<name>${clipName}</name>`);
-        xml.line(`<pathurl>file://localhost/${escapeXml(asset?.name || clip.assetId)}</pathurl>`);
-        xml.line(`<duration>${assetDurFrames}</duration>`);
-        writeRate(xml, fps);
-        xml.close(`</file>`);
-      } else {
-        xml.line(`<file id="${fileId}"/>`);
-      }
+      // Write matching link elements (same as on the video clipitem)
+      xml.open(`<link>`);
+      xml.line(`<linkclipref>${videoItemId}</linkclipref>`);
+      xml.line(`<mediatype>video</mediatype>`);
+      xml.line(`<trackindex>1</trackindex>`);
+      xml.line(`<clipindex>1</clipindex>`);
+      xml.close(`</link>`);
+      xml.open(`<link>`);
+      xml.line(`<linkclipref>${itemId}</linkclipref>`);
+      xml.line(`<mediatype>audio</mediatype>`);
+      xml.line(`<trackindex>1</trackindex>`);
+      xml.line(`<clipindex>1</clipindex>`);
+      xml.close(`</link>`);
 
       xml.close(`</clipitem>`);
     }
     xml.close(`</track>`);
   }
 
-  // Also check for audio clips on video tracks (linked video+audio)
-  for (const track of videoTracks) {
-    const audioClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "audio");
-    if (audioClips.length === 0) continue;
-    audioClips.sort((a, b) => a.startTime - b.startTime);
+  // Remaining audio tracks: standalone audio clips (music, voiceover, etc.)
+  for (const track of audioTracks) {
+    const trackClips = (clipsByTrack.get(track.id) ?? []).filter((c) => c.type === "audio");
+    if (trackClips.length === 0) continue;
+    trackClips.sort((a, b) => a.startTime - b.startTime);
 
     xml.open(`<track>`);
-    for (const clip of audioClips) {
+    for (const clip of trackClips) {
       if (clip.type !== "audio") continue;
+
+      // Skip audio clips that are linked to video clips (already handled above)
+      if (clip.linkedClipId) {
+        const linkedClip = clips.find((c) => c.id === clip.linkedClipId);
+        if (linkedClip && linkedClip.type === "video") continue;
+      }
+
       clipItemCounter++;
       const itemId = `clipitem-${clipItemCounter}`;
+
+
       const asset = assetMap.get(clip.assetId);
-      const clipName = escapeXml(clip.name || asset?.name || clip.assetId);
+      const clipName = escapeXml(clip.name || asset?.name || extractFilename(clip.assetId));
       const fileId = `file-${clip.assetId}`;
+      const relativePath = extractRelativePath(clip.assetId);
 
       const inPoint = clip.inPoint || 0;
       const startFrame = secondsToFrames(clip.startTime, fps);
@@ -313,10 +434,18 @@ export function generateFcpxml(input: FcpxmlExportInput): string {
       if (!writtenFileIds.has(fileId)) {
         writtenFileIds.add(fileId);
         xml.open(`<file id="${fileId}">`);
-        xml.line(`<name>${clipName}</name>`);
-        xml.line(`<pathurl>file://localhost/${escapeXml(asset?.name || clip.assetId)}</pathurl>`);
+        xml.line(`<name>${escapeXml(extractFilename(clip.assetId))}</name>`);
+        xml.line(`<pathurl>file://localhost/${escapeXml(relativePath)}</pathurl>`);
         xml.line(`<duration>${assetDurFrames}</duration>`);
         writeRate(xml, fps);
+        xml.open(`<media>`);
+        xml.open(`<audio>`);
+        xml.open(`<samplecharacteristics>`);
+        xml.line(`<depth>16</depth>`);
+        xml.line(`<samplerate>48000</samplerate>`);
+        xml.close(`</samplecharacteristics>`);
+        xml.close(`</audio>`);
+        xml.close(`</media>`);
         xml.close(`</file>`);
       } else {
         xml.line(`<file id="${fileId}"/>`);
