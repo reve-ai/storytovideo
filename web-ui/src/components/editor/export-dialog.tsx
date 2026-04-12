@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Progress } from "../tooscut-ui/progress";
 import { useMp4Export, type ExportOptions, type ExportResult } from "../../hooks/use-mp4-export";
 import { useVideoEditorStore } from "../../stores/video-editor-store";
-import { generateFcpxml, downloadFcpxml } from "../../lib/fcpxml-export";
+import { useRunStore } from "../../stores/run-store";
 
 // ===================== TYPES =====================
 
@@ -100,15 +100,26 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   const handleExport = useCallback(async () => {
     if (format === "fcpxml") {
+      const runId = useRunStore.getState().activeRunId;
+      if (!runId) { console.error("[ExportDialog] No active run"); return; }
       try {
-        const state = useVideoEditorStore.getState();
-        const xml = generateFcpxml({
-          clips: state.clips,
-          tracks: state.tracks,
-          settings: state.settings,
-          assets: state.assets,
-        });
-        downloadFcpxml(xml);
+        const res = await fetch(`/api/runs/${runId}/fcpxml-export`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }));
+          console.error("[ExportDialog] FCPXML export failed:", err.error);
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const disposition = res.headers.get("Content-Disposition");
+        const match = disposition?.match(/filename="(.+)"/);
+        a.download = match?.[1] ?? `export-${Date.now()}.xml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
         onOpenChange(false);
       } catch (error) {
         console.error("[ExportDialog] FCPXML export failed:", error);

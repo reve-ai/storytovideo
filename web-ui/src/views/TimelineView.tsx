@@ -9,7 +9,7 @@ import { useAudioEngine } from "../hooks/use-audio-engine";
 import { useAssetStore } from "../components/timeline/use-asset-store";
 import { CanvasTimeline } from "../components/timeline/canvas-timeline";
 import { VideoPreview } from "../components/timeline/VideoPreview";
-import { generateFcpxml, downloadFcpxml } from "../lib/fcpxml-export";
+
 
 /**
  * Bridge timeline-store data into video-editor-store so CanvasTimeline
@@ -120,20 +120,30 @@ export default function TimelineView() {
     }
   }, [activeRunId, exportState]);
 
-  const handleExportFcpxml = useCallback(() => {
+  const handleExportFcpxml = useCallback(async () => {
+    if (!activeRunId) return;
     try {
-      const state = useVideoEditorStore.getState();
-      const xml = generateFcpxml({
-        clips: state.clips,
-        tracks: state.tracks,
-        settings: state.settings,
-        assets: state.assets,
-      });
-      downloadFcpxml(xml);
+      const res = await fetch(`/api/runs/${activeRunId}/fcpxml-export`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        console.error("[TimelineView] FCPXML export failed:", err.error);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition");
+      const match = disposition?.match(/filename="(.+)"/);
+      a.download = match?.[1] ?? `export-${Date.now()}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("[TimelineView] FCPXML export failed:", error);
     }
-  }, []);
+  }, [activeRunId]);
 
   const handleRegenerateMusic = useCallback(async () => {
     if (!activeRunId || musicState === "loading") return;

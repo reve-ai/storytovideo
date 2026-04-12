@@ -1903,6 +1903,397 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // GET /api/runs/:id/fcpxml-export — Generate FCP 7 XML with real filesystem paths
+      if (method === "GET" && action === "fcpxml-export" && pathParts.length === 4) {
+        const run = runManager.getRun(runId);
+        if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+        const outputDir = resolveOutputDir(run.outputDir);
+        const timelinePath = join(outputDir, "timeline_state.json");
+        if (!existsSync(timelinePath)) {
+          sendJson(res, 404, { error: "No saved timeline state — open the timeline and make edits first" });
+          return;
+        }
+
+        try {
+          const raw = readFileSync(timelinePath, "utf-8");
+          const timeline = JSON.parse(raw) as {
+            clips: Array<{
+              id: string;
+              type: string;
+              name?: string;
+              startTime: number;
+              duration: number;
+              inPoint?: number;
+              assetId?: string;
+              trackId: string;
+              linkedClipId?: string;
+            }>;
+            tracks: Array<{
+              id: string;
+              type: string;
+              index: number;
+              pairedTrackId?: string;
+            }>;
+            settings: { width: number; height: number; fps: number };
+          };
+
+          const { clips, tracks, settings } = timeline;
+          const { width, height, fps } = settings;
+
+          if (!clips || clips.length === 0) {
+            sendJson(res, 400, { error: "No clips found in timeline" });
+            return;
+          }
+
+          // Helper: resolve an assetId (API URL) to an absolute filesystem path
+          const resolveAssetPath = (assetId: string): string => {
+            const mediaPrefix = `/api/runs/${runId}/media/`;
+            let relativePath: string;
+            if (assetId.startsWith(mediaPrefix)) {
+              relativePath = assetId.slice(mediaPrefix.length);
+            } else if (assetId.startsWith("/api/runs/")) {
+              const parts = assetId.split("/media/");
+              relativePath = parts.length > 1 ? parts[1] : assetId;
+            } else {
+              relativePath = assetId;
+            }
+            return join(outputDir, decodeURIComponent(relativePath));
+          };
+
+          // Helper: get filename from path
+          const getFilename = (p: string): string => {
+            const i = p.lastIndexOf("/");
+            return i >= 0 ? p.slice(i + 1) : p;
+          };
+
+          // XML escaping
+          const esc = (s: string): string =>
+            s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+
+          // Frame rate helpers
+          const isNtsc = Math.abs(fps - 23.976) < 0.01 || Math.abs(fps - 29.97) < 0.01 || Math.abs(fps - 59.94) < 0.01;
+          const timebase = Math.abs(fps - 23.976) < 0.01 ? 24
+            : Math.abs(fps - 29.97) < 0.01 ? 30
+            : Math.abs(fps - 59.94) < 0.01 ? 60
+            : Math.round(fps);
+          const exactFps = Math.abs(fps - 23.976) < 0.01 ? 24000 / 1001
+            : Math.abs(fps - 29.97) < 0.01 ? 30000 / 1001
+            : Math.abs(fps - 59.94) < 0.01 ? 60000 / 1001
+            : Math.round(fps);
+          const toFrames = (sec: number) => Math.round(sec * exactFps);
+
+          const rateXml = `<rate><timebase>${timebase}</timebase><ntsc>${isNtsc ? "TRUE" : "FALSE"}</ntsc></rate>`;
+
+          const totalDuration = Math.max(...clips.map(c => c.startTime + c.duration));
+          const totalFrames = toFrames(totalDuration);
+
+          // Sort tracks
+          const videoTracks = tracks.filter(t => t.type === "video").sort((a, b) => a.index - b.index);
+          const audioTracks = tracks.filter(t => t.type === "audio").sort((a, b) => a.index - b.index);
+
+          // Group clips by track
+          const clipsByTrack = new Map<string, typeof clips>();
+          for (const clip of clips) {
+            const arr = clipsByTrack.get(clip.trackId) ?? [];
+            arr.push(clip);
+            clipsByTrack.set(clip.trackId, arr);
+          }
+
+          // Pre-assign clipitem IDs so we can write <link> elements inline
+          let idCounter = 0;
+          const clipItemId = new Map<string, string>(); // clip.id → clipitem-N
+          const videoLinkedAudioId = new Map<string, string>(); // video clipitem id → audio clipitem id
+
+          // Video clips
+          for (const track of videoTracks) {
+            const tc = (clipsByTrack.get(track.id) ?? []).filter(c => c.type === "video" || c.type === "image");
+            tc.sort((a, b) => a.startTime - b.startTime);
+            for (const c of tc) { clipItemId.set(c.id, `clipitem-${++idCounter}`); }
+          }
+          // Linked audio for video clips
+          for (const track of videoTracks) {
+            const tc = (clipsByTrack.get(track.id) ?? []).filter(c => c.type === "video");
+            tc.sort((a, b) => a.startTime - b.startTime);
+            for (const c of tc) {
+              const audioId = `clipitem-${++idCounter}`;
+              videoLinkedAudioId.set(clipItemId.get(c.id)!, audioId);
+            }
+          }
+          // Standalone audio clips
+          for (const track of audioTracks) {
+            const tc = (clipsByTrack.get(track.id) ?? []).filter(c => c.type === "audio");
+            for (const c of tc) {
+              if (c.linkedClipId) {
+                const linked = clips.find(cl => cl.id === c.linkedClipId);
+                if (linked && linked.type === "video") continue; // handled by linked audio above
+              }
+              clipItemId.set(c.id, `clipitem-${++idCounter}`);
+            }
+          }
+
+          // Track which file IDs have been fully written
+          const writtenFiles = new Set<string>();
+
+          // Get duration from actual file using ffprobe (cached)
+          const durationCache = new Map<string, number>();
+          const getAssetDuration = async (absPath: string, fallback: number): Promise<number> => {
+            if (durationCache.has(absPath)) return durationCache.get(absPath)!;
+            try {
+              const { stdout } = await execFileAsync("ffprobe", [
+                "-v", "quiet", "-print_format", "json", "-show_format", absPath,
+              ]);
+              const dur = parseFloat(JSON.parse(stdout).format?.duration ?? "0");
+              if (dur > 0) { durationCache.set(absPath, dur); return dur; }
+            } catch { /* fallback */ }
+            durationCache.set(absPath, fallback);
+            return fallback;
+          };
+
+          // Build XML
+          const L: string[] = [];
+          const ind = (n: number) => "  ".repeat(n);
+
+          L.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+          L.push(`<!DOCTYPE xmeml>`);
+          L.push(`<xmeml version="5">`);
+          L.push(`${ind(1)}<sequence>`);
+          L.push(`${ind(2)}<name>${esc(run.name ?? "Timeline")}</name>`);
+          L.push(`${ind(2)}<duration>${totalFrames}</duration>`);
+          L.push(`${ind(2)}${rateXml}`);
+          L.push(`${ind(2)}<timecode>`);
+          L.push(`${ind(3)}${rateXml}`);
+          L.push(`${ind(3)}<frame>0</frame>`);
+          L.push(`${ind(3)}<displayformat>NDF</displayformat>`);
+          L.push(`${ind(2)}</timecode>`);
+          L.push(`${ind(2)}<media>`);
+
+          // ---- Video tracks ----
+          L.push(`${ind(3)}<video>`);
+          L.push(`${ind(4)}<format><samplecharacteristics>`);
+          L.push(`${ind(5)}<width>${width}</width>`);
+          L.push(`${ind(5)}<height>${height}</height>`);
+          L.push(`${ind(5)}<pixelaspectratio>square</pixelaspectratio>`);
+          L.push(`${ind(4)}</samplecharacteristics></format>`);
+
+          for (const track of videoTracks) {
+            const trackClips = (clipsByTrack.get(track.id) ?? [])
+              .filter(c => c.type === "video" || c.type === "image")
+              .sort((a, b) => a.startTime - b.startTime);
+
+            L.push(`${ind(4)}<track>`);
+            for (const clip of trackClips) {
+              const itemId = clipItemId.get(clip.id)!;
+              const fileId = `file-${clip.id}`;
+              const absPath = clip.assetId ? resolveAssetPath(clip.assetId) : "";
+              const filename = clip.assetId ? getFilename(resolveAssetPath(clip.assetId)) : (clip.name ?? clip.id);
+              const pathurl = absPath ? `file://localhost${absPath}` : "";
+
+              const inPt = clip.inPoint ?? 0;
+              const startFrame = toFrames(clip.startTime);
+              const endFrame = toFrames(clip.startTime + clip.duration);
+              const inFrame = toFrames(inPt);
+              const outFrame = inFrame + (endFrame - startFrame);
+              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
+              const assetDurFrames = toFrames(assetDur);
+
+              L.push(`${ind(5)}<clipitem id="${itemId}">`);
+              L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
+              L.push(`${ind(6)}<duration>${assetDurFrames}</duration>`);
+              L.push(`${ind(6)}${rateXml}`);
+              L.push(`${ind(6)}<start>${startFrame}</start>`);
+              L.push(`${ind(6)}<end>${endFrame}</end>`);
+              L.push(`${ind(6)}<in>${inFrame}</in>`);
+              L.push(`${ind(6)}<out>${outFrame}</out>`);
+
+              if (!writtenFiles.has(fileId)) {
+                writtenFiles.add(fileId);
+                L.push(`${ind(6)}<file id="${fileId}">`);
+                L.push(`${ind(7)}<name>${esc(filename)}</name>`);
+                L.push(`${ind(7)}<pathurl>${esc(pathurl)}</pathurl>`);
+                L.push(`${ind(7)}<duration>${assetDurFrames}</duration>`);
+                L.push(`${ind(7)}${rateXml}`);
+                L.push(`${ind(7)}<media>`);
+                L.push(`${ind(8)}<video><samplecharacteristics>`);
+                L.push(`${ind(9)}<width>${width}</width>`);
+                L.push(`${ind(9)}<height>${height}</height>`);
+                L.push(`${ind(8)}</samplecharacteristics></video>`);
+                if (clip.type === "video") {
+                  L.push(`${ind(8)}<audio><samplecharacteristics>`);
+                  L.push(`${ind(9)}<depth>16</depth>`);
+                  L.push(`${ind(9)}<samplerate>48000</samplerate>`);
+                  L.push(`${ind(8)}</samplecharacteristics></audio>`);
+                }
+                L.push(`${ind(7)}</media>`);
+                L.push(`${ind(6)}</file>`);
+              } else {
+                L.push(`${ind(6)}<file id="${fileId}"/>`);
+              }
+
+              // Link elements
+              const linkedAudioItemId = videoLinkedAudioId.get(itemId);
+              if (linkedAudioItemId) {
+                L.push(`${ind(6)}<link>`);
+                L.push(`${ind(7)}<linkclipref>${itemId}</linkclipref>`);
+                L.push(`${ind(7)}<mediatype>video</mediatype>`);
+                L.push(`${ind(7)}<trackindex>1</trackindex>`);
+                L.push(`${ind(7)}<clipindex>1</clipindex>`);
+                L.push(`${ind(6)}</link>`);
+                L.push(`${ind(6)}<link>`);
+                L.push(`${ind(7)}<linkclipref>${linkedAudioItemId}</linkclipref>`);
+                L.push(`${ind(7)}<mediatype>audio</mediatype>`);
+                L.push(`${ind(7)}<trackindex>1</trackindex>`);
+                L.push(`${ind(7)}<clipindex>1</clipindex>`);
+                L.push(`${ind(6)}</link>`);
+              }
+
+              L.push(`${ind(5)}</clipitem>`);
+            }
+            L.push(`${ind(4)}</track>`);
+          }
+          L.push(`${ind(3)}</video>`);
+
+          // ---- Audio tracks ----
+          L.push(`${ind(3)}<audio>`);
+          L.push(`${ind(4)}<format><samplecharacteristics>`);
+          L.push(`${ind(5)}<depth>16</depth>`);
+          L.push(`${ind(5)}<samplerate>48000</samplerate>`);
+          L.push(`${ind(4)}</samplecharacteristics></format>`);
+
+          // Linked audio from video clips
+          for (const track of videoTracks) {
+            const trackClips = (clipsByTrack.get(track.id) ?? [])
+              .filter(c => c.type === "video")
+              .sort((a, b) => a.startTime - b.startTime);
+            if (trackClips.length === 0) continue;
+
+            L.push(`${ind(4)}<track>`);
+            for (const clip of trackClips) {
+              const videoItemId = clipItemId.get(clip.id)!;
+              const audioItemId = videoLinkedAudioId.get(videoItemId)!;
+              const fileId = `file-${clip.id}`;
+              const absPath = clip.assetId ? resolveAssetPath(clip.assetId) : "";
+              const filename = clip.assetId ? getFilename(resolveAssetPath(clip.assetId)) : (clip.name ?? clip.id);
+
+              const inPt = clip.inPoint ?? 0;
+              const startFrame = toFrames(clip.startTime);
+              const endFrame = toFrames(clip.startTime + clip.duration);
+              const inFrame = toFrames(inPt);
+              const outFrame = inFrame + (endFrame - startFrame);
+              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
+              const assetDurFrames = toFrames(assetDur);
+
+              L.push(`${ind(5)}<clipitem id="${audioItemId}">`);
+              L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
+              L.push(`${ind(6)}<duration>${assetDurFrames}</duration>`);
+              L.push(`${ind(6)}${rateXml}`);
+              L.push(`${ind(6)}<start>${startFrame}</start>`);
+              L.push(`${ind(6)}<end>${endFrame}</end>`);
+              L.push(`${ind(6)}<in>${inFrame}</in>`);
+              L.push(`${ind(6)}<out>${outFrame}</out>`);
+              L.push(`${ind(6)}<file id="${fileId}"/>`);
+
+              L.push(`${ind(6)}<link>`);
+              L.push(`${ind(7)}<linkclipref>${videoItemId}</linkclipref>`);
+              L.push(`${ind(7)}<mediatype>video</mediatype>`);
+              L.push(`${ind(7)}<trackindex>1</trackindex>`);
+              L.push(`${ind(7)}<clipindex>1</clipindex>`);
+              L.push(`${ind(6)}</link>`);
+              L.push(`${ind(6)}<link>`);
+              L.push(`${ind(7)}<linkclipref>${audioItemId}</linkclipref>`);
+              L.push(`${ind(7)}<mediatype>audio</mediatype>`);
+              L.push(`${ind(7)}<trackindex>1</trackindex>`);
+              L.push(`${ind(7)}<clipindex>1</clipindex>`);
+              L.push(`${ind(6)}</link>`);
+
+              L.push(`${ind(5)}</clipitem>`);
+            }
+            L.push(`${ind(4)}</track>`);
+          }
+
+          // Standalone audio clips
+          for (const track of audioTracks) {
+            const trackClips = (clipsByTrack.get(track.id) ?? [])
+              .filter(c => c.type === "audio")
+              .filter(c => {
+                if (c.linkedClipId) {
+                  const linked = clips.find(cl => cl.id === c.linkedClipId);
+                  if (linked && linked.type === "video") return false;
+                }
+                return true;
+              })
+              .sort((a, b) => a.startTime - b.startTime);
+            if (trackClips.length === 0) continue;
+
+            L.push(`${ind(4)}<track>`);
+            for (const clip of trackClips) {
+              const itemId = clipItemId.get(clip.id);
+              if (!itemId) continue;
+              const fileId = `file-${clip.id}`;
+              const absPath = clip.assetId ? resolveAssetPath(clip.assetId) : "";
+              const filename = clip.assetId ? getFilename(resolveAssetPath(clip.assetId)) : (clip.name ?? clip.id);
+              const pathurl = absPath ? `file://localhost${absPath}` : "";
+
+              const inPt = clip.inPoint ?? 0;
+              const startFrame = toFrames(clip.startTime);
+              const endFrame = toFrames(clip.startTime + clip.duration);
+              const inFrame = toFrames(inPt);
+              const outFrame = inFrame + (endFrame - startFrame);
+              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
+              const assetDurFrames = toFrames(assetDur);
+
+              L.push(`${ind(5)}<clipitem id="${itemId}">`);
+              L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
+              L.push(`${ind(6)}<duration>${assetDurFrames}</duration>`);
+              L.push(`${ind(6)}${rateXml}`);
+              L.push(`${ind(6)}<start>${startFrame}</start>`);
+              L.push(`${ind(6)}<end>${endFrame}</end>`);
+              L.push(`${ind(6)}<in>${inFrame}</in>`);
+              L.push(`${ind(6)}<out>${outFrame}</out>`);
+
+              if (!writtenFiles.has(fileId)) {
+                writtenFiles.add(fileId);
+                L.push(`${ind(6)}<file id="${fileId}">`);
+                L.push(`${ind(7)}<name>${esc(filename)}</name>`);
+                L.push(`${ind(7)}<pathurl>${esc(pathurl)}</pathurl>`);
+                L.push(`${ind(7)}<duration>${assetDurFrames}</duration>`);
+                L.push(`${ind(7)}${rateXml}`);
+                L.push(`${ind(7)}<media>`);
+                L.push(`${ind(8)}<audio><samplecharacteristics>`);
+                L.push(`${ind(9)}<depth>16</depth>`);
+                L.push(`${ind(9)}<samplerate>48000</samplerate>`);
+                L.push(`${ind(8)}</samplecharacteristics></audio>`);
+                L.push(`${ind(7)}</media>`);
+                L.push(`${ind(6)}</file>`);
+              } else {
+                L.push(`${ind(6)}<file id="${fileId}"/>`);
+              }
+
+              L.push(`${ind(5)}</clipitem>`);
+            }
+            L.push(`${ind(4)}</track>`);
+          }
+
+          L.push(`${ind(3)}</audio>`);
+          L.push(`${ind(2)}</media>`);
+          L.push(`${ind(1)}</sequence>`);
+          L.push(`</xmeml>`);
+
+          const xml = L.join("\n");
+          const safeName = (run.name ?? runId).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 60);
+          res.writeHead(200, {
+            "Content-Type": "application/xml",
+            "Content-Disposition": `attachment; filename="${safeName}.xml"`,
+          });
+          res.end(xml);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[fcpxml-export] Error:", msg);
+          sendJson(res, 500, { error: msg });
+        }
+        return;
+      }
+
       // POST /api/runs/:id/regenerate-music — Generate new background music from timeline
       if (method === "POST" && action === "regenerate-music" && pathParts.length === 4) {
         if (!isElevenLabsAvailable()) {
