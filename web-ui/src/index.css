@@ -2,6 +2,7 @@
 @import "./styles/top-bar.css";
 @import "./styles/dialog.css";
 @import "./styles/home.css";
+@import "./styles/story-editor.css";
 
 :root {
   --bg: #0f1117;

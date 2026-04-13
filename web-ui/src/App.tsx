@@ -4,6 +4,7 @@ import GraphView from "./views/GraphView";
 import QueueView from "./views/QueueView";
 import ScriptView from "./views/ScriptView";
 import StoryView from "./views/StoryView";
+import StoryEditorView from "./views/StoryEditorView";
 import VideoView from "./views/VideoView";
 import AnalyzeView from "./views/AnalyzeView";
 import AssetsView from "./views/AssetsView";
@@ -12,11 +13,12 @@ import TimelineView from "./views/TimelineView";
 export default function App() {
   return (
     <Routes>
+      <Route path="/story" element={<StoryEditorView />} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<QueueView />} />
         <Route path="/script" element={<ScriptView />} />
         <Route path="/graph" element={<GraphView />} />
-        <Route path="/story" element={<StoryView />} />
+        <Route path="/story-grid" element={<StoryView />} />
         <Route path="/video" element={<VideoView />} />
         <Route path="/timeline" element={<TimelineView />} />
         <Route path="/analyze" element={<AnalyzeView />} />
