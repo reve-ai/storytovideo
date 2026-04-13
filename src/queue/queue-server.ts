@@ -2035,20 +2035,39 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           // Track which file IDs have been fully written
           const writtenFiles = new Set<string>();
 
-          // Get duration from actual file using ffprobe (cached)
-          const durationCache = new Map<string, number>();
-          const getAssetDuration = async (absPath: string, fallback: number): Promise<number> => {
-            if (durationCache.has(absPath)) return durationCache.get(absPath)!;
+          // Probe media files for duration and dimensions (cached)
+          interface ProbeResult { duration: number; width: number; height: number }
+          const probeCache = new Map<string, ProbeResult>();
+          const probeAsset = async (absPath: string, fallbackDur: number): Promise<ProbeResult> => {
+            if (probeCache.has(absPath)) return probeCache.get(absPath)!;
+            const fallback: ProbeResult = { duration: fallbackDur, width, height };
             try {
               const { stdout } = await execFileAsync("ffprobe", [
-                "-v", "quiet", "-print_format", "json", "-show_format", absPath,
+                "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", absPath,
               ]);
-              const dur = parseFloat(JSON.parse(stdout).format?.duration ?? "0");
-              if (dur > 0) { durationCache.set(absPath, dur); return dur; }
+              const info = JSON.parse(stdout);
+              const dur = parseFloat(info.format?.duration ?? "0") || fallbackDur;
+              const videoStream = (info.streams ?? []).find((s: { codec_type: string }) => s.codec_type === "video");
+              const w = videoStream?.width ?? width;
+              const h = videoStream?.height ?? height;
+              const result: ProbeResult = { duration: dur, width: w, height: h };
+              probeCache.set(absPath, result);
+              return result;
             } catch { /* fallback */ }
-            durationCache.set(absPath, fallback);
+            probeCache.set(absPath, fallback);
             return fallback;
           };
+
+          // Probe the first video clip to determine actual sequence dimensions
+          let seqWidth = width;
+          let seqHeight = height;
+          const firstVideoClip = clips.find(c => c.type === "video" && c.assetId);
+          if (firstVideoClip?.assetId) {
+            const firstPath = resolveAssetPath(firstVideoClip.assetId);
+            const firstProbe = await probeAsset(firstPath, firstVideoClip.duration);
+            seqWidth = firstProbe.width;
+            seqHeight = firstProbe.height;
+          }
 
           // Build XML
           const L: string[] = [];
@@ -2071,8 +2090,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           // ---- Video tracks ----
           L.push(`${ind(3)}<video>`);
           L.push(`${ind(4)}<format><samplecharacteristics>`);
-          L.push(`${ind(5)}<width>${width}</width>`);
-          L.push(`${ind(5)}<height>${height}</height>`);
+          L.push(`${ind(5)}<width>${seqWidth}</width>`);
+          L.push(`${ind(5)}<height>${seqHeight}</height>`);
           L.push(`${ind(5)}<pixelaspectratio>square</pixelaspectratio>`);
           L.push(`${ind(4)}</samplecharacteristics></format>`);
 
@@ -2094,8 +2113,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
               const endFrame = toFrames(clip.startTime + clip.duration);
               const inFrame = toFrames(inPt);
               const outFrame = inFrame + (endFrame - startFrame);
-              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
-              const assetDurFrames = toFrames(assetDur);
+              const probe = clip.assetId ? await probeAsset(absPath, clip.duration + inPt) : { duration: clip.duration, width, height };
+              const assetDurFrames = toFrames(probe.duration);
 
               L.push(`${ind(5)}<clipitem id="${itemId}">`);
               L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
@@ -2115,8 +2134,8 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
                 L.push(`${ind(7)}${rateXml}`);
                 L.push(`${ind(7)}<media>`);
                 L.push(`${ind(8)}<video><samplecharacteristics>`);
-                L.push(`${ind(9)}<width>${width}</width>`);
-                L.push(`${ind(9)}<height>${height}</height>`);
+                L.push(`${ind(9)}<width>${probe.width}</width>`);
+                L.push(`${ind(9)}<height>${probe.height}</height>`);
                 L.push(`${ind(8)}</samplecharacteristics></video>`);
                 if (clip.type === "video") {
                   L.push(`${ind(8)}<audio><samplecharacteristics>`);
@@ -2180,8 +2199,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
               const endFrame = toFrames(clip.startTime + clip.duration);
               const inFrame = toFrames(inPt);
               const outFrame = inFrame + (endFrame - startFrame);
-              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
-              const assetDurFrames = toFrames(assetDur);
+              const assetDurFrames = toFrames((clip.assetId ? await probeAsset(absPath, clip.duration + inPt) : { duration: clip.duration }).duration);
 
               L.push(`${ind(5)}<clipitem id="${audioItemId}">`);
               L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
@@ -2239,8 +2257,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
               const endFrame = toFrames(clip.startTime + clip.duration);
               const inFrame = toFrames(inPt);
               const outFrame = inFrame + (endFrame - startFrame);
-              const assetDur = clip.assetId ? await getAssetDuration(absPath, clip.duration + inPt) : clip.duration;
-              const assetDurFrames = toFrames(assetDur);
+              const assetDurFrames = toFrames((clip.assetId ? await probeAsset(absPath, clip.duration + inPt) : { duration: clip.duration }).duration);
 
               L.push(`${ind(5)}<clipitem id="${itemId}">`);
               L.push(`${ind(6)}<name>${esc(clip.name ?? filename)}</name>`);
