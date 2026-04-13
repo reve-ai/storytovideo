@@ -352,10 +352,10 @@ function DetailOutputs({
               wordBreak: "break-word",
               fontFamily: "monospace",
               fontSize: "0.8rem",
-              background: "var(--surface-2, #1a1a2e)",
+              background: "var(--surface2)",
               padding: "0.75rem",
               borderRadius: 6,
-              border: "1px solid var(--border, #333)",
+              border: "1px solid var(--border)",
             }}
           >
             {String(promptSent)}
