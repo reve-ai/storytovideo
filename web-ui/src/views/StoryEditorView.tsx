@@ -1,44 +1,21 @@
-import { useMemo, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { mediaUrl } from "../utils/media-url";
 
-/* ── Inline SVG icons ──────────────────────────────────────── */
+/* ── Chat types ───────────────────────────────────────────── */
 
-const IconArrowLeft = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 12H5M12 19l-7-7 7-7" />
-  </svg>
-);
-const IconDots = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" />
-  </svg>
-);
-const IconTrash = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
-  </svg>
-);
-const IconBookmark = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z" />
-  </svg>
-);
-const IconDownload = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  appliedRedo?: boolean;
+}
+
+/* ── Inline SVG icons ──────────────────────────────────────── */
 const IconPlay = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
     <polygon points="6,3 20,12 6,21" />
-  </svg>
-);
-const IconPlus = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
 const IconChevronLeft = () => (
@@ -49,36 +26,6 @@ const IconChevronLeft = () => (
 const IconChevronRight = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
-const IconChevronUp = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="18 15 12 9 6 15" />
-  </svg>
-);
-const IconChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-);
-const IconPaperclip = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-  </svg>
-);
-const IconAt = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 006 0v-1a10 10 0 10-3.92 7.94" />
-  </svg>
-);
-const IconClock = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-  </svg>
-);
-const IconMoon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
   </svg>
 );
 
@@ -206,27 +153,37 @@ function useSceneData() {
 
 /* ── Main component ────────────────────────────────────────── */
 
-type SidebarTab = "chat" | "scene" | "assets" | "settings";
-
 export default function StoryEditorView() {
-  const navigate = useNavigate();
   const { scenes } = useSceneData();
 
   const [selectedSceneIdx, setSelectedSceneIdx] = useState(0);
   const [selectedShotIdx, setSelectedShotIdx] = useState(0);
-  const [mode, setMode] = useState<"storyboard" | "editor">("editor");
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("scene");
-  const [continuity, setContinuity] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [directorsNote, setDirectorsNote] = useState("");
+  const [shotDetailsExpanded, setShotDetailsExpanded] = useState(true);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<Map<string, ChatMessage[]>>(new Map());
+  const [chatLoading, setChatLoading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  const activeRunId = useRunStore((s) => s.activeRunId);
+  const chatWithShot = usePipelineStore((s) => s.chatWithShot);
 
   const currentScene = scenes[selectedSceneIdx] ?? null;
   const currentShot = currentScene?.shots[selectedShotIdx] ?? currentScene?.shots[0] ?? null;
   const previewSrc = currentShot?.videoSrc ?? currentShot?.frameSrc ?? null;
   const isVideo = playing && currentShot?.videoSrc;
 
-  const handleBack = useCallback(() => navigate("/"), [navigate]);
+  // Extract shot details for the details panel
+  const shotData = currentShot?.shot ?? {};
+  const composition = shotData.composition as string | undefined;
+  const cameraDirection = shotData.cameraDirection as string | undefined;
+  const dialogue = shotData.dialogue as string | undefined;
+  const speaker = shotData.speaker as string | undefined;
+  const videoPrompt = shotData.videoPrompt as string | undefined;
+  const durationSeconds = shotData.durationSeconds as number | undefined;
+  const soundEffects = shotData.soundEffects as string | undefined;
+  const shotLocation = shotData.location as string | undefined;
 
   const handleSelectScene = useCallback((idx: number) => {
     setSelectedSceneIdx(idx);
@@ -255,47 +212,83 @@ export default function StoryEditorView() {
 
   const handleVideoEnded = useCallback(() => setPlaying(false), []);
 
+  // Chat helpers
+  const chatKey = currentShot
+    ? `${currentScene?.sceneNum}:${currentShot.shotNum}`
+    : null;
+  const currentChatMessages = chatKey ? chatMessages.get(chatKey) ?? [] : [];
+
+  const handleSendMessage = useCallback(async () => {
+    if (!chatInput.trim() || !currentShot || !currentScene || !activeRunId || chatLoading) return;
+
+    const key = `${currentScene.sceneNum}:${currentShot.shotNum}`;
+    const msg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: chatInput.trim(),
+    };
+
+    // Add user message to history
+    setChatMessages((prev) => {
+      const next = new Map(prev);
+      next.set(key, [...(prev.get(key) ?? []), msg]);
+      return next;
+    });
+    const input = chatInput.trim();
+    setChatInput("");
+    setChatLoading(true);
+
+    // Build history for the API (exclude the message we just added)
+    const existingMessages = chatMessages.get(key) ?? [];
+    const history = existingMessages.map((m) => ({ role: m.role, content: m.content }));
+
+    const result = await chatWithShot(
+      activeRunId,
+      currentScene.sceneNum,
+      currentShot.shotNum,
+      input,
+      history,
+    );
+
+    if (result) {
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: result.reply,
+        appliedRedo: result.appliedRedo,
+      };
+      setChatMessages((prev) => {
+        const next = new Map(prev);
+        next.set(key, [...(prev.get(key) ?? []), assistantMsg]);
+        return next;
+      });
+    } else {
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: "Something went wrong. Please try again.",
+      };
+      setChatMessages((prev) => {
+        const next = new Map(prev);
+        next.set(key, [...(prev.get(key) ?? []), errorMsg]);
+        return next;
+      });
+    }
+
+    setChatLoading(false);
+  }, [chatInput, currentShot, currentScene, activeRunId, chatLoading, chatMessages, chatWithShot]);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [currentChatMessages, chatLoading]);
+
   return (
     <div className="story-editor">
       {/* ── Main area ─────────────────────────────────────── */}
       <div className="se-main">
-        {/* Top bar */}
-        <div className="se-topbar">
-          <div className="se-topbar-left">
-            <button className="se-back-btn" onClick={handleBack} title="Back">
-              <IconArrowLeft />
-            </button>
-          </div>
-
-          <div className="se-topbar-center">
-            <div className="se-mode-toggle">
-              <button
-                className={`se-mode-btn${mode === "storyboard" ? " active" : ""}`}
-                onClick={() => setMode("storyboard")}
-              >
-                Storyboard
-              </button>
-              <button
-                className={`se-mode-btn${mode === "editor" ? " active" : ""}`}
-                onClick={() => setMode("editor")}
-              >
-                Editor
-              </button>
-            </div>
-            <button className="se-theme-btn" title="Toggle theme">
-              <IconMoon />
-            </button>
-          </div>
-
-          <div className="se-topbar-right">
-            <button className="se-icon-btn" title="More options"><IconDots /></button>
-            <button className="se-icon-btn" title="Delete"><IconTrash /></button>
-            <button className="se-icon-btn" title="Bookmark"><IconBookmark /></button>
-            <button className="se-icon-btn" title="Download"><IconDownload /></button>
-            <button className="se-share-btn">Share</button>
-          </div>
-        </div>
-
         {/* Preview */}
         <div className="se-preview">
           {isVideo && currentShot?.videoSrc ? (
@@ -339,35 +332,13 @@ export default function StoryEditorView() {
               </div>
             ))}
           </div>
-
-          <div className="se-filmstrip-actions">
-            <button className="se-add-scene-btn">
-              <IconPlus /> Add a scene
-            </button>
-            <button className="se-filmstrip-delete" title="Delete scene">
-              <IconTrash />
-            </button>
-          </div>
         </div>
       </div>
 
       {/* ── Sidebar ───────────────────────────────────────── */}
       <div className="se-sidebar">
-        {/* Tabs */}
-        <div className="se-sidebar-tabs">
-          {(["chat", "scene", "assets", "settings"] as SidebarTab[]).map((tab) => (
-            <button
-              key={tab}
-              className={`se-sidebar-tab${sidebarTab === tab ? " active" : ""}`}
-              onClick={() => setSidebarTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Scene preview with nav arrows */}
-        <div className="se-scene-preview-wrap">
+        {/* Scene header */}
+        <div className="se-scene-header">
           <button
             className="se-scene-nav-btn"
             onClick={handlePrevScene}
@@ -377,14 +348,18 @@ export default function StoryEditorView() {
             <IconChevronLeft />
           </button>
 
-          <div className="se-scene-preview-img">
-            {currentScene?.thumbSrc ? (
-              <img src={currentScene.thumbSrc} alt={currentScene.title} />
-            ) : (
-              <div className="se-scene-preview-placeholder">
-                {currentScene ? `Scene ${currentScene.sceneNum}` : "No scene"}
-              </div>
+          <div className="se-scene-header-info">
+            {currentScene?.thumbSrc && (
+              <img className="se-scene-header-thumb" src={currentScene.thumbSrc} alt="" />
             )}
+            <div className="se-scene-header-text">
+              <div className="se-scene-header-title">
+                {currentScene?.title ?? "No scene"}
+              </div>
+              {currentScene?.location && (
+                <div className="se-scene-header-location">{currentScene.location}</div>
+              )}
+            </div>
           </div>
 
           <button
@@ -397,29 +372,7 @@ export default function StoryEditorView() {
           </button>
         </div>
 
-        {/* Continuity toggle */}
-        <div className="se-continuity-row">
-          <span className="se-continuity-label">
-            <IconClock />
-            Continuity
-          </span>
-          <div className="se-continuity-toggle">
-            <button
-              className={`se-continuity-opt${!continuity ? " active" : ""}`}
-              onClick={() => setContinuity(false)}
-            >
-              Off
-            </button>
-            <button
-              className={`se-continuity-opt${continuity ? " active" : ""}`}
-              onClick={() => setContinuity(true)}
-            >
-              On
-            </button>
-          </div>
-        </div>
-
-        {/* Shot list + nav arrows row */}
+        {/* Shot list */}
         <div className="se-shot-list-wrap">
           <div className="se-shot-list">
             {currentScene?.shots.map((shot, idx) => (
@@ -436,47 +389,121 @@ export default function StoryEditorView() {
                   )}
                 </div>
                 <span className="se-shot-name">Shot {shot.shotNum}</span>
-                <button className="se-shot-delete" title="Delete shot" onClick={(e) => e.stopPropagation()}>
-                  <IconTrash />
-                </button>
               </div>
             ))}
             {(!currentScene || currentScene.shots.length === 0) && (
-              <div style={{ padding: "24px 16px", color: "#999", fontSize: 13, textAlign: "center" }}>
-                No shots in this scene
-              </div>
+              <div className="se-shot-list-empty">No shots in this scene</div>
             )}
           </div>
         </div>
 
-        {/* Up/down nav arrows */}
-        <div className="se-nav-arrows">
-          <button className="se-nav-arrow-btn" title="Move up"><IconChevronUp /></button>
-          <button className="se-nav-arrow-btn" title="Move down"><IconChevronDown /></button>
-        </div>
-
-        {/* Director's note */}
-        <div className="se-directors-note">
-          <div className="se-directors-note-content">
-            <div className="se-dn-thumb">
-              {currentShot?.frameSrc ? (
-                <img src={currentShot.frameSrc} alt="Shot thumb" />
-              ) : null}
-            </div>
-            <textarea
-              className="se-dn-input"
-              placeholder="Add a director's note"
-              value={directorsNote}
-              onChange={(e) => setDirectorsNote(e.target.value)}
-              rows={2}
-            />
+        {/* Shot details (collapsible) */}
+        {currentShot && (
+          <div className="se-shot-details">
+            <button
+              className="se-shot-details-toggle"
+              onClick={() => setShotDetailsExpanded((v) => !v)}
+            >
+              Shot Details
+              <span className={`se-shot-details-chevron${shotDetailsExpanded ? " expanded" : ""}`}>
+                &#9662;
+              </span>
+            </button>
+            {shotDetailsExpanded && (
+              <div className="se-shot-details-body">
+                {composition && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Composition</span>
+                    <span className="se-detail-value">{composition}</span>
+                  </div>
+                )}
+                {cameraDirection && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Camera</span>
+                    <span className="se-detail-value">{cameraDirection}</span>
+                  </div>
+                )}
+                {dialogue && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Dialogue</span>
+                    <span className="se-detail-value">
+                      {speaker ? `${speaker}: ` : ""}{dialogue}
+                    </span>
+                  </div>
+                )}
+                {videoPrompt && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Action</span>
+                    <span className="se-detail-value">{videoPrompt}</span>
+                  </div>
+                )}
+                {durationSeconds != null && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Duration</span>
+                    <span className="se-detail-value">{durationSeconds}s</span>
+                  </div>
+                )}
+                {soundEffects && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">SFX</span>
+                    <span className="se-detail-value">{soundEffects}</span>
+                  </div>
+                )}
+                {shotLocation && (
+                  <div className="se-detail-row">
+                    <span className="se-detail-label">Location</span>
+                    <span className="se-detail-value">{shotLocation}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <div className="se-dn-actions">
-            <button className="se-dn-action-btn" title="Attach"><IconPaperclip /></button>
-            <button className="se-dn-action-btn" title="Mention"><IconAt /></button>
-            <span className="se-dn-actions-right">
-              <button className="se-dn-action-btn" title="History"><IconClock /></button>
-            </span>
+        )}
+
+        {/* Shot chat */}
+        <div className="se-shot-chat">
+          <div className="se-chat-messages" ref={chatScrollRef}>
+            {currentChatMessages.length === 0 && (
+              <div className="se-chat-empty">
+                Describe changes you want for this shot...
+              </div>
+            )}
+            {currentChatMessages.map((msg) => (
+              <div key={msg.id} className={`se-chat-msg se-chat-msg-${msg.role}`}>
+                <div className="se-chat-msg-content">{msg.content}</div>
+                {msg.appliedRedo && (
+                  <div className="se-chat-msg-badge">Changes applied</div>
+                )}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="se-chat-msg se-chat-msg-assistant se-chat-loading">
+                <div className="se-chat-msg-content">Thinking...</div>
+              </div>
+            )}
+          </div>
+          <div className="se-chat-input-row">
+            <textarea
+              className="se-chat-input"
+              placeholder="Describe changes to this shot..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              rows={2}
+              disabled={chatLoading || !currentShot}
+            />
+            <button
+              className="se-chat-send-btn"
+              onClick={handleSendMessage}
+              disabled={chatLoading || !chatInput.trim() || !currentShot}
+            >
+              Send
+            </button>
           </div>
         </div>
       </div>

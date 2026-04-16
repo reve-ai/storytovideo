@@ -13,12 +13,12 @@ import TimelineView from "./views/TimelineView";
 export default function App() {
   return (
     <Routes>
-      <Route path="/story" element={<StoryEditorView />} />
       <Route element={<AppLayout />}>
         <Route path="/" element={<QueueView />} />
         <Route path="/script" element={<ScriptView />} />
         <Route path="/graph" element={<GraphView />} />
         <Route path="/story-grid" element={<StoryView />} />
+        <Route path="/story" element={<StoryEditorView />} />
         <Route path="/video" element={<VideoView />} />
         <Route path="/timeline" element={<TimelineView />} />
         <Route path="/analyze" element={<AnalyzeView />} />

@@ -91,9 +91,20 @@ textarea {
   margin-top: 1rem;
 }
 
+/* Layout */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* Views */
 .view-content {
   padding: 0.75rem 1rem;
   position: relative;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 

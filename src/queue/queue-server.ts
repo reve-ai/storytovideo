@@ -18,9 +18,12 @@ import sharp from "sharp";
 import archiver from "archiver";
 import unzipper from "unzipper";
 
+import { generateObject } from "ai";
+import { z } from "zod";
+
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
-import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
+import { setLlmProvider as setLlmProviderImpl, getLlmModel, getLlmProviderOptions } from "../llm-provider.js";
 import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
 import { assembleVideo, getVideoDuration } from "../tools/assemble-video.js";
 import { computeAudioCost } from "./cost-tracker.js";
@@ -2455,6 +2458,148 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           const msg = err instanceof Error ? err.message : String(err);
           console.error("[regenerate-music] Error:", msg);
           sendJson(res, 500, { error: msg });
+        }
+        return;
+      }
+
+      // POST /api/runs/:id/shots/chat — LLM-powered shot editing
+      if (method === "POST" && action === "shots" && pathParts.length >= 5 && pathParts[4] === "chat") {
+        console.log(`[shots/chat] Request received for run ${runId}`);
+        const qm = runManager.getQueueManager(runId);
+        if (!qm) {
+          console.log(`[shots/chat] Run not found: ${runId}`);
+          sendJson(res, 404, { error: `Run not found: ${runId}` });
+          return;
+        }
+
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const sceneNumber = body.sceneNumber as number;
+        const shotInScene = body.shotInScene as number;
+        const message = body.message as string;
+        const history = (body.history ?? []) as Array<{ role: string; content: string }>;
+
+        console.log(`[shots/chat] scene=${sceneNumber} shot=${shotInScene} message="${message}" historyLen=${history.length}`);
+
+        if (!message || sceneNumber == null || shotInScene == null) {
+          console.log(`[shots/chat] Missing required fields`);
+          sendJson(res, 400, { error: "sceneNumber, shotInScene, and message are required" });
+          return;
+        }
+
+        // Find the latest generate_frame item for this shot
+        const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+        console.log(`[shots/chat] Looking up frame key: ${frameKey}`);
+        const allFrameItems = qm.getItemsByKey(frameKey);
+        console.log(`[shots/chat] Found ${allFrameItems.length} total items, statuses: ${allFrameItems.map(i => i.status).join(', ')}`);
+        const frameItems = allFrameItems.filter(i => i.status !== "superseded" && i.status !== "cancelled");
+
+        if (frameItems.length === 0) {
+          console.log(`[shots/chat] No active frame item found. All keys in queue:`);
+          const state = qm.getState();
+          const allItems = [...(state.image?.inProgress ?? []), ...(state.image?.pending ?? []), ...(state.image?.completed ?? [])];
+          const frameKeys = allItems.filter(i => i.type === "generate_frame").map(i => i.itemKey);
+          console.log(`[shots/chat]   generate_frame keys: ${JSON.stringify(frameKeys)}`);
+          sendJson(res, 404, { error: `No frame item found for scene ${sceneNumber}, shot ${shotInScene}` });
+          return;
+        }
+
+        const frameItem = frameItems[frameItems.length - 1];
+        const currentShot = frameItem.inputs.shot as Record<string, unknown>;
+
+        // Build messages for the LLM
+        const systemPrompt = `You are a cinematic shot editor assistant. The user is editing a specific shot in their video project. They will describe changes they want.
+
+Your job:
+1. Understand what the user wants to change about this shot.
+2. Return the specific shot fields that need to be updated in updatedFields.
+3. Explain what you changed in natural language in your message.
+
+Only include fields in updatedFields that actually need to change. If the user is asking a question or the request is unclear, leave updatedFields empty and ask for clarification.
+
+Current shot data:
+${JSON.stringify(currentShot, null, 2)}`;
+
+        const shotChatSchema = z.object({
+          message: z.string().describe("Natural language response explaining what was changed and why"),
+          updatedFields: z.object({
+            composition: z.string().optional(),
+            startFramePrompt: z.string().optional(),
+            dialogue: z.string().optional(),
+            speaker: z.string().optional(),
+            soundEffects: z.string().optional(),
+            cameraDirection: z.string().optional(),
+            videoPrompt: z.string().optional(),
+            durationSeconds: z.number().optional(),
+            charactersPresent: z.array(z.string()).optional(),
+            objectsPresent: z.array(z.string()).optional(),
+            location: z.string().optional(),
+            continuousFromPrevious: z.boolean().optional(),
+          }).describe("Only include fields that should be changed. Omit unchanged fields."),
+        });
+
+        const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+          { role: "system", content: systemPrompt },
+        ];
+        for (const h of history) {
+          messages.push({ role: h.role as "user" | "assistant", content: h.content });
+        }
+        messages.push({ role: "user", content: message });
+
+        try {
+          const model = getLlmModel("fast");
+          const providerOptions = getLlmProviderOptions();
+          console.log(`[shots/chat] Calling LLM model="${(model as any).modelId ?? model}" with ${messages.length} messages`);
+          const { object } = await (generateObject as any)({
+            model,
+            schema: shotChatSchema,
+            mode: 'tool',
+            messages,
+            ...(providerOptions ? { providerOptions } : {}),
+          });
+          console.log(`[shots/chat] LLM replied: "${object.message}" updatedFields=${JSON.stringify(object.updatedFields)}`);
+
+          // Check if there are actual updates
+          const updates = object.updatedFields;
+          const hasUpdates = Object.values(updates).some(v => v !== undefined);
+          let appliedRedo = false;
+
+          if (hasUpdates) {
+            console.log(`[shots/chat] Applying updates: ${JSON.stringify(updates)}`);
+            // Merge updates into the current shot
+            const cleanUpdates: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(updates)) {
+              if (v !== undefined) cleanUpdates[k] = v;
+            }
+            const mergedShot = { ...currentShot, ...cleanUpdates };
+            const newInputs = { ...frameItem.inputs, shot: mergedShot };
+
+            const newItem = runManager.redoItem(runId, frameItem.id, newInputs);
+            if (newItem) {
+              // Also update storyAnalysis fields
+              const updateFields: Record<string, unknown> = {};
+              for (const key of ['durationSeconds', 'videoPrompt', 'dialogue', 'speaker', 'soundEffects', 'cameraDirection', 'startFramePrompt']) {
+                if (key in cleanUpdates) updateFields[key] = cleanUpdates[key];
+              }
+              if (Object.keys(updateFields).length > 0) {
+                qm.updateShotFields(sceneNumber, shotInScene, updateFields);
+              }
+              qm.save();
+              await runManager.resumeRun(runId);
+              emitEvent(runId, "item_redo", { oldItemId: frameItem.id, newItem });
+              appliedRedo = true;
+              console.log(`[shots/chat] Redo applied successfully`);
+            }
+          } else {
+            console.log(`[shots/chat] No fields to update`);
+          }
+
+          sendJson(res, 200, { reply: object.message, updatedFields: hasUpdates ? updates : null, appliedRedo });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const stack = err instanceof Error ? err.stack : undefined;
+          console.error("[shots/chat] LLM error:", msg);
+          if (stack) console.error("[shots/chat] Stack:", stack);
+          sendJson(res, 500, { error: `LLM call failed: ${msg}` });
         }
         return;
       }
