@@ -119,7 +119,6 @@ export async function mixMusicIntoVideo(
       "-c:a", "aac",
       "-b:a", "192k",
       "-c:s", "copy",
-      "-shortest",
       outputPath,
     ]);
   } finally {
