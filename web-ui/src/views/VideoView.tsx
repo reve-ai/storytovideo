@@ -165,6 +165,15 @@ export default function VideoView() {
               {showMusicVersion ? "Show Original" : "Show With Music"}
             </button>
           )}
+          {hasMusicVersion && elevenLabsAvailable && (
+            <button
+              onClick={handleAddMusic}
+              disabled={musicLoading}
+              className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {musicLoading ? "Regenerating music…" : "🎵 Regenerate Music"}
+            </button>
+          )}
           {musicError && (
             <span className="text-xs text-red-400">{musicError}</span>
           )}
