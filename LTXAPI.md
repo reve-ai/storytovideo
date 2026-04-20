@@ -25,20 +25,21 @@ Accepts `application/json` or `multipart/form-data` (required when uploading an 
 #### Parameters
 
 | Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `prompt` | string | **yes** | — | Text description of the video |
-| `image` | file | no | — | Start frame image for image-to-video (multipart only) |
-| `end_image` | file | no | — | End frame image — model interpolates between start and end (multipart only) |
-| `mode` | string | no | `"full"` | `"full"` (30 steps, guided) or `"distilled"` (8 steps, fast) |
-| `seconds` | float | no | `5.0` | Video duration in seconds |
-| `width` | int | no | `768` | Video width (rounded to nearest multiple of 32) |
-| `height` | int | no | `512` | Video height (rounded to nearest multiple of 32) |
-| `seed` | int | no | `42` | Random seed for reproducibility |
-| `negative_prompt` | string | no | built-in | Negative prompt (full mode only) |
-| `frame_rate` | float | no | `24.0` | Frames per second |
-| `priority` | string | no | `"normal"` | `"high"` or `"normal"` — high priority jobs run before normal ones |
+| --- | --- | --- | --- | --- |
+| prompt | string | yes | — | Text description of the video |
+| image | file | no | — | Start frame image for image-to-video (multipart only) |
+| end_image | file | no | — | End frame image — model interpolates between start and end (multipart only) |
+| mode | string | no | "full" | "full" (30 steps, guided) or "distilled" (8 steps, fast) |
+| seconds | float | no | 5.0 | Video duration in seconds |
+| width | int | no | 768 | Video width (rounded to nearest multiple of 32) |
+| height | int | no | 512 | Video height (rounded to nearest multiple of 32) |
+| seed | int | no | 42 | Random seed for reproducibility |
+| negative_prompt | string | no | built-in | Negative prompt (full mode only) |
+| frame_rate | float | no | 24.0 | Frames per second |
+| priority | string | no | "normal" | "high" or "normal" — high priority jobs run before normal ones |
 
 **Notes:**
+
 - When a start image is provided, its dimensions are used unless `width`/`height` are explicitly set.
 - When both `image` and `end_image` are provided, the model generates a video that transitions from the start frame to the end frame.
 - Resolution is capped by aspect ratio: landscape up to 1408×768, portrait up to 768×1408, square up to 1024×1024. Larger inputs are scaled down proportionally.
@@ -103,8 +104,6 @@ curl -X POST http://api.revemovies.com:8080/generate \
 }
 ```
 
----
-
 ### GET /status/:job_id
 
 Poll for job status.
@@ -167,8 +166,6 @@ Progress stages: `encoding` → `denoising` (with step/total_steps) → `decodin
 
 **Status values:** `pending` → `running` → `completed`, `failed`, or `cancelled`
 
----
-
 ### GET /video/:job_id
 
 Download the generated MP4 video. Only available after the job status is `completed`.
@@ -179,8 +176,6 @@ curl -o output.mp4 http://api.revemovies.com:8080/video/1b8adfaf-2bad-4c7a-a062-
 ```
 
 Returns `video/mp4` with `Content-Disposition: attachment`.
-
----
 
 ### POST /cancel/:job_id
 
@@ -201,11 +196,10 @@ curl -X POST http://api.revemovies.com:8080/cancel/1b8adfaf-2bad-4c7a-a062-22deb
 ```
 
 **Notes:**
+
 - Pending jobs are skipped when they reach the front of the queue.
 - Running jobs abort at the next denoising step boundary (typically within 2-8 seconds).
 - Already completed, failed, or cancelled jobs cannot be cancelled (returns 400).
-
----
 
 ### GET /queue
 
@@ -263,8 +257,6 @@ http://api.revemovies.com:8080/queue?key=<LTX_API_KEY>
 
 Jobs are sorted: running first, then pending (high priority before normal), then completed/failed/cancelled by recency. The HTML view auto-refreshes every 3 seconds and includes progress bars, download links, and status badges.
 
----
-
 ### GET /health
 
 Health check. **No authentication required.**
@@ -293,6 +285,7 @@ http://api.revemovies.com:8080/test
 ```
 
 Features:
+
 - Text-to-video and image-to-video generation
 - Real-time progress bar with denoising step tracking
 - Live queue status indicator (polls `/health` every 5s)
@@ -302,14 +295,12 @@ Features:
 - Inline video playback on completion
 - API key persisted in browser localStorage
 
----
-
 ## Error Responses
 
 | Status | Meaning |
-|---|---|
-| `401` | Missing `Authorization` header |
-| `403` | Invalid API key |
-| `400` | Bad request (missing prompt, invalid mode, video not ready) |
-| `404` | Job not found |
-| `503` | Server not initialized yet |
+| --- | --- |
+| 401 | Missing Authorization header |
+| 403 | Invalid API key |
+| 400 | Bad request (missing prompt, invalid mode, video not ready) |
+| 404 | Job not found |
+| 503 | Server not initialized yet |

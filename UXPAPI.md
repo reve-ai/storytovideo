@@ -1,10 +1,6 @@
 # Adobe Premiere Pro UXP API — Reference for Agents
 
-**Premiere Pro version:** 25.3+ (2025+)
-**API entry point:** `const app = require('premierepro');`
-**All Premiere DOM calls are async** — use `await`. Constants: `app.Constants`.
-
----
+**Premiere Pro version:** 25.3+ (2025+)**API entry point:** `const app = require('premierepro');`**All Premiere DOM calls are async** — use `await`. Constants: `app.Constants`.
 
 ## Architecture: How External Apps Talk to Premiere
 
@@ -45,6 +41,7 @@ ws.onmessage = async (event) => {
 ```
 
 Manifest permissions required:
+
 ```json
 {
   "requiredPermissions": {
@@ -52,8 +49,6 @@ Manifest permissions required:
   }
 }
 ```
-
----
 
 ## Plugin Manifest (manifest.json)
 
@@ -77,12 +72,11 @@ Manifest permissions required:
 ```
 
 **Loading the plugin:**
+
 1. Install **UXP Developer Tool** (free, from Creative Cloud)
 2. Open Premiere Pro
 3. In UDT → Add Plugin → select `manifest.json` → Load
 4. Panel appears in Premiere Pro
-
----
 
 ## Core API Reference
 
@@ -121,8 +115,6 @@ function executeActions(project, actions, undoLabel) {
   });
 }
 ```
-
----
 
 ## Project API
 
@@ -188,8 +180,6 @@ const trackItems = editor.insertMogrtFromPath(
 );
 ```
 
----
-
 ## TickTime — Time Values
 
 All time positions use `TickTime`. Premiere uses "ticks" internally (254016000000 ticks = 1 second).
@@ -218,8 +208,6 @@ const half = t1.divide(2);
 // Frame alignment
 const aligned = t1.alignToFrame(app.FrameRate.createWithValue(24));
 ```
-
----
 
 ## Tracks & Track Items
 
@@ -267,8 +255,6 @@ const disableAction = clip.createSetDisabledAction(true);
 const renameAction = clip.createSetNameAction("New Name");
 ```
 
----
-
 ## ProjectItem & ClipProjectItem
 
 ```javascript
@@ -287,8 +273,6 @@ await clip.getContentType();          // Constants.ContentType
 await clip.getInPoint(app.Constants.MediaType.VIDEO);   // TickTime
 await clip.getOutPoint(app.Constants.MediaType.VIDEO);  // TickTime
 ```
-
----
 
 ## Export / Encode
 
@@ -311,6 +295,7 @@ manager.isAMEInstalled;  // boolean
 ```
 
 ### Export Types
+
 - `Constants.ExportType.IMMEDIATELY` — export now, blocking
 - `Constants.ExportType.QUEUE_TO_AME` — send to Adobe Media Encoder queue
 - `Constants.ExportType.QUEUE_TO_APP` — queue in Premiere's export queue
@@ -339,8 +324,6 @@ await app.Exporter.exportSequenceFrame(
 );
 // Supports: bmp, dpx, gif, jpg, exr, png, tga, tif
 ```
-
----
 
 ## Complete Workflow: storytovideo → Premiere Pro
 
@@ -409,7 +392,7 @@ const seq = await project.createSequenceFromMedia("StoryToVideo Movie", [videoIt
 const editor = app.SequenceEditor.getEditor(seq);
 let currentTime = (await videoItems[0].getOutPoint(app.Constants.MediaType.VIDEO));
 
-for (let i = 1; i < videoItems.length; i++) {
+for (let i = 1; i &lt;videoItems.length; i++) {
   const insertAction = editor.createInsertProjectItemAction(
     videoItems[i],
     currentTime,
@@ -417,7 +400,7 @@ for (let i = 1; i < videoItems.length; i++) {
     0,  // audio track 0
     false
   );
-  project.lockedAccess(() => {
+  project.lockedAccess(() =&gt; {
     project.executeTransaction((ca) => {
       ca.addAction(insertAction);
     }, `Insert shot ${i + 1}`);
@@ -452,8 +435,6 @@ for (const audioItem of audioItems) {
 return { success: true, sequenceName: seq.name };
 ```
 
----
-
 ## Markers API
 
 ```javascript
@@ -473,8 +454,6 @@ project.lockedAccess(() => {
   }, "Add Marker");
 });
 ```
-
----
 
 ## Video Effects & Transitions
 
@@ -508,8 +487,6 @@ const addTransAction = trackItem.createAddVideoTransitionAction(transition, opti
 executeAction(project, addTransAction, "Add Transition");
 ```
 
----
-
 ## Sequence Settings
 
 ```javascript
@@ -525,8 +502,6 @@ settings.setVideoFrameRate(app.FrameRate.createWithValue(24));
 await settings.setVideoFrameRect({ left: 0, top: 0, right: 1920, bottom: 1080 });
 await settings.setAudioSampleRate(app.FrameRate.createWithValue(48000));
 ```
-
----
 
 ## Events
 
@@ -544,50 +519,39 @@ app.EventManager.addGlobalEventListener("operationComplete", handler);
 // Constants.OperationCompleteEvent: IMPORT_MEDIA_COMPLETE, EXPORT_MEDIA_COMPLETE, etc.
 ```
 
----
-
 ## Constants Reference
 
 | Enum | Values |
-|------|--------|
-| `ExportType` | `QUEUE_TO_AME`, `QUEUE_TO_APP`, `IMMEDIATELY` |
-| `MediaType` | `ANY`, `DATA`, `VIDEO`, `AUDIO` |
-| `TrackItemType` | `EMPTY(0)`, `CLIP(1)`, `TRANSITION(2)`, `PREVIEW(3)`, `FEEDBACK(4)` |
-| `ContentType` | `ANY`, `SEQUENCE`, `MEDIA` |
-| `MarkerColor` | `GREEN`, `RED`, `MAGNETA`, `ORANGE`, `YELLOW`, `BLUE`, `CYAN` |
-| `InterpolationMode` | `BEZIER`, `HOLD`, `LINEAR`, `TIME`, `TIME_TRANSITION_END`, `TIME_TRANSITION_START` |
-| `VideoFieldType` | `PROGRESSIVE`, `UPPER_FIRST`, `LOWER_FIRST` |
-
----
+| --- | --- |
+| ExportType | QUEUE_TO_AME, QUEUE_TO_APP, IMMEDIATELY |
+| MediaType | ANY, DATA, VIDEO, AUDIO |
+| TrackItemType | EMPTY(0), CLIP(1), TRANSITION(2), PREVIEW(3), FEEDBACK(4) |
+| ContentType | ANY, SEQUENCE, MEDIA |
+| MarkerColor | GREEN, RED, MAGNETA, ORANGE, YELLOW, BLUE, CYAN |
+| InterpolationMode | BEZIER, HOLD, LINEAR, TIME, TIME_TRANSITION_END, TIME_TRANSITION_START |
+| VideoFieldType | PROGRESSIVE, UPPER_FIRST, LOWER_FIRST |
 
 ## Key Gotchas
 
-1. **All mutations require `lockedAccess` + `executeTransaction`** — Direct property sets won't work for most operations. Always create an Action, then execute it in a transaction.
-
+1. **All mutations require **`lockedAccess`** + **`executeTransaction` — Direct property sets won't work for most operations. Always create an Action, then execute it in a transaction.
 2. **Paths must be absolute** — When importing files via `project.importFiles()`, use absolute file paths. Relative paths will fail.
-
 3. **UXP plugin must be loaded** — The UXP Developer Tool must stay open during development. Closing it unloads the plugin. For production, package the plugin as a `.ccx` file.
-
 4. **Async everywhere** — Unlike old ExtendScript, all UXP DOM calls return Promises. Always `await`.
-
 5. **TickTime arithmetic returns new objects** — `t1.add(t2)` returns a new TickTime; `t1` is unchanged.
-
 6. **Track indices are 0-based** — Video track 0 is the first video track, audio track 0 is the first audio track.
-
-7. **`importFiles` is async but doesn't wait for media to be fully available** — After importing, you may need to listen for `IMPORT_MEDIA_COMPLETE` event before accessing imported items.
-
+7. `importFiles`** is async but doesn't wait for media to be fully available** — After importing, you may need to listen for `IMPORT_MEDIA_COMPLETE` event before accessing imported items.
 8. **Preset files (.epr)** — For export, you need an Adobe Media Encoder preset file. These are typically found in `~/Documents/Adobe/Adobe Media Encoder/...` or can be exported from AME's preset browser.
-
----
 
 ## Plugin Development & Deployment
 
 ### Development (UDT)
+
 1. Install UXP Developer Tool from Creative Cloud
 2. Create plugin folder with `manifest.json` + `index.html` + `index.js`
 3. In UDT: Add Plugin → Load → Debug (opens DevTools)
 
 ### Production (.ccx package)
+
 1. In UDT: select plugin → Package
 2. Distribute `.ccx` file to users
 3. Users double-click `.ccx` to install
@@ -605,8 +569,6 @@ await file.write(JSON.stringify(data));
 const fs2 = require('fs');
 // Only plugin-temp:/ is available in scripts
 ```
-
----
 
 ## Reference Links
 
