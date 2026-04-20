@@ -96,12 +96,12 @@ export default function ScriptView() {
           padding: "0.75rem",
           borderRadius: "6px",
           border: "1px solid var(--border, #444)",
-          background: "var(--surface, #1e1e1e)",
+          background: "var(--surface, #f9f9f9)",
         }}>
           <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted, #888)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
             Original Prompt
           </div>
-          <div style={{ fontSize: "0.85rem", color: "var(--text, #eee)", whiteSpace: "pre-wrap" }}>
+          <div style={{ fontSize: "0.85rem", color: "var(--text, #1a1a1a)", whiteSpace: "pre-wrap" }}>
             {scriptData.storyText}
           </div>
         </div>
@@ -119,8 +119,8 @@ export default function ScriptView() {
             padding: "0.75rem",
             borderRadius: "6px",
             border: "1px solid var(--border, #444)",
-            background: "var(--surface, #1e1e1e)",
-            color: "var(--text, #eee)",
+            background: "var(--surface, #f9f9f9)",
+            color: "var(--text, #1a1a1a)",
             resize: "vertical",
           }}
         />
@@ -154,7 +154,7 @@ export default function ScriptView() {
                     border: `1px solid ${isActive ? "var(--accent, #58a6ff)" : "var(--border, #444)"}`,
                     borderRadius: "6px",
                     padding: "0.75rem 1rem",
-                    background: "var(--surface, #1e1e1e)",
+                    background: "var(--surface, #f9f9f9)",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

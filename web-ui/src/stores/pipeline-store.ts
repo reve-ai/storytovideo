@@ -146,6 +146,13 @@ interface PipelineActions {
   fetchScript: (runId: string) => Promise<void>;
   updateScript: (runId: string, script: string) => Promise<boolean>;
   redoScene: (runId: string, sceneNumber: number, directorsNote?: string) => Promise<boolean>;
+  chatWithShot: (
+    runId: string,
+    sceneNumber: number,
+    shotInScene: number,
+    message: string,
+    history: Array<{ role: string; content: string }>,
+  ) => Promise<{ reply: string; updatedFields: Record<string, unknown> | null; appliedRedo: boolean } | null>;
   acceptAnalyzeItem: (runId: string, itemId: string, inputs?: Record<string, unknown>) => Promise<void>;
   rejectAnalyzeItem: (runId: string, itemId: string) => Promise<void>;
   uploadImage: (runId: string, file: File, itemId?: string, field?: string) => Promise<boolean>;
@@ -374,6 +381,42 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
     } catch (e) {
       console.error("redoScene:", e);
       return false;
+    }
+  },
+
+  chatWithShot: async (
+    runId: string,
+    sceneNumber: number,
+    shotInScene: number,
+    message: string,
+    history: Array<{ role: string; content: string }>,
+  ): Promise<{ reply: string; updatedFields: Record<string, unknown> | null; appliedRedo: boolean } | null> => {
+    const url = `/api/runs/${runId}/shots/chat`;
+    console.log(`[chatWithShot] POST ${url}`, { sceneNumber, shotInScene, message, historyLen: history.length });
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sceneNumber, shotInScene, message, history }),
+      });
+      console.log(`[chatWithShot] Response status: ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(`[chatWithShot] Server error (${res.status}):`, text);
+        return null;
+      }
+      const data = await res.json();
+      console.log(`[chatWithShot] Success:`, data);
+      if (data.appliedRedo) {
+        await Promise.all([
+          get().fetchQueues(runId),
+          get().fetchGraph(runId),
+        ]);
+      }
+      return data;
+    } catch (e) {
+      console.error("[chatWithShot] Network/fetch error:", e);
+      return null;
     }
   },
 

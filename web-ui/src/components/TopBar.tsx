@@ -198,10 +198,10 @@ export default function TopBar() {
                     top: "100%",
                     right: 0,
                     marginTop: "0.25rem",
-                    background: "var(--surface, #1e1e1e)",
-                    border: "1px solid var(--border, #333)",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
                     borderRadius: "0.375rem",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                     zIndex: 100,
                     minWidth: "12rem",
                     overflow: "hidden",
@@ -221,7 +221,7 @@ export default function TopBar() {
                       cursor: "pointer",
                       fontSize: "0.85rem",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, #2a2a2a)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover, #f5f5f5)")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
                   >
                     📦 Download ZIP

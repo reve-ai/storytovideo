@@ -108,7 +108,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 4px 0;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
 
 .top-bar-menu-dropdown button {
@@ -200,8 +200,8 @@
 }
 
 .run-status-badge.pausing {
-  background: #fef3c7;
-  color: #d97706;
+  background: var(--orange-dim);
+  color: var(--orange);
 }
 
 .run-status-badge.stopped {

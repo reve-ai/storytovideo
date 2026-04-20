@@ -224,9 +224,9 @@ export default function TimelineView() {
         alignItems: "center",
         gap: 8,
         padding: "4px 8px",
-        borderTop: "1px solid #333",
-        borderBottom: "1px solid #333",
-        background: "#1a1a1a",
+        borderTop: "1px solid var(--border)",
+        borderBottom: "1px solid var(--border)",
+        background: "var(--surface)",
         minHeight: 32,
         flexShrink: 0,
       }}>
