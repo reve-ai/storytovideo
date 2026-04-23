@@ -77,6 +77,9 @@ export function planShotsForScene(
     if (dialogueFloor > requested) {
       console.log(`[duration-fix] scene ${sceneNumber} shot ${shot.shotInScene}: bumped ${requested}s → ${duration}s to fit ${wordCount} words of dialogue (floor=${dialogueFloor}s)`);
     }
+    if (wordCount > 36) {
+      console.log(`[dialogue-overflow] scene ${sceneNumber} shot ${shot.shotInScene}: ${wordCount} words of dialogue exceeds 36-word per-shot limit (floor=${dialogueFloor}s > 15s ceiling). The planner failed to split this speech across shots. Dialogue will likely be truncated or talk over itself at the 15s clamp. Speaker="${shot.speaker}".`);
+    }
     return {
       ...shot,
       shotNumber: nextShotNumber++,
