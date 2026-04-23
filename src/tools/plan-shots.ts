@@ -64,16 +64,29 @@ export function planShotsForScene(
     nextShotNumber += (scene.shots?.length ?? 0);
   }
 
-  // Process shots: assign shotNumber, sceneNumber, ensure shotType
-  const processedShots: Shot[] = shots.map((shot) => ({
-    ...shot,
-    shotNumber: nextShotNumber++,
-    sceneNumber,
-    shotType: "first_last_frame" as const,
-    durationSeconds: Math.max(2, Math.ceil(shot.durationSeconds)),
-    objectsPresent: shot.objectsPresent ?? [],
-    continuousFromPrevious: shot.shotInScene > 1 ? (shot.continuousFromPrevious ?? false) : false,
-  }));
+  // Process shots: assign shotNumber, sceneNumber, ensure shotType.
+  // Enforce duration bounds:
+  //   - Absolute minimum: 2s
+  //   - Dialogue floor: ceil(wordCount / 2.5 + 0.5) — the TTS needs this much time
+  //   - Hard ceiling: 15s (Grok's max supported duration)
+  const processedShots: Shot[] = shots.map((shot) => {
+    const wordCount = shot.dialogue ? shot.dialogue.trim().split(/\s+/).filter(Boolean).length : 0;
+    const dialogueFloor = wordCount > 0 ? Math.ceil(wordCount / 2.5 + 0.5) : 0;
+    const requested = Math.ceil(shot.durationSeconds);
+    const duration = Math.min(15, Math.max(2, dialogueFloor, requested));
+    if (dialogueFloor > requested) {
+      console.log(`[duration-fix] scene ${sceneNumber} shot ${shot.shotInScene}: bumped ${requested}s → ${duration}s to fit ${wordCount} words of dialogue (floor=${dialogueFloor}s)`);
+    }
+    return {
+      ...shot,
+      shotNumber: nextShotNumber++,
+      sceneNumber,
+      shotType: "first_last_frame" as const,
+      durationSeconds: duration,
+      objectsPresent: shot.objectsPresent ?? [],
+      continuousFromPrevious: shot.shotInScene > 1 ? (shot.continuousFromPrevious ?? false) : false,
+    };
+  });
 
   // Post-planning continuity validation: enforce continuousFromPrevious=false
   // when the LLM incorrectly sets it for shots with new characters or location changes.

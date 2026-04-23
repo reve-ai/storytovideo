@@ -24,15 +24,17 @@ Scene persistence: The video model cannot introduce new visual elements mid-shot
 
 // ---- Shot planning (from processors.ts) ----
 
-export const DURATION_GUIDANCE = `TEMPO: Default to FAST. Every shot must earn its screen time with visible action, dialogue, or meaningful change. Dead air kills the video.
+export const DURATION_GUIDANCE = `TEMPO: Default to FAST for shots without dialogue. Every shot must earn its screen time with visible action, dialogue, or meaningful change. Dead air kills the video.
 
-Shot durations (2-10s). Shorter is almost always better:
-- Flash (2-3s): DEFAULT for reactions, cutaways, inserts, establishing context, transitions. Use this unless the shot has dialogue or complex action that demands more time.
-- Standard (3-5s): Dialogue shots, single actions, most of your shots should land here.
-- Extended (5-8s): Tracking shots with continuous action, longer dialogue exchanges. Must have sustained motion or speech throughout — no static holds.
-- Long (8-10s): RARE. Only for scenes with heavy dialogue that cannot be split, or a deliberate dramatic pause for maximum emotional impact. If a shot has no dialogue, it almost never needs to be this long.
+HARD FLOOR — DIALOGUE MATH (non-negotiable): For any shot with dialogue, compute word_count / 2.5 + 0.5s buffer, rounded up to the nearest integer. The shot's durationSeconds MUST be at least this value. This floor beats the "shorter is better" bias — if the dialogue needs 11s to fit, the shot is 11s. Truncating dialogue shots makes the TTS talk over itself or cuts off mid-sentence.
 
-If nothing visually changes during a shot — no movement, no speech, no reaction — the shot should not exist. Cut it or merge it into an adjacent shot. A shot where a character "stands and looks out the window" for 6 seconds is wasted screen time unless they are speaking or something is happening outside.`;
+Shot durations (2-15s):
+- Flash (2-3s): DEFAULT for NON-DIALOGUE shots — reactions, cutaways, inserts, establishing context, transitions. Shorter is better here.
+- Standard (3-5s): Short dialogue (under ~10 words) or single actions. Most non-dialogue shots should land here.
+- Extended (5-8s): Tracking shots with continuous action, or dialogue of ~10-18 words. Must have sustained motion or speech throughout — no static holds.
+- Dialogue-heavy (10-15s): Required when dialogue word count demands it (~25-37 words). Do NOT split a single continuous line of dialogue across shots to stay short — give the speaker the time they need. 15s is the hard ceiling.
+
+For non-dialogue shots: shorter is almost always better. If nothing visually changes during a shot — no movement, no speech, no reaction — the shot should not exist. Cut it or merge it into an adjacent shot. A shot where a character "stands and looks out the window" for 6 seconds is wasted screen time unless they are speaking or something is happening outside.`;
 
 export const SHOT_PLANNING_PRINCIPLES = `HOW GROK VIDEO GENERATION WORKS:
 Each shot has a START FRAME (an image prompt describing the visual setup) and a VIDEO PROMPT (what happens during the shot). Grok generates a video clip starting from the start frame image, guided by the video prompt. There are no end frames — Grok controls where the shot ends based on the video direction.
