@@ -5,7 +5,20 @@ import { useRunStore } from "../stores/run-store";
 import InputForm from "./InputForm";
 import ImageUpload from "./ImageUpload";
 import AssetReplace from "./AssetReplace";
+import ShotChat from "./chat/ShotChat";
 import { mediaUrl } from "../utils/media-url";
+
+function getShotCoords(item: WorkItem): { sceneNumber: number; shotInScene: number } | null {
+  const inputs = (item.inputs ?? {}) as Record<string, unknown>;
+  const shot = inputs.shot as { sceneNumber?: number; shotInScene?: number } | undefined;
+  if (!shot) return null;
+  if (typeof shot.sceneNumber !== "number" || typeof shot.shotInScene !== "number") return null;
+  return { sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene };
+}
+
+function isChatEligible(item: WorkItem): boolean {
+  return item.type === "generate_frame" || item.type === "generate_video";
+}
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -46,6 +59,7 @@ function findItem(
 
 export default function DetailPanel() {
   const { detailPanelOpen, detailItemId, closeDetail } = useUIStore();
+  const useChatDetailPanel = useUIStore((s) => s.useChatDetailPanel);
   const queues = usePipelineStore((s) => s.queues);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
   const fetchGraph = usePipelineStore((s) => s.fetchGraph);
@@ -153,6 +167,10 @@ export default function DetailPanel() {
     item?.status === "completed" ||
     item?.status === "failed";
 
+  const shotCoords = item ? getShotCoords(item) : null;
+  const showChat =
+    !!item && useChatDetailPanel && isChatEligible(item) && shotCoords !== null;
+
   return (
     <div
       ref={panelRef}
@@ -161,7 +179,13 @@ export default function DetailPanel() {
       <button className="close-btn" onClick={closeDetail}>
         ×
       </button>
-      {item && (
+      {item && showChat && shotCoords && (
+        <ShotChat
+          sceneNumber={shotCoords.sceneNumber}
+          shotInScene={shotCoords.shotInScene}
+        />
+      )}
+      {item && !showChat && (
         <div>
           <DetailHeader item={item} typeName={typeName} />
           <DetailTimestamps item={item} />

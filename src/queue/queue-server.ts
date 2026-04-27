@@ -32,6 +32,12 @@ import { getQueueConcurrency } from "./processors.js";
 import { startGitAutoPull } from "./git-auto-pull.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
+import {
+  handleChatGet,
+  handleChatPost,
+  handleChatApply,
+  handleChatDiscard,
+} from "../chat/route-handler.js";
 
 // ---------------------------------------------------------------------------
 // Media helpers (inlined from deleted server-assets.ts)
@@ -799,6 +805,37 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       // GET /api/runs/:id/events — SSE stream
       if (method === "GET" && action === "events") {
         handleSseStream(req, res, runId, url);
+        return;
+      }
+
+      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard]
+      if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
+        const sceneNumber = parseInt(pathParts[5], 10);
+        const shotInScene = parseInt(pathParts[6], 10);
+        if (Number.isNaN(sceneNumber) || Number.isNaN(shotInScene)) {
+          sendJson(res, 400, { error: "Invalid sceneNumber or shotInScene" });
+          return;
+        }
+        const scopeKey = `${sceneNumber}-${shotInScene}`;
+        const sub = pathParts[7];
+
+        if (method === "GET" && pathParts.length === 7) {
+          await handleChatGet({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7) {
+          await handleChatPost({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
 

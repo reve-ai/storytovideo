@@ -15,6 +15,7 @@ interface UIState {
   detailPanelOpen: boolean;
   detailItemId: string | null;
   hideSuperseded: boolean;
+  useChatDetailPanel: boolean;
   toasts: ToastMessage[];
 }
 
@@ -23,6 +24,7 @@ interface UIActions {
   openDetail: (itemId: string) => void;
   closeDetail: () => void;
   setHideSuperseded: (hide: boolean) => void;
+  setUseChatDetailPanel: (enabled: boolean) => void;
   showToast: (message: string, type?: ToastType) => void;
   dismissToast: (id: number) => void;
 }
@@ -36,6 +38,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   detailPanelOpen: false,
   detailItemId: null,
   hideSuperseded: false,
+  useChatDetailPanel: true,
   toasts: [],
 
   setView: (view: ViewName) => {
@@ -59,6 +62,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setHideSuperseded: (hide: boolean) => {
     set({ hideSuperseded: hide });
+  },
+
+  setUseChatDetailPanel: (enabled: boolean) => {
+    set({ useChatDetailPanel: enabled });
   },
 
   showToast: (message: string, type: ToastType = "info") => {
