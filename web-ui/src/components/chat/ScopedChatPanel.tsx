@@ -54,6 +54,7 @@ export default function ScopedChatPanel({
   const fetchSession = useChatSessionStore((s) => s.fetchSession);
   const applyDraft = useChatSessionStore((s) => s.applyDraft);
   const discardDraft = useChatSessionStore((s) => s.discardDraft);
+  const resetSession = useChatSessionStore((s) => s.resetSession);
   const session = useChatSessionStore((s) => selectSession(s, runId, scope, scopeKey));
 
   const [hydrated, setHydrated] = useState(false);
@@ -168,6 +169,22 @@ export default function ScopedChatPanel({
     if (!result.ok) showToast(result.error ?? "Discard failed", "error");
   };
 
+  const handleReset = async () => {
+    if (!window.confirm(
+      "Reset this chat? Messages and draft will be cleared. The canonical document is unaffected.",
+    )) return;
+    setBusy(true);
+    const result = await resetSession(runId, scope, scopeKey);
+    setBusy(false);
+    if (!result.ok) {
+      showToast(result.error ?? "Reset failed", "error");
+      return;
+    }
+    setMessages([]);
+    setInterrupted(false);
+    showToast("Chat reset", "info");
+  };
+
   const inputDisabled = status === "streaming" || status === "submitted";
 
   return (
@@ -193,6 +210,14 @@ export default function ScopedChatPanel({
                 onClick={handleDiscard}
               >
                 Discard
+              </button>
+              <button
+                className="secondary"
+                disabled={busy || inputDisabled}
+                onClick={handleReset}
+                title="Wipe this chat's messages and draft. The canonical document is unaffected."
+              >
+                Reset
               </button>
             </div>
           </div>

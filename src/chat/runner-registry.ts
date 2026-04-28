@@ -71,3 +71,17 @@ export function hasRunner(
   const r = runners.get(key(runId, scope, scopeKey));
   return !!r && r.isRunning();
 }
+
+/**
+ * Remove a runner from the registry without waiting for its onFinished
+ * callback. Used by the reset endpoint after calling cancel() so the next
+ * POST creates a brand-new runner with no carried-over history or pending
+ * approval state.
+ */
+export function removeRunner(
+  runId: string,
+  scope: ChatScope,
+  scopeKey: string,
+): boolean {
+  return runners.delete(key(runId, scope, scopeKey));
+}

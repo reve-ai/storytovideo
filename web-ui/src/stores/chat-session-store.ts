@@ -116,6 +116,7 @@ interface ChatSessionActions {
   applyDraft: (runId: string, scope: ChatScope, scopeKey: string) => Promise<{ ok: boolean; error?: string }>;
   discardDraft: (runId: string, scope: ChatScope, scopeKey: string) => Promise<{ ok: boolean; error?: string }>;
   stageDraftFields: (runId: string, scope: ChatScope, scopeKey: string, fields: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
+  resetSession: (runId: string, scope: ChatScope, scopeKey: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export type ChatSessionStore = ChatSessionState & ChatSessionActions;
@@ -188,6 +189,27 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
+      await get().fetchSession(runId, scope, scopeKey);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  resetSession: async (runId, scope, scopeKey) => {
+    const url = `${chatBaseUrl(runId, scope, scopeKey)}/reset`;
+    try {
+      const res = await fetch(url, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
+      // Drop the cached session so the re-fetch starts from a clean slate
+      // rather than briefly showing stale messages.
+      const key = sessionKey(runId, scope, scopeKey);
+      set((s) => {
+        const nextSessions = { ...s.sessions };
+        delete nextSessions[key];
+        return { sessions: nextSessions };
+      });
       await get().fetchSession(runId, scope, scopeKey);
       return { ok: true };
     } catch (err) {

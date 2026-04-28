@@ -104,6 +104,18 @@ export class ChatSessionStore {
     return this.setDraft(scope, scopeKey, runId, null);
   }
 
+  /**
+   * Wipe the persisted session for (scope, scopeKey) back to a fresh empty
+   * state, preserving runId/scope/scopeKey identifiers. Used by the chat reset
+   * endpoint to escape stuck states (e.g. an assistant tool-call left without a
+   * matching tool-result, which Anthropic rejects on the next turn).
+   */
+  reset(scope: ChatScope, scopeKey: string, runId: string): ChatSession {
+    const next = emptyChatSession(runId, scope, scopeKey);
+    this.save(next);
+    return next;
+  }
+
   setRunStatus(
     scope: ChatScope,
     scopeKey: string,

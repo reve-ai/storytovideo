@@ -40,6 +40,7 @@ import {
   handleChatDraft,
   handleChatStream,
   handleChatCancel,
+  handleChatReset,
   handleChatActive,
 } from "../chat/route-handler.js";
 
@@ -818,7 +819,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // /api/runs/:id/chat/story/:scopeKey[/apply|/discard|/draft|/stream|/cancel]
+      // /api/runs/:id/chat/story/:scopeKey[/apply|/discard|/draft|/stream|/cancel|/reset]
       if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "story") {
         const scopeKey = pathParts[5];
         const sub = pathParts[6];
@@ -851,11 +852,15 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           await handleChatDraft({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
           return;
         }
+        if (method === "POST" && pathParts.length === 7 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
         sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
 
-      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft|/stream|/cancel]
+      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft|/stream|/cancel|/reset]
       if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "location") {
         const scopeKey = pathParts[5];
         const sub = pathParts[6];
@@ -888,11 +893,15 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
           await handleChatDraft({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
           return;
         }
+        if (method === "POST" && pathParts.length === 7 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
         sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
 
-      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard|/draft|/stream|/cancel]
+      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard|/draft|/stream|/cancel|/reset]
       if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
         const sceneNumber = parseInt(pathParts[5], 10);
         const shotInScene = parseInt(pathParts[6], 10);
@@ -929,6 +938,10 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         if (method === "POST" && pathParts.length === 8 && sub === "draft") {
           await handleChatDraft({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
           return;
         }
         sendJson(res, 405, { error: "Method not allowed" });
