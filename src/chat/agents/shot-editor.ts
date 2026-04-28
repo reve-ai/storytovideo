@@ -9,6 +9,7 @@ import { generateVideo } from "../../tools/generate-video.js";
 import type { Shot } from "../../types.js";
 import type { RunManager } from "../../queue/run-manager.js";
 import type { QueueManager } from "../../queue/queue-manager.js";
+import type { WorkItem } from "../../queue/types.js";
 import {
   ChatSessionStore,
   chatPreviewDir,
@@ -52,6 +53,27 @@ function loadDraft(ctx: ShotEditorContext): ShotDraft {
 
 function saveDraft(ctx: ShotEditorContext, draft: ShotDraft): void {
   ctx.store.setDraft("shot", ctx.scopeKey, ctx.runId, draft);
+}
+
+function findLatestActiveItem(qm: QueueManager, itemKey: string): WorkItem | null {
+  const items = qm.getItemsByKey(itemKey)
+    .filter((i) => i.status !== "superseded" && i.status !== "cancelled");
+  if (items.length === 0) return null;
+  return items.sort((a, b) => b.version - a.version)[0];
+}
+
+async function regenerateByKey(
+  ctx: ShotEditorContext,
+  itemKey: string,
+  directorsNote: string | undefined,
+): Promise<{ ok: true; newItemId: string; supersededItemId: string } | { error: string }> {
+  const latest = findLatestActiveItem(ctx.queueManager, itemKey);
+  if (!latest) return { error: `No active item to regenerate for ${itemKey}` };
+  const newInputs = directorsNote ? { ...latest.inputs, directorsNote } : undefined;
+  const newItem = ctx.runManager.redoItem(ctx.runId, latest.id, newInputs);
+  if (!newItem) return { error: `Failed to redo item ${latest.id}` };
+  await ctx.runManager.resumeRun(ctx.runId);
+  return { ok: true, newItemId: newItem.id, supersededItemId: latest.id };
 }
 
 const updateShotFieldsSchema = z.object({
@@ -301,6 +323,28 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
       },
     }),
 
+    regenerateFrame: ({
+      description:
+        "Re-roll the start frame for this shot using its current inputs. Optional directorsNote biases the regen prompt without changing the document. Use this when the user wants to retry the frame as-is, not when they want to change shot fields. If shot fields need changing, use updateShotFields + proposeApply instead.",
+      inputSchema: z.object({ directorsNote: z.string().optional() }),
+      needsApproval: true,
+      execute: async ({ directorsNote }: { directorsNote?: string }) => {
+        const itemKey = `frame:scene:${ctx.sceneNumber}:shot:${ctx.shotInScene}`;
+        return regenerateByKey(ctx, itemKey, directorsNote);
+      },
+    }),
+
+    regenerateVideo: ({
+      description:
+        "Re-roll the video for this shot using its current inputs. Optional directorsNote biases the regen prompt without changing the document. Use this when the user wants to retry the video as-is, not when they want to change shot fields. If shot fields need changing, use updateShotFields + proposeApply instead.",
+      inputSchema: z.object({ directorsNote: z.string().optional() }),
+      needsApproval: true,
+      execute: async ({ directorsNote }: { directorsNote?: string }) => {
+        const itemKey = `video:scene:${ctx.sceneNumber}:shot:${ctx.shotInScene}`;
+        return regenerateByKey(ctx, itemKey, directorsNote);
+      },
+    }),
+
     proposeApply: ({
       description:
         "Terminal tool. Call this when the draft is ready and the UI should show Apply / Discard. Always end the conversation by calling this.",
@@ -326,8 +370,13 @@ The Shot is part of a larger story analysis document. You can:
 - Stage an image replacement via replaceFrameImage (requires user approval).
 - Generate a preview of the new start frame via previewFrame (requires approval). This writes to a sandbox.
 - Generate a preview of the new video via previewVideo (requires approval). Costly — only do this if the user explicitly asks.
+- Re-roll the canonical start frame via regenerateFrame, or the canonical video via regenerateVideo (both require approval). These re-run the existing pipeline item with the same inputs (optionally biased by a directorsNote) without changing the Shot document.
 
-Always finish your work by calling proposeApply with a short summary of the staged changes. The user will then click Apply (commits the draft) or Discard.
+Tool selection:
+- If the user wants to retry the current frame/video as-is (same shot fields, just roll again), use regenerateFrame / regenerateVideo. They do NOT modify the document and skip the Apply step.
+- If the user wants to change Shot fields (composition, prompts, dialogue, location, etc.), stage edits with updateShotFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
+
+Always finish field-editing work by calling proposeApply with a short summary of the staged changes. Pure regenerate-only requests do not need proposeApply if no draft fields were staged.
 
 Never invent character/location/object names — only use those returned by getStoryContext. Validate before staging.`;
 

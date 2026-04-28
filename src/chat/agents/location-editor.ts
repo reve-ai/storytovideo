@@ -8,6 +8,7 @@ import { generateAsset } from "../../tools/generate-asset.js";
 import type { Location } from "../../types.js";
 import type { RunManager } from "../../queue/run-manager.js";
 import type { QueueManager } from "../../queue/queue-manager.js";
+import type { WorkItem } from "../../queue/types.js";
 import {
   ChatSessionStore,
   chatPreviewDir,
@@ -53,6 +54,13 @@ function loadDraft(ctx: LocationEditorContext): LocationDraft {
 
 function saveDraft(ctx: LocationEditorContext, draft: LocationDraft): void {
   ctx.store.setDraft("location", ctx.scopeKey, ctx.runId, draft);
+}
+
+function findLatestActiveItem(qm: QueueManager, itemKey: string): WorkItem | null {
+  const items = qm.getItemsByKey(itemKey)
+    .filter((i) => i.status !== "superseded" && i.status !== "cancelled");
+  if (items.length === 0) return null;
+  return items.sort((a, b) => b.version - a.version)[0];
 }
 
 const updateLocationFieldsSchema = z.object({
@@ -204,6 +212,23 @@ export function buildLocationEditorTools(ctx: LocationEditorContext): ToolSet {
       },
     }),
 
+    regenerateReferenceImage: ({
+      description:
+        "Re-roll the reference image for this location with its current description. Optional directorsNote biases the regen prompt without changing the document. Use this when the user wants to retry the reference image as-is, not when they want to change the location description. If location fields need changing, use updateLocationFields + proposeApply instead.",
+      inputSchema: z.object({ directorsNote: z.string().optional() }),
+      needsApproval: true,
+      execute: async ({ directorsNote }: { directorsNote?: string }) => {
+        const itemKey = `asset:location:${ctx.locationName}`;
+        const latest = findLatestActiveItem(ctx.queueManager, itemKey);
+        if (!latest) return { error: `No active reference image to regenerate for ${itemKey}` };
+        const newInputs = directorsNote ? { ...latest.inputs, directorsNote } : undefined;
+        const newItem = ctx.runManager.redoItem(ctx.runId, latest.id, newInputs);
+        if (!newItem) return { error: `Failed to redo item ${latest.id}` };
+        await ctx.runManager.resumeRun(ctx.runId);
+        return { ok: true as const, newItemId: newItem.id, supersededItemId: latest.id };
+      },
+    }),
+
     proposeApply: ({
       description:
         "Terminal tool. Call this when the draft is ready and the UI should show Apply / Discard. Always end the conversation by calling this.",
@@ -228,8 +253,13 @@ The Location belongs to a larger story analysis document. You can:
 - Stage a partial update to the Location via updateLocationFields. This goes into a draft, not the live document.
 - Stage a reference-image replacement via replaceReferenceImage (requires user approval).
 - Generate a preview of a new reference image via previewReferenceImage (requires approval). This writes to a sandbox.
+- Re-roll the canonical reference image via regenerateReferenceImage (requires approval). This re-runs the existing pipeline item with the same inputs (optionally biased by a directorsNote) without changing the Location document.
 
-Always finish your work by calling proposeApply with a short summary of the staged changes. The user will then click Apply (commits the draft) or Discard.`;
+Tool selection:
+- If the user wants to retry the current reference image as-is (same description, just roll again), use regenerateReferenceImage. It does NOT modify the document and skips the Apply step.
+- If the user wants to change the Location description, stage edits with updateLocationFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
+
+Always finish field-editing work by calling proposeApply with a short summary of the staged changes. Pure regenerate-only requests do not need proposeApply if no draft fields were staged.`;
 
 export function createLocationEditorAgent(ctx: LocationEditorContext): Agent<never, ToolSet> {
   const tools = buildLocationEditorTools(ctx);
