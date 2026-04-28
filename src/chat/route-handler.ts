@@ -1,17 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import type { UIMessage, UIMessageChunk } from "ai";
-import { pipeUIMessageStreamToResponse } from "ai";
+import {
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  pipeUIMessageStreamToResponse,
+} from "ai";
 
 import type { RunManager } from "../queue/run-manager.js";
 import { ChatSessionStore, chatPreviewDir } from "./session-store.js";
 import { getScopeRegistration } from "./scope-registry.js";
 import "./scopes/index.js";
-import { readEvents } from "./event-log.js";
+import { clearEvents, readEvents } from "./event-log.js";
 import {
   getOrCreateRunner,
   getRunner,
   hasRunner,
   listActiveChats,
+  removeRunner,
 } from "./runner-registry.js";
 import type { ChatScope, LocationDraft, LocationFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
 import {
@@ -123,7 +127,15 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
   // user messages the client actually appended this round.
   const baseHistory = runner.getHistory();
   const newMessages = appendedMessages(baseHistory, incomingMessages);
-  if (newMessages.length === 0) {
+  // Tool approvals don't append a user message — the client mutates the
+  // existing assistant message in place, flipping tool-part `state` from
+  // "approval-requested" to "approval-responded". In that case the
+  // length-based diff yields nothing, so detect the continuation via the
+  // ai SDK helper and overwrite history instead of appending.
+  const isApprovalContinuation =
+    newMessages.length === 0 &&
+    lastAssistantMessageIsCompleteWithApprovalResponses({ messages: incomingMessages });
+  if (newMessages.length === 0 && !isApprovalContinuation) {
     sendJson(res, 400, { error: "no new messages to send" });
     return;
   }
@@ -131,7 +143,11 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
   // Enqueue first so the runner transitions to running synchronously, then
   // subscribe — otherwise subscribe() may auto-close because it sees the
   // runner as idle right between turns.
-  runner.enqueue(newMessages);
+  if (isApprovalContinuation) {
+    runner.enqueueContinuation(incomingMessages);
+  } else {
+    runner.enqueue(newMessages);
+  }
   const stream = runner.subscribe();
 
   pipeUIMessageStreamToResponse({ response: res, stream });
@@ -250,6 +266,39 @@ export async function handleChatCancel(opts: HandleChatOptions): Promise<void> {
   if (!runner) { sendJson(res, 200, { ok: true, cancelled: false }); return; }
   runner.cancel();
   sendJson(res, 200, { ok: true, cancelled: true });
+}
+
+/**
+ * POST /api/runs/:id/chat/<scope>/<scopeKey>/reset — wipe the chat session
+ * back to an empty state. This is the escape hatch for sessions stuck because
+ * an assistant tool-call has no matching tool-result (Anthropic rejects any
+ * further messages otherwise). Cancels and drops any active runner, clears
+ * the persisted session JSON and the events log. Does not touch the canonical
+ * document.
+ */
+export async function handleChatReset(opts: HandleChatOptions): Promise<void> {
+  const { runManager, runId, scope, scopeKey, res } = opts;
+  const store = getStore(runManager, runId);
+  if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+  const outputDir = getRunOutputDir(runManager, runId);
+  if (!outputDir) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+  const runner = getRunner(runId, scope, scopeKey);
+  if (runner) {
+    try { runner.cancel(); } catch (err) {
+      console.error("[handleChatReset] runner.cancel() failed:", err);
+    }
+  }
+  removeRunner(runId, scope, scopeKey);
+
+  store.reset(scope, scopeKey, runId);
+  try {
+    clearEvents(outputDir, scope, scopeKey);
+  } catch (err) {
+    console.error("[handleChatReset] clearEvents failed:", err);
+  }
+
+  sendJson(res, 200, { ok: true });
 }
 
 /**

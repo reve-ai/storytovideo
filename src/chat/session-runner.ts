@@ -48,6 +48,16 @@ type Subscriber = {
   closed: boolean;
 };
 
+/**
+ * Queue entry for the run loop. "append" is the normal new-user-message batch;
+ * "replace" is a continuation that overwrites history wholesale (used for
+ * tool-approval responses, which mutate the existing assistant message in
+ * place rather than appending a new one).
+ */
+type PendingItem =
+  | { kind: "append"; messages: UIMessage[] }
+  | { kind: "replace"; messages: UIMessage[] };
+
 export class ChatSessionRunner {
   readonly runId: string;
   readonly scope: ChatScope;
@@ -63,7 +73,7 @@ export class ChatSessionRunner {
   private subscribers = new Set<Subscriber>();
   /** Buffer of all chunks emitted for the current turn (cleared between turns). */
   private buffer: UIMessageChunk[] = [];
-  private pending: UIMessage[][] = [];
+  private pending: PendingItem[] = [];
   private currentMessages: UIMessage[] = [];
   private abortController: AbortController | null = null;
 
@@ -114,8 +124,23 @@ export class ChatSessionRunner {
 
   /** Append a user-message batch to the queue and start the run loop if idle. */
   enqueue(messages: UIMessage[]): void {
-    if (messages.length > 0) this.pending.push(messages);
+    if (messages.length > 0) this.pending.push({ kind: "append", messages });
     if (!this.loopRunning && this.pending.length > 0) {
+      void this.runLoop();
+    }
+  }
+
+  /**
+   * Continue a paused turn by overwriting the runner's history with the
+   * incoming messages and running another turn. Used for tool-approval
+   * responses, where the client mutates the existing assistant message
+   * (toggling tool-part state from "approval-requested" to
+   * "approval-responded") rather than appending a new user message.
+   */
+  enqueueContinuation(messages: UIMessage[]): void {
+    if (messages.length === 0) return;
+    this.pending.push({ kind: "replace", messages });
+    if (!this.loopRunning) {
       void this.runLoop();
     }
   }
@@ -188,9 +213,15 @@ export class ChatSessionRunner {
     this.loopRunning = true;
     try {
       while (this.pending.length > 0) {
-        const userBatch = this.pending.shift()!;
-        this.currentMessages = [...this.currentMessages, ...userBatch];
-        // Persist user messages immediately so a refresh restores their input.
+        const item = this.pending.shift()!;
+        if (item.kind === "append") {
+          this.currentMessages = [...this.currentMessages, ...item.messages];
+        } else {
+          // Continuation: client supplied the full updated history (with tool
+          // approvals resolved). Overwrite rather than append.
+          this.currentMessages = [...item.messages];
+        }
+        // Persist updated history immediately so a refresh restores it.
         this.store.setMessages(this.scope, this.scopeKey, this.runId, this.currentMessages);
         await this.runOneTurn();
       }
