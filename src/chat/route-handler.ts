@@ -4,10 +4,10 @@ import { pipeAgentUIStreamToResponse } from "ai";
 
 import type { RunManager } from "../queue/run-manager.js";
 import { ChatSessionStore, chatPreviewDir } from "./session-store.js";
-import { createShotEditorAgent } from "./agents/shot-editor.js";
-import { applyShotDraft } from "./apply.js";
-import type { ChatScope } from "./types.js";
-import { isShotDraftEmpty } from "./types.js";
+import { getScopeRegistration } from "./scope-registry.js";
+import "./scopes/index.js";
+import type { ChatScope, ShotDraft } from "./types.js";
+import { emptyShotDraft, isShotDraftEmpty } from "./types.js";
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -47,11 +47,15 @@ function getStore(runManager: RunManager, runId: string): ChatSessionStore | nul
 }
 
 export async function handleChatGet(opts: HandleChatOptions): Promise<void> {
-  const { runManager, runId, scope, scopeKey, res } = opts;
+  const { runManager, runId, scope, scopeKey, sceneNumber, shotInScene, res } = opts;
   const store = getStore(runManager, runId);
   if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
   const session = store.load(scope, scopeKey, runId);
-  sendJson(res, 200, session);
+  const reg = getScopeRegistration(scope);
+  const scopeContext = reg?.getScopeContext?.({
+    runId, scope, scopeKey, sceneNumber, shotInScene, runManager,
+  }) ?? null;
+  sendJson(res, 200, { ...session, scopeContext });
 }
 
 export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
@@ -60,6 +64,8 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
   if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
   const qm = runManager.getQueueManager(runId);
   if (!qm) { sendJson(res, 404, { error: `Run has no queue manager: ${runId}` }); return; }
+  const reg = getScopeRegistration(scope);
+  if (!reg) { sendJson(res, 404, { error: `Unknown chat scope: ${scope}` }); return; }
 
   const body = (await readJsonBody(req)) as { messages?: UIMessage[] };
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
@@ -71,14 +77,8 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
   // Persist incoming messages immediately so a refresh restores user input.
   store.setMessages(scope, scopeKey, runId, incomingMessages);
 
-  const agent = createShotEditorAgent({
-    runId,
-    sceneNumber,
-    shotInScene,
-    scopeKey,
-    store,
-    runManager,
-    queueManager: qm,
+  const agent = reg.agentFactory({
+    runId, scope, scopeKey, sceneNumber, shotInScene, store, runManager, queueManager: qm,
   });
 
   res.setHeader("x-vercel-ai-ui-message-stream", "v1");
@@ -102,6 +102,8 @@ export async function handleChatApply(opts: HandleChatOptions): Promise<void> {
   const { runManager, runId, scope, scopeKey, sceneNumber, shotInScene, res } = opts;
   const store = getStore(runManager, runId);
   if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+  const reg = getScopeRegistration(scope);
+  if (!reg) { sendJson(res, 404, { error: `Unknown chat scope: ${scope}` }); return; }
 
   const session = store.load(scope, scopeKey, runId);
   if (!session.draft || isShotDraftEmpty(session.draft)) {
@@ -110,7 +112,10 @@ export async function handleChatApply(opts: HandleChatOptions): Promise<void> {
   }
 
   try {
-    const result = await applyShotDraft(runManager, runId, sceneNumber, shotInScene, session.draft);
+    const result = await reg.applyDraft(
+      { runId, scope, scopeKey, sceneNumber, shotInScene, runManager },
+      session.draft,
+    );
     store.clearDraft(scope, scopeKey, runId);
     sendJson(res, 200, result);
   } catch (err) {
@@ -125,6 +130,34 @@ export async function handleChatDiscard(opts: HandleChatOptions): Promise<void> 
   if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
   store.clearDraft(scope, scopeKey, runId);
   sendJson(res, 200, { ok: true });
+}
+
+export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
+  const { runManager, runId, scope, scopeKey, req, res } = opts;
+  const store = getStore(runManager, runId);
+  if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+
+  let body: { fields?: Record<string, unknown> };
+  try {
+    body = (await readJsonBody(req)) as { fields?: Record<string, unknown> };
+  } catch (err) {
+    sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  const fields = body?.fields ?? {};
+  if (typeof fields !== "object" || fields === null || Array.isArray(fields)) {
+    sendJson(res, 400, { error: "fields must be an object" });
+    return;
+  }
+
+  const session = store.load(scope, scopeKey, runId);
+  const current: ShotDraft = session.draft ?? emptyShotDraft();
+  const next: ShotDraft = {
+    shotFields: { ...current.shotFields, ...(fields as Record<string, never>) },
+    pendingImageReplacements: current.pendingImageReplacements,
+  };
+  store.setDraft(scope, scopeKey, runId, next);
+  sendJson(res, 200, { ok: true, draft: next });
 }
 
 export function chatPreviewDirForRun(

@@ -37,6 +37,7 @@ import {
   handleChatPost,
   handleChatApply,
   handleChatDiscard,
+  handleChatDraft,
 } from "../chat/route-handler.js";
 
 // ---------------------------------------------------------------------------
@@ -833,6 +834,10 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         if (method === "POST" && pathParts.length === 8 && sub === "discard") {
           await handleChatDiscard({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
           return;
         }
         sendJson(res, 405, { error: "Method not allowed" });

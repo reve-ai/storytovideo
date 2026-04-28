@@ -29,6 +29,8 @@ export interface ChatSessionData {
   draft: ShotDraft | null;
   intermediates: ChatIntermediate[];
   lastSavedAt: string;
+  /** Scope-specific snapshot supplied by the server (e.g. liveShot for shot scope). */
+  scopeContext?: Record<string, unknown> | null;
 }
 
 function sessionKey(runId: string, scope: ChatScope, scopeKey: string): string {
@@ -45,6 +47,7 @@ interface ChatSessionActions {
   setSession: (data: ChatSessionData) => void;
   applyDraft: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number) => Promise<{ ok: boolean; error?: string }>;
   discardDraft: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number) => Promise<{ ok: boolean; error?: string }>;
+  stageDraftFields: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number, fields: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export type ChatSessionStore = ChatSessionState & ChatSessionActions;
@@ -99,6 +102,23 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}/discard`;
     try {
       const res = await fetch(url, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
+      await get().fetchSession(runId, scope, scopeKey);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  stageDraftFields: async (runId, scope, scopeKey, sceneNumber, shotInScene, fields) => {
+    const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}/draft`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
       await get().fetchSession(runId, scope, scopeKey);

@@ -174,7 +174,7 @@ export default function DetailPanel() {
   return (
     <div
       ref={panelRef}
-      className={`detail-panel${detailPanelOpen && item ? " open" : ""}`}
+      className={`detail-panel${detailPanelOpen && item ? " open" : ""}${showChat ? " detail-panel-wide" : ""}`}
     >
       <button className="close-btn" onClick={closeDetail}>
         ×

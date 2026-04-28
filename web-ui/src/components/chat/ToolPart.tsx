@@ -65,7 +65,7 @@ export default function ToolPart({
         <span className="chat-tool-name">{name}</span>
         <span className={`chat-tool-state state-${state}`}>{state}</span>
       </div>
-      {part.input != null && (
+      {part.input != null && state !== "approval-requested" && (
         <details className="chat-tool-detail">
           <summary>Input</summary>
           <pre>{JSON.stringify(part.input, null, 2)}</pre>
@@ -85,6 +85,9 @@ export default function ToolPart({
           <div className="chat-tool-approval-msg">
             The agent wants to run <strong>{name}</strong>. Approve?
           </div>
+          {part.input != null && (
+            <pre className="chat-tool-approval-args">{JSON.stringify(part.input, null, 2)}</pre>
+          )}
           <div className="chat-tool-approval-actions">
             <button
               type="button"
