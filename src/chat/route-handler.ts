@@ -6,8 +6,16 @@ import type { RunManager } from "../queue/run-manager.js";
 import { ChatSessionStore, chatPreviewDir } from "./session-store.js";
 import { getScopeRegistration } from "./scope-registry.js";
 import "./scopes/index.js";
-import type { ChatScope, ShotDraft } from "./types.js";
-import { emptyShotDraft, isShotDraftEmpty } from "./types.js";
+import type { ChatScope, LocationDraft, LocationFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
+import {
+  emptyLocationDraft,
+  emptyShotDraft,
+  emptyStoryDraft,
+  isDraftEmpty,
+  isLocationDraft,
+  isShotDraft,
+  isStoryDraft,
+} from "./types.js";
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -106,7 +114,7 @@ export async function handleChatApply(opts: HandleChatOptions): Promise<void> {
   if (!reg) { sendJson(res, 404, { error: `Unknown chat scope: ${scope}` }); return; }
 
   const session = store.load(scope, scopeKey, runId);
-  if (!session.draft || isShotDraftEmpty(session.draft)) {
+  if (!session.draft || isDraftEmpty(session.draft)) {
     sendJson(res, 200, { ok: true, regeneratedItemIds: [], imageReplacementsApplied: [] });
     return;
   }
@@ -151,7 +159,26 @@ export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
   }
 
   const session = store.load(scope, scopeKey, runId);
-  const current: ShotDraft = session.draft ?? emptyShotDraft();
+  if (scope === "location") {
+    const current: LocationDraft = isLocationDraft(session.draft) ? session.draft : emptyLocationDraft();
+    const next: LocationDraft = {
+      locationFields: { ...current.locationFields, ...(fields as LocationFields) },
+      pendingReferenceImage: current.pendingReferenceImage,
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  if (scope === "story") {
+    const current: StoryDraft = isStoryDraft(session.draft) ? session.draft : emptyStoryDraft();
+    const next: StoryDraft = {
+      storyFields: { ...current.storyFields, ...(fields as StoryFields) },
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  const current: ShotDraft = isShotDraft(session.draft) ? session.draft : emptyShotDraft();
   const next: ShotDraft = {
     shotFields: { ...current.shotFields, ...(fields as Record<string, never>) },
     pendingImageReplacements: current.pendingImageReplacements,

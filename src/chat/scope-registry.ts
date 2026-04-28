@@ -2,7 +2,7 @@ import type { Agent, ToolSet } from "ai";
 
 import type { RunManager } from "../queue/run-manager.js";
 import type { QueueManager } from "../queue/queue-manager.js";
-import type { ChatScope, ShotDraft } from "./types.js";
+import type { ChatDraft, ChatScope } from "./types.js";
 import type { ChatSessionStore } from "./session-store.js";
 
 export interface ScopeAgentContext {
@@ -42,7 +42,7 @@ export interface ApplyDraftResult {
 
 export interface ScopeRegistration {
   agentFactory: (ctx: ScopeAgentContext) => Agent<never, ToolSet>;
-  applyDraft: (ctx: ScopeApplyContext, draft: ShotDraft) => Promise<ApplyDraftResult>;
+  applyDraft: (ctx: ScopeApplyContext, draft: ChatDraft) => Promise<ApplyDraftResult>;
   /**
    * Optional: return scope-specific context the GET handler should attach to
    * the session response (e.g. the live shot for the shot scope). Used to

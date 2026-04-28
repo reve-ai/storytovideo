@@ -4,10 +4,10 @@ import { randomUUID } from "crypto";
 import type { UIMessage } from "ai";
 import {
   emptyChatSession,
+  type ChatDraft,
   type ChatScope,
   type ChatSession,
   type ChatIntermediate,
-  type ShotDraft,
 } from "./types.js";
 
 function resolveOutputDir(outputDir: string): string {
@@ -78,7 +78,7 @@ export class ChatSessionStore {
     return next;
   }
 
-  setDraft(scope: ChatScope, scopeKey: string, runId: string, draft: ShotDraft | null): ChatSession {
+  setDraft(scope: ChatScope, scopeKey: string, runId: string, draft: ChatDraft | null): ChatSession {
     const current = this.load(scope, scopeKey, runId);
     const next: ChatSession = { ...current, draft };
     this.save(next);
