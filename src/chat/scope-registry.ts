@@ -38,6 +38,10 @@ export interface ApplyDraftResult {
   ok: boolean;
   regeneratedItemIds: string[];
   imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }>;
+  /** Smart-apply: kinds of preview artifacts that were promoted into the
+   *  canonical output instead of being regenerated. Optional so callers that
+   *  do not implement promotion (story scope) can omit it. */
+  promoted?: Array<"frame" | "video" | "referenceImage">;
 }
 
 export interface ScopeRegistration {

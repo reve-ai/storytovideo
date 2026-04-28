@@ -422,6 +422,8 @@ body {
 .shot-chat-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .shot-chat-actions button.primary:disabled,
 .shot-chat-actions button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.shot-chat-apply { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
+.shot-chat-apply-hint { font-size: 0.7rem; color: var(--muted, #888); }
 
 .shot-chat-conversation { flex: 1; min-height: 0; }
 .shot-chat-prompt { margin-top: 0.4rem; }

@@ -8,9 +8,33 @@ export interface PendingImageReplacement {
   path: string;
 }
 
+/** Metadata about a sandbox preview artifact that the smart-apply path
+ *  can promote into the canonical output instead of regenerating.
+ *  - `sandboxPath` is the run-relative path to the preview file.
+ *  - `inputsHash` is a sha256 over the merged draft state at the moment the
+ *    preview was generated; apply.ts recomputes it and only promotes when
+ *    they still match.
+ *  Aggressive invalidation: any field-mutation tool clears all
+ *  `previewArtifacts` for the draft. */
+export interface PreviewArtifact {
+  sandboxPath: string;
+  createdAt: string;
+  inputsHash: string;
+}
+
+export interface ShotPreviewArtifacts {
+  frame?: PreviewArtifact;
+  video?: PreviewArtifact;
+}
+
+export interface LocationPreviewArtifacts {
+  referenceImage?: PreviewArtifact;
+}
+
 export interface ShotDraft {
   shotFields: Partial<Shot>;
   pendingImageReplacements: PendingImageReplacement[];
+  previewArtifacts?: ShotPreviewArtifacts;
 }
 
 export type LocationFields = Partial<Pick<Location, "visualDescription">>;
@@ -22,6 +46,7 @@ export interface PendingReferenceImage {
 export interface LocationDraft {
   locationFields: LocationFields;
   pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: LocationPreviewArtifacts;
 }
 
 export type StoryFields = Partial<Pick<StoryAnalysis, "title" | "artStyle">>;

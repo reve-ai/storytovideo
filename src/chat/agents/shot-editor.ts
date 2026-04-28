@@ -16,6 +16,7 @@ import {
   chatPreviewRelative,
 } from "../session-store.js";
 import { emptyShotDraft, isShotDraft, type ShotDraft } from "../types.js";
+import { shotFrameInputsHash, shotVideoInputsHash } from "../preview-hash.js";
 
 export interface ShotEditorContext {
   runId: string;
@@ -180,6 +181,8 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
         }
 
         const draft = loadDraft(ctx);
+        // Aggressive invalidation: any field edit invalidates all previews
+        // for this draft so apply.ts cannot promote stale artifacts.
         const next: ShotDraft = {
           shotFields: { ...draft.shotFields, ...fields } as Partial<Shot>,
           pendingImageReplacements: draft.pendingImageReplacements,
@@ -201,6 +204,8 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
       execute: async (input: { which: "start" | "end"; source: "upload" | "url"; data: string }) => {
         const draft = loadDraft(ctx);
         const filtered = draft.pendingImageReplacements.filter((r) => r.which !== input.which);
+        // Image replacement also invalidates previews — they were generated
+        // against the old start/end frame.
         const next: ShotDraft = {
           shotFields: draft.shotFields,
           pendingImageReplacements: [...filtered, { which: input.which, path: input.data }],
@@ -242,12 +247,24 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
         });
         if (!result.startPath) return { error: "Frame generation produced no output" };
         const rel = chatPreviewRelative("shot", ctx.scopeKey, "frames", `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`);
+        const createdAt = new Date().toISOString();
         ctx.store.appendIntermediate("shot", ctx.scopeKey, ctx.runId, {
           kind: "frame",
           path: rel,
           fromToolCallId: "previewFrame",
-          createdAt: new Date().toISOString(),
+          createdAt,
           note,
+        });
+        // Record promotion metadata so apply.ts can copy this preview into
+        // the canonical frame path instead of regenerating.
+        const inputsHash = shotFrameInputsHash({ artStyle: analysis.artStyle, shot });
+        const refreshed = loadDraft(ctx);
+        saveDraft(ctx, {
+          ...refreshed,
+          previewArtifacts: {
+            ...(refreshed.previewArtifacts ?? {}),
+            frame: { sandboxPath: rel, createdAt, inputsHash },
+          },
         });
         return {
           ok: true,
@@ -307,13 +324,28 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
 
         const fileName = result.path.split("/").pop()!;
         const rel = chatPreviewRelative("shot", ctx.scopeKey, fileName);
+        const createdAt = new Date().toISOString();
         ctx.store.appendIntermediate("shot", ctx.scopeKey, ctx.runId, {
           kind: "video",
           path: rel,
           fromToolCallId: "previewVideo",
-          createdAt: new Date().toISOString(),
+          createdAt,
           note,
         });
+        // Record promotion metadata so apply.ts can copy this preview video
+        // into the canonical clip path instead of regenerating.
+        const analysis = state.storyAnalysis;
+        if (analysis) {
+          const inputsHash = shotVideoInputsHash({ artStyle: analysis.artStyle, shot });
+          const refreshed = loadDraft(ctx);
+          saveDraft(ctx, {
+            ...refreshed,
+            previewArtifacts: {
+              ...(refreshed.previewArtifacts ?? {}),
+              video: { sandboxPath: rel, createdAt, inputsHash },
+            },
+          });
+        }
         return {
           ok: true,
           path: rel,

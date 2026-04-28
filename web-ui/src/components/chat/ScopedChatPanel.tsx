@@ -11,6 +11,7 @@ import { useUIStore } from "../../stores/ui-store";
 import {
   chatBaseUrl,
   draftFieldCount as countDraftFields,
+  hasPromotablePreview,
   selectSession,
   useChatSessionStore,
   type ChatScope,
@@ -141,6 +142,10 @@ export default function ScopedChatPanel({
   const draft = session?.draft ?? null;
   const draftCount = countDraftFields(draft);
   const hasDraft = draftCount > 0;
+  // When a fresh sandbox preview is available, smart-apply will promote it
+  // instead of regenerating — surface that as "Apply (Fast)" so the user
+  // knows the click is cheap.
+  const fastApplyAvailable = hasDraft && hasPromotablePreview(draft);
 
   const handleSubmit = async (msg: PromptInputMessage) => {
     const text = msg.text?.trim();
@@ -247,14 +252,28 @@ export default function ScopedChatPanel({
           <div className="shot-chat-header">
             <div className="shot-chat-title">{title}</div>
             <div className="shot-chat-actions">
-              <button
-                className="primary"
-                disabled={!hasDraft || busy}
-                onClick={handleApply}
-                title={hasDraft ? "Apply staged changes to the canonical document" : "No staged changes"}
-              >
-                Apply{hasDraft ? ` (${draftCount})` : ""}
-              </button>
+              <div className="shot-chat-apply">
+                <button
+                  className="primary"
+                  disabled={!hasDraft || busy}
+                  onClick={handleApply}
+                  title={
+                    !hasDraft
+                      ? "No staged changes"
+                      : fastApplyAvailable
+                        ? "Apply: a fresh preview will be promoted instead of regenerated"
+                        : "Apply staged changes to the canonical document"
+                  }
+                >
+                  {fastApplyAvailable ? "Apply (use preview)" : "Apply"}
+                  {hasDraft ? ` (${draftCount})` : ""}
+                </button>
+                {fastApplyAvailable && (
+                  <span className="shot-chat-apply-hint">
+                    Will reuse the preview you generated.
+                  </span>
+                )}
+              </div>
               <button
                 className="secondary"
                 disabled={!hasDraft || busy}

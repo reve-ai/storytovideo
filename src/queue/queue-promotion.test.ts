@@ -91,16 +91,18 @@ function testPromoteCompletedSupersedesPriorAndPreservesInputs(): void {
     priority: 'high',
   });
 
-  const promoted = qm.promoteCompleted({
+  const result = qm.promoteCompleted({
     itemKey: 'frame:scene:1:shot:1',
     outputs: { startPath: 'frames/promoted.png' },
   });
+  const promoted = result.newItem;
 
   assert.equal(promoted.status, 'completed');
   assert.equal(promoted.version, 2);
   assert.equal(promoted.priority, 'high');
   assert.deepEqual(promoted.outputs, { startPath: 'frames/promoted.png' });
   assert.deepEqual((promoted.inputs.shot as Shot).shotNumber, shot.shotNumber);
+  assert.equal(result.supersededId, original.id, 'returned supersededId should match the prior active item');
 
   const items = qm.getItemsByKey('frame:scene:1:shot:1');
   const originalAfter = items.find(i => i.id === original.id);
@@ -132,7 +134,7 @@ function testPromoteCompletedFrameReseedsDownstreamVideo(): void {
   const promotedFrame = qm.promoteCompleted({
     itemKey: 'frame:scene:1:shot:1',
     outputs: { startPath: 'frames/promoted.png' },
-  });
+  }).newItem;
   seedDownstream(qm, promotedFrame, { startPath: 'frames/promoted.png' });
 
   const videoItems = qm.getItemsByKey('video:scene:1:shot:1');
@@ -172,7 +174,7 @@ function testPromoteCompletedVideoReseedsAnalyzeAndContinuity(): void {
   const promotedVideo = qm.promoteCompleted({
     itemKey: 'video:scene:1:shot:1',
     outputs: { shotNumber: 1, path: 'videos/promoted.mp4' },
-  });
+  }).newItem;
   seedDownstream(qm, promotedVideo, { shotNumber: 1, path: 'videos/promoted.mp4' });
 
   const analyzeItems = qm.getItemsByKey('analyze_video:scene:1:shot:1');
@@ -218,13 +220,15 @@ function testPromoteCompletedAcceptsExplicitSupersedeId(): void {
     inputs: { shot },
   });
 
-  const promoted = qm.promoteCompleted({
+  const result = qm.promoteCompleted({
     itemKey: 'frame:scene:1:shot:1',
     supersedeId: original.id,
     outputs: { startPath: 'frames/explicit.png' },
   });
+  const promoted = result.newItem;
 
   assert.equal(promoted.status, 'completed');
+  assert.equal(result.supersededId, original.id);
   assert.equal(qm.getItem(original.id)?.status, 'superseded');
   assert.equal(qm.getItem(original.id)?.supersededBy, promoted.id);
   console.log('  ✓ promoteCompleted honors explicit supersedeId');

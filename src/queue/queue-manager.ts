@@ -36,6 +36,11 @@ interface PromoteCompletedOptions {
   /** Optional explicit id of the item being superseded. If omitted, the active
    *  item with the matching itemKey is used. */
   supersedeId?: string;
+  /** Optional shallow-merge override for the inputs of the new item. Used by
+   *  the smart-apply path to attach the post-mutation shot snapshot so that
+   *  downstream seeding (e.g. seedAfterGenerateFrame) sees the current shot
+   *  rather than whatever was captured on the superseded item. */
+  inputsOverride?: Record<string, unknown>;
 }
 
 export class QueueManager {
@@ -228,8 +233,11 @@ export class QueueManager {
    *  item is inserted as `completed`, the prior active item (if any) is
    *  superseded, and the existing redo cascade re-supersedes stale
    *  downstream items. The caller is still responsible for invoking
-   *  `seedDownstream` to create new downstream work items. */
-  promoteCompleted(opts: PromoteCompletedOptions): WorkItem {
+   *  `seedDownstream` to create new downstream work items.
+   *  Returns both the new item and the id of the item that was superseded so
+   *  callers (e.g. RunManager) can emit accurate `item:redo` events even
+   *  when the supersede target was resolved internally by itemKey. */
+  promoteCompleted(opts: PromoteCompletedOptions): { newItem: WorkItem; supersededId: string } {
     const supersedeTarget = opts.supersedeId
       ? this.requireItem(opts.supersedeId)
       : this.findActiveItemByKey(opts.itemKey);
@@ -245,19 +253,20 @@ export class QueueManager {
       queue: supersedeTarget.queue,
       itemKey: supersedeTarget.itemKey,
       dependencies: supersedeTarget.dependencies.map(depId => this.latestVersionId(depId)),
-      inputs: { ...supersedeTarget.inputs },
+      inputs: { ...supersedeTarget.inputs, ...(opts.inputsOverride ?? {}) },
       priority: supersedeTarget.priority,
       initialStatus: 'completed',
       initialOutputs: opts.outputs,
     });
 
+    const supersededId = supersedeTarget.id;
     this.setSuperseded(supersedeTarget);
     supersedeTarget.supersededBy = newItem.id;
 
-    this.cascadeRedo(supersedeTarget.id, newItem.id);
+    this.cascadeRedo(supersededId, newItem.id);
 
     this.touch();
-    return this.snapshot(newItem);
+    return { newItem: this.snapshot(newItem), supersededId };
   }
 
   // --- Status transitions ---

@@ -412,21 +412,23 @@ export class RunManager extends EventEmitter {
     itemKey: string;
     outputs: Record<string, unknown>;
     supersedeId?: string;
+    inputsOverride?: Record<string, unknown>;
   }): WorkItem | undefined {
     const qm = this.queueManagers.get(opts.runId);
     if (!qm) return undefined;
 
-    const newItem = qm.promoteCompleted({
+    const { newItem, supersededId } = qm.promoteCompleted({
       itemKey: opts.itemKey,
       outputs: opts.outputs,
       supersedeId: opts.supersedeId,
+      inputsOverride: opts.inputsOverride,
     });
     seedDownstream(qm, newItem, opts.outputs);
     qm.save();
 
     this.emit("item:redo", {
       runId: opts.runId,
-      oldItemId: opts.supersedeId ?? newItem.id,
+      oldItemId: supersededId,
       newItem,
     });
     return newItem;

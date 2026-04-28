@@ -20,6 +20,7 @@ import {
   type LocationDraft,
   type LocationFields,
 } from "../types.js";
+import { locationReferenceInputsHash } from "../preview-hash.js";
 
 export interface LocationEditorContext {
   runId: string;
@@ -138,6 +139,8 @@ export function buildLocationEditorTools(ctx: LocationEditorContext): ToolSet {
         const live = getLiveLocation(ctx.queueManager, ctx.locationName);
         if (!live) return { error: `Location ${ctx.locationName} not found` };
         const draft = loadDraft(ctx);
+        // Aggressive invalidation: any field edit clears all preview
+        // artifacts so apply.ts cannot promote stale files.
         const next: LocationDraft = {
           locationFields: { ...draft.locationFields, ...fields } as LocationFields,
           pendingReferenceImage: draft.pendingReferenceImage,
@@ -157,6 +160,7 @@ export function buildLocationEditorTools(ctx: LocationEditorContext): ToolSet {
       needsApproval: true,
       execute: async (input: { source: "upload" | "url"; data: string }) => {
         const draft = loadDraft(ctx);
+        // Image replacement is a draft mutation — clear preview artifacts.
         const next: LocationDraft = {
           locationFields: draft.locationFields,
           pendingReferenceImage: { path: input.data },
@@ -197,12 +201,24 @@ export function buildLocationEditorTools(ctx: LocationEditorContext): ToolSet {
         if (!result?.path) return { error: "Reference image generation produced no output" };
         const fileName = result.path.split("/").pop()!;
         const rel = chatPreviewRelative("location", ctx.scopeKey, fileName);
+        const createdAt = new Date().toISOString();
         ctx.store.appendIntermediate("location", ctx.scopeKey, ctx.runId, {
           kind: "asset",
           path: rel,
           fromToolCallId: "previewReferenceImage",
-          createdAt: new Date().toISOString(),
+          createdAt,
           note,
+        });
+        // Record promotion metadata so apply.ts can copy this sandbox
+        // preview into the canonical reference image path.
+        const inputsHash = locationReferenceInputsHash({ artStyle: analysis.artStyle, location });
+        const refreshed = loadDraft(ctx);
+        saveDraft(ctx, {
+          ...refreshed,
+          previewArtifacts: {
+            ...(refreshed.previewArtifacts ?? {}),
+            referenceImage: { sandboxPath: rel, createdAt, inputsHash },
+          },
         });
         return {
           ok: true,

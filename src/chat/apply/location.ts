@@ -3,16 +3,82 @@ import { isAbsolute, join, resolve } from "path";
 import { randomUUID } from "crypto";
 
 import type { RunManager } from "../../queue/run-manager.js";
+import type { QueueManager } from "../../queue/queue-manager.js";
 import type { LocationDraft } from "../types.js";
+import { locationReferenceInputsHash } from "../preview-hash.js";
 
 interface ApplyLocationDraftResult {
   ok: boolean;
   regeneratedItemIds: string[];
   imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }>;
+  /** Smart-apply: kinds of preview artifacts promoted instead of regenerated. */
+  promoted: Array<"referenceImage">;
 }
 
 function resolveOutputDirAbs(outputDir: string): string {
   return isAbsolute(outputDir) ? outputDir : resolve(process.cwd(), outputDir);
+}
+
+/** Try to promote a sandbox reference-image preview into the canonical
+ *  `location:NAME:front` output. Returns the new item id on success or null
+ *  to fall back to the legacy redo path. Pure optimization — never throws. */
+function tryPromoteLocationReference(
+  runManager: RunManager,
+  qm: QueueManager,
+  runId: string,
+  locationName: string,
+  draft: LocationDraft,
+  outputDirAbs: string,
+): string | null {
+  const previewArt = draft.previewArtifacts?.referenceImage;
+  if (!previewArt) return null;
+
+  const analysis = qm.getState().storyAnalysis;
+  if (!analysis) return null;
+  const location = analysis.locations?.find((l) => l.name === locationName);
+  if (!location) return null;
+
+  const expected = locationReferenceInputsHash({ artStyle: analysis.artStyle, location });
+  if (expected !== previewArt.inputsHash) return null;
+
+  const sandboxAbs = isAbsolute(previewArt.sandboxPath)
+    ? previewArt.sandboxPath
+    : join(outputDirAbs, previewArt.sandboxPath);
+  if (!existsSync(sandboxAbs)) return null;
+
+  const itemKey = `asset:location:${locationName}`;
+  const items = qm.getItemsByKey(itemKey);
+  if (items.length === 0) return null;
+  const activeAsset = items.find(
+    (i) => i.status !== "superseded" && i.status !== "cancelled",
+  );
+  if (!activeAsset) return null;
+
+  // Mirror the existing image-replacement convention: copy the file into
+  // uploads/ with a unique name, then register the canonical pointer.
+  const uploadsDir = join(outputDirAbs, "uploads");
+  const ext = sandboxAbs.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? ".png";
+  const destRel = `uploads/${randomUUID()}${ext}`;
+  const destAbs = join(outputDirAbs, destRel);
+  try {
+    mkdirSync(uploadsDir, { recursive: true });
+    copyFileSync(sandboxAbs, destAbs);
+  } catch (err) {
+    console.warn(`[applyLocationDraft] reference promotion copy failed: ${(err as Error).message}`);
+    return null;
+  }
+
+  qm.setGeneratedOutput(`location:${locationName}:front`, destRel);
+  qm.rebuildAssetLibrary();
+
+  const newItem = runManager.promoteCompletedItem({
+    runId,
+    itemKey,
+    supersedeId: activeAsset.id,
+    inputsOverride: { description: location.visualDescription },
+    outputs: { key: `location:${locationName}:front`, path: destRel },
+  });
+  return newItem?.id ?? null;
 }
 
 /**
@@ -44,6 +110,7 @@ export async function applyLocationDraft(
   if (!live) throw new Error(`Location not found: ${locationName}`);
 
   const regenerated: string[] = [];
+  const promoted: Array<"referenceImage"> = [];
   const imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }> = [];
 
   // 1. Apply Location field updates via canonical mutator.
@@ -93,11 +160,25 @@ export async function applyLocationDraft(
     }
   }
 
-  // 3. If we made field updates that affect generation but no image was
-  //    staged, redo the active generate_asset for this location so a new
-  //    reference image is produced from the new description, then the
-  //    existing cascade re-queues downstream frames.
-  if (fieldKeys.length > 0 && !draft.pendingReferenceImage) {
+  // 3. Smart-apply: if a fresh sandbox reference-image preview exists, promote
+  //    it instead of regenerating. Skipped when an upload is pending (the
+  //    upload path is the user's explicit choice).
+  let promotedRef: string | null = null;
+  if (!draft.pendingReferenceImage && draft.previewArtifacts?.referenceImage) {
+    promotedRef = tryPromoteLocationReference(
+      runManager, qm, runId, locationName, draft, outputDirAbs,
+    );
+    if (promotedRef) {
+      regenerated.push(promotedRef);
+      promoted.push("referenceImage");
+    }
+  }
+
+  // 4. If we made field updates that affect generation but no image was
+  //    staged AND we did not promote a preview, redo the active generate_asset
+  //    for this location so a new reference image is produced from the new
+  //    description, then the existing cascade re-queues downstream frames.
+  if (fieldKeys.length > 0 && !draft.pendingReferenceImage && !promotedRef) {
     const generationAffectingFields = new Set<string>(["visualDescription"]);
     const triggersRegen = fieldKeys.some((k) => generationAffectingFields.has(k));
     if (triggersRegen) {
@@ -121,5 +202,5 @@ export async function applyLocationDraft(
   qm.save();
   await runManager.resumeRun(runId);
 
-  return { ok: true, regeneratedItemIds: regenerated, imageReplacementsApplied };
+  return { ok: true, regeneratedItemIds: regenerated, imageReplacementsApplied, promoted };
 }

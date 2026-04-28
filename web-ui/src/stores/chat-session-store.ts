@@ -8,9 +8,21 @@ export interface PendingImageReplacement {
   path: string;
 }
 
+/** Mirrors `PreviewArtifact` in src/chat/types.ts. Present when the agent has
+ *  generated a fresh sandbox preview that smart-apply can promote. */
+export interface PreviewArtifact {
+  sandboxPath: string;
+  createdAt: string;
+  inputsHash: string;
+}
+
 export interface ShotDraft {
   shotFields: Record<string, unknown>;
   pendingImageReplacements: PendingImageReplacement[];
+  previewArtifacts?: {
+    frame?: PreviewArtifact;
+    video?: PreviewArtifact;
+  };
 }
 
 export interface StoryDraft {
@@ -24,6 +36,9 @@ export interface PendingReferenceImage {
 export interface LocationDraft {
   locationFields: Record<string, unknown>;
   pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: {
+    referenceImage?: PreviewArtifact;
+  };
 }
 
 export type ChatDraft = ShotDraft | StoryDraft | LocationDraft;
@@ -52,6 +67,23 @@ export function draftFieldCount(draft: ChatDraft | null | undefined): number {
     return Object.keys(draft.locationFields).length + (draft.pendingReferenceImage ? 1 : 0);
   }
   return 0;
+}
+
+/** True when the draft carries at least one preview artifact that the
+ *  smart-apply path can promote. Image replacements / pending uploads
+ *  invalidate the preview path, so they suppress the fast-apply hint. */
+export function hasPromotablePreview(draft: ChatDraft | null | undefined): boolean {
+  if (!draft) return false;
+  if (isShotDraft(draft)) {
+    if (draft.pendingImageReplacements.length > 0) return false;
+    const a = draft.previewArtifacts;
+    return Boolean(a?.frame || a?.video);
+  }
+  if (isLocationDraft(draft)) {
+    if (draft.pendingReferenceImage) return false;
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  return false;
 }
 
 export interface ChatIntermediate {
