@@ -62,6 +62,13 @@ export interface ChatIntermediate {
   note?: string;
 }
 
+export type ChatRunStatus =
+  | "idle"
+  | "running"
+  | "interrupted"
+  | "completed"
+  | "cancelled";
+
 export interface ChatSessionData {
   scope: ChatScope;
   scopeKey: string;
@@ -70,6 +77,8 @@ export interface ChatSessionData {
   draft: ChatDraft | null;
   intermediates: ChatIntermediate[];
   lastSavedAt: string;
+  runStatus: ChatRunStatus;
+  lastRunStartedAt: string | null;
   /** Scope-specific snapshot supplied by the server (e.g. liveShot for shot scope). */
   scopeContext?: Record<string, unknown> | null;
 }

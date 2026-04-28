@@ -61,11 +61,17 @@ export default function ScopedChatPanel({
 
   const apiUrl = chatBaseUrl(runId, scope, scopeKey);
   const transport = useMemo(
-    () => new DefaultChatTransport<UIMessage>({ api: apiUrl }),
+    () =>
+      new DefaultChatTransport<UIMessage>({
+        api: apiUrl,
+        // Reconnect to the runner's stream endpoint instead of the default
+        // `${api}/${chatId}/stream` (we don't put chatId in the URL).
+        prepareReconnectToStreamRequest: ({ api }) => ({ api: `${api}/stream` }),
+      }),
     [apiUrl],
   );
 
-  const { messages, sendMessage, status, setMessages, error, addToolApprovalResponse } = useChat({
+  const { messages, sendMessage, status, setMessages, error, addToolApprovalResponse, resumeStream } = useChat({
     id: `${scope}-${runId}-${scopeKey}`,
     transport,
     sendAutomaticallyWhen: ({ messages: msgs }) =>
@@ -73,9 +79,12 @@ export default function ScopedChatPanel({
       lastAssistantMessageIsCompleteWithApprovalResponses({ messages: msgs }),
   });
 
+  const [interrupted, setInterrupted] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setHydrated(false);
+    setInterrupted(false);
     fetchSession(runId, scope, scopeKey).then((data) => {
       if (cancelled) return;
       if (data && Array.isArray(data.messages) && data.messages.length > 0) {
@@ -84,6 +93,14 @@ export default function ScopedChatPanel({
         setMessages([]);
       }
       setHydrated(true);
+      if (!data) return;
+      if (data.runStatus === "running") {
+        // Reattach to the live stream; chunks emitted before this client
+        // connected are replayed by the server, then live ones tail.
+        void resumeStream();
+      } else if (data.runStatus === "interrupted") {
+        setInterrupted(true);
+      }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,6 +145,7 @@ export default function ScopedChatPanel({
     const text = msg.text?.trim();
     if (!text) return;
     try {
+      setInterrupted(false);
       await sendMessage({ text });
       await fetchSession(runId, scope, scopeKey);
     } catch (err) {
@@ -178,6 +196,13 @@ export default function ScopedChatPanel({
               </button>
             </div>
           </div>
+          {interrupted && (
+            <div className="shot-chat-interrupted">
+              The previous run was interrupted (server restart or crash). The
+              last assistant turn may be incomplete. Send a new message to
+              continue.
+            </div>
+          )}
           <Conversation className="shot-chat-conversation">
             <ConversationContent>
               {!hydrated && (

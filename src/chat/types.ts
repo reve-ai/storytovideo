@@ -40,6 +40,13 @@ export interface ChatIntermediate {
   note?: string;
 }
 
+export type ChatRunStatus =
+  | "idle"
+  | "running"
+  | "interrupted"
+  | "completed"
+  | "cancelled";
+
 export interface ChatSession {
   scope: ChatScope;
   scopeKey: string;
@@ -48,6 +55,8 @@ export interface ChatSession {
   draft: ChatDraft | null;
   intermediates: ChatIntermediate[];
   lastSavedAt: string;
+  runStatus: ChatRunStatus;
+  lastRunStartedAt: string | null;
 }
 
 export function emptyChatSession(runId: string, scope: ChatScope, scopeKey: string): ChatSession {
@@ -59,6 +68,8 @@ export function emptyChatSession(runId: string, scope: ChatScope, scopeKey: stri
     draft: null,
     intermediates: [],
     lastSavedAt: new Date().toISOString(),
+    runStatus: "idle",
+    lastRunStartedAt: null,
   };
 }
 

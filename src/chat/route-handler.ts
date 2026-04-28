@@ -1,11 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import type { UIMessage } from "ai";
-import { pipeAgentUIStreamToResponse } from "ai";
+import type { UIMessage, UIMessageChunk } from "ai";
+import { pipeUIMessageStreamToResponse } from "ai";
 
 import type { RunManager } from "../queue/run-manager.js";
 import { ChatSessionStore, chatPreviewDir } from "./session-store.js";
 import { getScopeRegistration } from "./scope-registry.js";
 import "./scopes/index.js";
+import { readEvents } from "./event-log.js";
+import {
+  getOrCreateRunner,
+  getRunner,
+  hasRunner,
+  listActiveChats,
+} from "./runner-registry.js";
 import type { ChatScope, LocationDraft, LocationFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
 import {
   emptyLocationDraft,
@@ -58,12 +65,35 @@ export async function handleChatGet(opts: HandleChatOptions): Promise<void> {
   const { runManager, runId, scope, scopeKey, sceneNumber, shotInScene, res } = opts;
   const store = getStore(runManager, runId);
   if (!store) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
-  const session = store.load(scope, scopeKey, runId);
+  let session = store.load(scope, scopeKey, runId);
+  // Reconcile persisted "running" with reality: if no live runner exists, the
+  // previous process crashed or the runner was garbage-collected. Promote the
+  // file to "interrupted" so the client surfaces the banner instead of trying
+  // to attach to a live stream that no longer exists.
+  if (session.runStatus === "running" && !hasRunner(runId, scope, scopeKey)) {
+    session = store.setRunStatus(scope, scopeKey, runId, "interrupted");
+  }
   const reg = getScopeRegistration(scope);
   const scopeContext = reg?.getScopeContext?.({
     runId, scope, scopeKey, sceneNumber, shotInScene, runManager,
   }) ?? null;
   sendJson(res, 200, { ...session, scopeContext });
+}
+
+function getRunOutputDir(runManager: RunManager, runId: string): string | null {
+  const run = runManager.getRun(runId);
+  return run?.outputDir ?? null;
+}
+
+/**
+ * Diff `incoming` against the runner's history and return only the user
+ * messages the client just appended. We restrict to role==="user" because
+ * during a mid-stream POST the client's local history may include a
+ * partially-streamed assistant message that the runner hasn't persisted yet.
+ */
+function appendedMessages(known: UIMessage[], incoming: UIMessage[]): UIMessage[] {
+  if (incoming.length <= known.length) return [];
+  return incoming.slice(known.length).filter((m) => m.role === "user");
 }
 
 export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
@@ -74,6 +104,8 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
   if (!qm) { sendJson(res, 404, { error: `Run has no queue manager: ${runId}` }); return; }
   const reg = getScopeRegistration(scope);
   if (!reg) { sendJson(res, 404, { error: `Unknown chat scope: ${scope}` }); return; }
+  const outputDir = getRunOutputDir(runManager, runId);
+  if (!outputDir) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
 
   const body = (await readJsonBody(req)) as { messages?: UIMessage[] };
   const incomingMessages = Array.isArray(body.messages) ? body.messages : [];
@@ -82,28 +114,27 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
     return;
   }
 
-  // Persist incoming messages immediately so a refresh restores user input.
-  store.setMessages(scope, scopeKey, runId, incomingMessages);
-
-  const agent = reg.agentFactory({
-    runId, scope, scopeKey, sceneNumber, shotInScene, store, runManager, queueManager: qm,
+  const runner = getOrCreateRunner({
+    runId, scope, scopeKey, sceneNumber, shotInScene, outputDir, store, runManager,
   });
 
-  res.setHeader("x-vercel-ai-ui-message-stream", "v1");
+  // Diff against the runner's view of history (matches persisted state when
+  // idle, and tracks live mid-turn state otherwise) so we only enqueue the
+  // user messages the client actually appended this round.
+  const baseHistory = runner.getHistory();
+  const newMessages = appendedMessages(baseHistory, incomingMessages);
+  if (newMessages.length === 0) {
+    sendJson(res, 400, { error: "no new messages to send" });
+    return;
+  }
 
-  await pipeAgentUIStreamToResponse({
-    response: res,
-    agent,
-    uiMessages: incomingMessages as any,
-    originalMessages: incomingMessages as any,
-    onFinish: ({ messages }: { messages: unknown }) => {
-      try {
-        store.setMessages(scope, scopeKey, runId, messages as UIMessage[]);
-      } catch (err) {
-        console.error("[chat] Failed to persist messages on finish:", err);
-      }
-    },
-  });
+  // Enqueue first so the runner transitions to running synchronously, then
+  // subscribe — otherwise subscribe() may auto-close because it sees the
+  // runner as idle right between turns.
+  runner.enqueue(newMessages);
+  const stream = runner.subscribe();
+
+  pipeUIMessageStreamToResponse({ response: res, stream });
 }
 
 export async function handleChatApply(opts: HandleChatOptions): Promise<void> {
@@ -185,6 +216,69 @@ export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
   };
   store.setDraft(scope, scopeKey, runId, next);
   sendJson(res, 200, { ok: true, draft: next });
+}
+
+/**
+ * GET /api/runs/:id/chat/<scope>/<scopeKey>/stream — re-attach to an in-flight
+ * agent run. Replays the events log (chunks emitted so far this turn) then
+ * tails new events until the runner finishes. If no runner is active, returns
+ * 204 (matching DefaultChatTransport.reconnectToStream's "nothing to resume"
+ * contract).
+ */
+export async function handleChatStream(opts: HandleChatOptions): Promise<void> {
+  const { runManager, runId, scope, scopeKey, res } = opts;
+  const outputDir = getRunOutputDir(runManager, runId);
+  if (!outputDir) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+  const runner = getRunner(runId, scope, scopeKey);
+  if (!runner || !runner.isRunning()) {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+  // The runner's subscribe() already replays its in-memory buffer (which is a
+  // mirror of the events log for the current turn) before tailing live chunks.
+  const stream = runner.subscribe();
+  pipeUIMessageStreamToResponse({ response: res, stream });
+}
+
+/**
+ * POST /api/runs/:id/chat/<scope>/<scopeKey>/cancel — abort the runner.
+ */
+export async function handleChatCancel(opts: HandleChatOptions): Promise<void> {
+  const { runId, scope, scopeKey, res } = opts;
+  const runner = getRunner(runId, scope, scopeKey);
+  if (!runner) { sendJson(res, 200, { ok: true, cancelled: false }); return; }
+  runner.cancel();
+  sendJson(res, 200, { ok: true, cancelled: true });
+}
+
+/**
+ * GET /api/runs/:id/chats/active — list active runners for the run, used by
+ * the TopBar indicator.
+ */
+export function handleChatActive(
+  runManager: RunManager,
+  runId: string,
+  res: ServerResponse,
+): void {
+  const run = runManager.getRun(runId);
+  if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+  sendJson(res, 200, { runId, chats: listActiveChats(runId) });
+}
+
+/**
+ * Read persisted chunks from disk for diagnostics. Not currently exposed via
+ * an HTTP route, but exported so tooling can verify the events log.
+ */
+export function readPersistedEvents(
+  runManager: RunManager,
+  runId: string,
+  scope: ChatScope,
+  scopeKey: string,
+): UIMessageChunk[] {
+  const outputDir = getRunOutputDir(runManager, runId);
+  if (!outputDir) return [];
+  return readEvents(outputDir, scope, scopeKey);
 }
 
 export function chatPreviewDirForRun(

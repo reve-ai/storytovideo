@@ -5,6 +5,7 @@ import type { UIMessage } from "ai";
 import {
   emptyChatSession,
   type ChatDraft,
+  type ChatRunStatus,
   type ChatScope,
   type ChatSession,
   type ChatIntermediate,
@@ -46,6 +47,11 @@ export class ChatSessionStore {
       const raw = readFileSync(path, "utf-8");
       const parsed = JSON.parse(raw) as ChatSession;
       // Defensive: backfill missing fields for old sessions
+      const persistedStatus: ChatRunStatus = parsed.runStatus ?? "idle";
+      // If a previous process crashed/exited mid-run, the file still says
+      // "running" but the in-memory runner is gone. The runner registry is the
+      // source of truth at read time; route-handler.ts converts a stale
+      // "running" to "interrupted" by consulting the registry.
       return {
         scope,
         scopeKey,
@@ -54,6 +60,8 @@ export class ChatSessionStore {
         draft: parsed.draft ?? null,
         intermediates: Array.isArray(parsed.intermediates) ? parsed.intermediates : [],
         lastSavedAt: parsed.lastSavedAt ?? new Date().toISOString(),
+        runStatus: persistedStatus,
+        lastRunStartedAt: parsed.lastRunStartedAt ?? null,
       };
     } catch (err) {
       console.error(`[ChatSessionStore] Failed to load ${path}:`, err);
@@ -94,5 +102,22 @@ export class ChatSessionStore {
 
   clearDraft(scope: ChatScope, scopeKey: string, runId: string): ChatSession {
     return this.setDraft(scope, scopeKey, runId, null);
+  }
+
+  setRunStatus(
+    scope: ChatScope,
+    scopeKey: string,
+    runId: string,
+    runStatus: ChatRunStatus,
+    extras: { lastRunStartedAt?: string | null } = {},
+  ): ChatSession {
+    const current = this.load(scope, scopeKey, runId);
+    const next: ChatSession = {
+      ...current,
+      runStatus,
+      lastRunStartedAt: "lastRunStartedAt" in extras ? extras.lastRunStartedAt ?? null : current.lastRunStartedAt,
+    };
+    this.save(next);
+    return next;
   }
 }

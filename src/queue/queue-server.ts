@@ -38,6 +38,9 @@ import {
   handleChatApply,
   handleChatDiscard,
   handleChatDraft,
+  handleChatStream,
+  handleChatCancel,
+  handleChatActive,
 } from "../chat/route-handler.js";
 
 // ---------------------------------------------------------------------------
@@ -809,7 +812,13 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // /api/runs/:id/chat/story/:scopeKey[/apply|/discard|/draft]
+      // GET /api/runs/:id/chats/active — list runners currently active for this run
+      if (method === "GET" && action === "chats" && pathParts.length === 5 && pathParts[4] === "active") {
+        handleChatActive(runManager, runId, res);
+        return;
+      }
+
+      // /api/runs/:id/chat/story/:scopeKey[/apply|/discard|/draft|/stream|/cancel]
       if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "story") {
         const scopeKey = pathParts[5];
         const sub = pathParts[6];
@@ -820,6 +829,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         if (method === "POST" && pathParts.length === 6) {
           await handleChatPost({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 7 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
           return;
         }
         if (method === "POST" && pathParts.length === 7 && sub === "apply") {
@@ -838,7 +855,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft]
+      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft|/stream|/cancel]
       if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "location") {
         const scopeKey = pathParts[5];
         const sub = pathParts[6];
@@ -849,6 +866,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         if (method === "POST" && pathParts.length === 6) {
           await handleChatPost({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 7 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
           return;
         }
         if (method === "POST" && pathParts.length === 7 && sub === "apply") {
@@ -867,7 +892,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
-      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard]
+      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard|/draft|/stream|/cancel]
       if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
         const sceneNumber = parseInt(pathParts[5], 10);
         const shotInScene = parseInt(pathParts[6], 10);
@@ -884,6 +909,14 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         }
         if (method === "POST" && pathParts.length === 7) {
           await handleChatPost({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 8 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
           return;
         }
         if (method === "POST" && pathParts.length === 8 && sub === "apply") {

@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useUIStore, type ViewName } from "../stores/ui-store";
+import ActiveChatsIndicator from "./ActiveChatsIndicator";
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
@@ -166,6 +167,8 @@ export default function TopBar() {
       <div className="top-bar-right">
         {activeRunId && (
           <>
+            <ActiveChatsIndicator runId={activeRunId} />
+
             {runStatus && (
               <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
             )}
