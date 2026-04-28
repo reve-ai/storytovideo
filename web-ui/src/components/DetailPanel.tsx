@@ -69,18 +69,22 @@ export default function DetailPanel() {
 
   const item = detailItemId ? findItem(queues, detailItemId) : null;
 
-  // Click outside to close
+  // Click outside to close.
+  // Use mousedown (not click) so the check runs before React onClick handlers
+  // mutate the DOM. Otherwise a button inside the panel that re-renders itself
+  // away on click (e.g. chat tool Approve/Deny) would be detached by the time
+  // a document-level click listener fires, causing a false "outside" match.
   useEffect(() => {
     if (!detailPanelOpen) return;
-    function handleClick(e: MouseEvent) {
+    function handleMouseDown(e: MouseEvent) {
       const target = e.target as HTMLElement;
       if (panelRef.current?.contains(target)) return;
       // Don't close when clicking elements that open the detail panel
       if (target.closest("[data-opens-detail]")) return;
       closeDetail();
     }
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [detailPanelOpen, closeDetail]);
 
   const handleAction = useCallback(
