@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
@@ -14,6 +15,22 @@ import {
   type ShotDraft,
 } from "../../stores/chat-session-store";
 import ToolPart, { type ToolPartLike } from "./ToolPart";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from "../ai-elements/conversation";
+import { Message, MessageContent } from "../ai-elements/message";
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  type PromptInputMessage,
+} from "../ai-elements/prompt-input";
+import { TooltipProvider } from "../ui/tooltip";
 
 interface Props {
   sceneNumber: number;
@@ -33,8 +50,6 @@ export default function ShotChat({ sceneNumber, shotInScene }: Props) {
 
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [input, setInput] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const apiUrl = activeRunId
     ? `/api/runs/${encodeURIComponent(activeRunId)}/chat/shot/${sceneNumber}/${shotInScene}`
@@ -45,10 +60,12 @@ export default function ShotChat({ sceneNumber, shotInScene }: Props) {
     [apiUrl],
   );
 
-  const { messages, sendMessage, status, setMessages, error } = useChat({
+  const { messages, sendMessage, status, setMessages, error, addToolApprovalResponse } = useChat({
     id: `shot-${activeRunId ?? "no-run"}-${scopeKey}`,
     transport,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen: ({ messages: msgs }) =>
+      lastAssistantMessageIsCompleteWithToolCalls({ messages: msgs }) ||
+      lastAssistantMessageIsCompleteWithApprovalResponses({ messages: msgs }),
   });
 
   useEffect(() => {
@@ -75,10 +92,9 @@ export default function ShotChat({ sceneNumber, shotInScene }: Props) {
   const draftImageCount = draft ? draft.pendingImageReplacements.length : 0;
   const hasDraft = draftFieldCount > 0 || draftImageCount > 0;
 
-  const handleSend = async () => {
-    if (!input.trim() || !apiUrl) return;
-    const text = input;
-    setInput("");
+  const handleSubmit = async (msg: PromptInputMessage) => {
+    const text = msg.text?.trim();
+    if (!text || !apiUrl) return;
     try {
       await sendMessage({ text });
       // Re-fetch the session after the response completes to pick up draft updates.
@@ -110,82 +126,103 @@ export default function ShotChat({ sceneNumber, shotInScene }: Props) {
     }
   };
 
+  const inputDisabled = !apiUrl || status === "streaming" || status === "submitted";
+
   return (
-    <div className="shot-chat">
-      <div className="shot-chat-header">
-        <div className="shot-chat-title">
-          Edit shot {sceneNumber}.{shotInScene}
+    <TooltipProvider>
+      <div className="shot-chat">
+        <div className="shot-chat-header">
+          <div className="shot-chat-title">
+            Edit shot {sceneNumber}.{shotInScene}
+          </div>
+          <div className="shot-chat-actions">
+            <button
+              className="primary"
+              disabled={!hasDraft || busy}
+              onClick={handleApply}
+              title={hasDraft ? "Apply staged changes to the canonical document" : "No staged changes"}
+            >
+              Apply{hasDraft ? ` (${draftFieldCount + draftImageCount})` : ""}
+            </button>
+            <button
+              className="secondary"
+              disabled={!hasDraft || busy}
+              onClick={handleDiscard}
+            >
+              Discard
+            </button>
+          </div>
         </div>
-        <div className="shot-chat-actions">
-          <button
-            className="primary"
-            disabled={!hasDraft || busy}
-            onClick={handleApply}
-            title={hasDraft ? "Apply staged changes to the canonical document" : "No staged changes"}
-          >
-            Apply{hasDraft ? ` (${draftFieldCount + draftImageCount})` : ""}
-          </button>
-          <button
-            className="secondary"
-            disabled={!hasDraft || busy}
-            onClick={handleDiscard}
-          >
-            Discard
-          </button>
-        </div>
+
+        <Conversation className="shot-chat-conversation">
+          <ConversationContent>
+            {!hydrated && (
+              <ConversationEmptyState
+                title="Loading session…"
+                description="Restoring your previous chat for this shot."
+              />
+            )}
+            {hydrated && messages.length === 0 && (
+              <ConversationEmptyState
+                title="Edit this shot"
+                description="Ask the agent to change a field, regenerate a frame, or stage an image replacement. Click Apply when satisfied."
+              />
+            )}
+            {messages.map((m) => (
+              <Message from={m.role} key={m.id}>
+                <MessageContent>
+                  {m.parts.map((p, i) => {
+                    if (p.type === "text") {
+                      return (
+                        <p key={i} className="whitespace-pre-wrap">
+                          {p.text}
+                        </p>
+                      );
+                    }
+                    if (p.type === "reasoning") return null;
+                    if (
+                      p.type.startsWith("tool-") ||
+                      p.type.startsWith("dynamic-tool-")
+                    ) {
+                      return (
+                        <ToolPart
+                          key={i}
+                          part={p as unknown as ToolPartLike}
+                          onApprovalResponse={(id, approved) =>
+                            addToolApprovalResponse({ id, approved })
+                          }
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </MessageContent>
+              </Message>
+            ))}
+            {error && (
+              <Message from="system">
+                <MessageContent>
+                  <pre className="chat-tool-error">{error.message}</pre>
+                </MessageContent>
+              </Message>
+            )}
+          </ConversationContent>
+          <ConversationScrollButton />
+        </Conversation>
+
+        <PromptInput onSubmit={handleSubmit} className="shot-chat-prompt">
+          <PromptInputBody>
+            <PromptInputTextarea
+              placeholder="Describe the change…"
+              disabled={inputDisabled}
+            />
+          </PromptInputBody>
+          <PromptInputFooter>
+            <span />
+            <PromptInputSubmit status={status} disabled={inputDisabled} />
+          </PromptInputFooter>
+        </PromptInput>
       </div>
-      <div className="shot-chat-messages">
-        {!hydrated && <div className="shot-chat-empty">Loading session…</div>}
-        {hydrated && messages.length === 0 && (
-          <div className="shot-chat-empty">
-            Ask the agent to change a field, regenerate a frame, or stage an image
-            replacement. Click Apply when satisfied.
-          </div>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className={`shot-chat-msg role-${m.role}`}>
-            <div className="shot-chat-msg-role">{m.role}</div>
-            <div className="shot-chat-msg-body">
-              {m.parts.map((p, i) => {
-                if (p.type === "text") return <p key={i}>{p.text}</p>;
-                if (p.type === "reasoning") return null;
-                if (p.type.startsWith("tool-") || p.type.startsWith("dynamic-tool-")) {
-                  return <ToolPart key={i} part={p as unknown as ToolPartLike} />;
-                }
-                return null;
-              })}
-            </div>
-          </div>
-        ))}
-        {error && (
-          <div className="shot-chat-msg role-error">
-            <pre>{error.message}</pre>
-          </div>
-        )}
-      </div>
-      <div className="shot-chat-input">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          placeholder="Describe the change… (⌘/Ctrl + Enter to send)"
-          rows={3}
-          disabled={!apiUrl || status === "streaming" || status === "submitted"}
-        />
-        <button
-          className="primary"
-          onClick={handleSend}
-          disabled={!input.trim() || status === "streaming" || status === "submitted"}
-        >
-          {status === "streaming" || status === "submitted" ? "…" : "Send"}
-        </button>
-      </div>
-    </div>
+    </TooltipProvider>
   );
 }

@@ -105,7 +105,7 @@ export async function handleChatApply(opts: HandleChatOptions): Promise<void> {
 
   const session = store.load(scope, scopeKey, runId);
   if (!session.draft || isShotDraftEmpty(session.draft)) {
-    sendJson(res, 400, { error: "No draft to apply" });
+    sendJson(res, 200, { ok: true, regeneratedItemIds: [], imageReplacementsApplied: [] });
     return;
   }
 

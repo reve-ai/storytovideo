@@ -8,7 +8,10 @@ export interface ToolPartLike {
   input?: unknown;
   output?: unknown;
   errorText?: string;
+  approval?: { id: string; approved?: boolean; reason?: string };
 }
+
+export type ApprovalResponseHandler = (id: string, approved: boolean) => void | PromiseLike<void>;
 
 function getToolName(part: ToolPartLike): string {
   if (part.type.startsWith("tool-")) return part.type.slice("tool-".length);
@@ -16,7 +19,13 @@ function getToolName(part: ToolPartLike): string {
   return part.type;
 }
 
-export default function ToolPart({ part }: { part: ToolPartLike }) {
+export default function ToolPart({
+  part,
+  onApprovalResponse,
+}: {
+  part: ToolPartLike;
+  onApprovalResponse?: ApprovalResponseHandler;
+}) {
   const name = getToolName(part);
   const state = part.state ?? "input-available";
   const activeRunId = useRunStore((s) => s.activeRunId);
@@ -70,6 +79,40 @@ export default function ToolPart({ part }: { part: ToolPartLike }) {
       )}
       {state === "output-error" && part.errorText && (
         <pre className="chat-tool-error">{part.errorText}</pre>
+      )}
+      {state === "approval-requested" && part.approval?.id && (
+        <div className="chat-tool-approval">
+          <div className="chat-tool-approval-msg">
+            The agent wants to run <strong>{name}</strong>. Approve?
+          </div>
+          <div className="chat-tool-approval-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => onApprovalResponse?.(part.approval!.id, true)}
+              disabled={!onApprovalResponse}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => onApprovalResponse?.(part.approval!.id, false)}
+              disabled={!onApprovalResponse}
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      )}
+      {state === "approval-responded" && part.approval && (
+        <div className="chat-tool-approval-result">
+          {part.approval.approved ? "Approved" : "Denied"}
+          {part.approval.reason ? ` — ${part.approval.reason}` : ""}
+        </div>
+      )}
+      {state === "output-denied" && (
+        <div className="chat-tool-approval-result">Denied</div>
       )}
       {renderInline}
     </div>
