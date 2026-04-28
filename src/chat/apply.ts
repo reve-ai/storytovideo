@@ -270,49 +270,61 @@ export async function applyShotDraft(
     }
   }
 
-  // 4. If we made field updates that affect generation AND we did not already
-  //    promote a frame preview, redo the active frame item so the cascade
-  //    re-queues downstream items.
-  if (
-    fieldKeys.length > 0 &&
-    draft.pendingImageReplacements.length === 0 &&
-    !promotedFrame
-  ) {
-    const generationAffectingFields = new Set<keyof Shot>([
-      "durationSeconds", "composition", "startFramePrompt", "endFramePrompt",
-      "videoPrompt", "actionPrompt", "dialogue", "speaker", "soundEffects",
-      "cameraDirection", "charactersPresent", "objectsPresent", "location",
+  // 4. Pick the right redo level based on which field set was edited:
+  //    - Frame-affecting field → redo frame (cascade re-queues video).
+  //    - Video-only field → redo just the active video item (refreshed shot
+  //      inputs); avoids a wasteful frame redo that would supersede a
+  //      just-promoted video preview.
+  //    Skipped when image replacements already redo the frame, or when the
+  //    matching layer was promoted from a fresh preview.
+  if (fieldKeys.length > 0 && draft.pendingImageReplacements.length === 0) {
+    const frameAffectingFields = new Set<keyof Shot>([
+      "composition", "startFramePrompt", "endFramePrompt",
+      "charactersPresent", "objectsPresent", "location",
       "continuousFromPrevious", "skipped",
     ]);
-    const triggersRegen = fieldKeys.some((k) => generationAffectingFields.has(k as keyof Shot));
-    if (triggersRegen) {
-      const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
-      const frameItems = qm.getItemsByKey(frameKey);
-      const activeFrame = frameItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
-      if (activeFrame) {
-        // Refresh inputs with the updated shot from storyAnalysis.
-        const updatedAnalysis = qm.getState().storyAnalysis;
-        const updatedShot = updatedAnalysis?.scenes.find((s) => s.sceneNumber === sceneNumber)
-          ?.shots.find((s) => s.shotInScene === shotInScene);
+    const videoOnlyAffectingFields = new Set<keyof Shot>([
+      "durationSeconds", "videoPrompt", "actionPrompt",
+      "dialogue", "speaker", "soundEffects", "cameraDirection",
+    ]);
+    const frameChanged = fieldKeys.some((k) => frameAffectingFields.has(k as keyof Shot));
+    const videoOnlyChanged = fieldKeys.some((k) => videoOnlyAffectingFields.has(k as keyof Shot));
+
+    const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+    const frameItems = qm.getItemsByKey(frameKey);
+    const activeFrame = frameItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
+
+    const updatedAnalysis = qm.getState().storyAnalysis;
+    const updatedShot = updatedAnalysis?.scenes.find((s) => s.sceneNumber === sceneNumber)
+      ?.shots.find((s) => s.shotInScene === shotInScene);
+
+    if (activeFrame) {
+      if (frameChanged && !promotedFrame) {
         const newInputs = updatedShot
           ? { ...activeFrame.inputs, shot: updatedShot }
           : { ...activeFrame.inputs };
         const newItem = runManager.redoItem(runId, activeFrame.id, newInputs);
         if (newItem) regenerated.push(newItem.id);
-      } else {
-        // Pending shot — no frame item yet. Look for a pending generate_video item
-        // and update its shot input so the regeneration uses the new fields.
+      } else if (videoOnlyChanged && !promotedVideo) {
         const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
         const videoItems = qm.getItemsByKey(videoKey);
-        const activeVideo = videoItems.find((i) => i.status === "pending");
+        const activeVideo = videoItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
         if (activeVideo) {
-          const updatedAnalysis = qm.getState().storyAnalysis;
-          const updatedShot = updatedAnalysis?.scenes.find((s) => s.sceneNumber === sceneNumber)
-            ?.shots.find((s) => s.shotInScene === shotInScene);
-          if (updatedShot) {
-            activeVideo.inputs = { ...activeVideo.inputs, shot: updatedShot };
-          }
+          const newInputs = updatedShot
+            ? { ...activeVideo.inputs, shot: updatedShot }
+            : { ...activeVideo.inputs };
+          const newItem = runManager.redoItem(runId, activeVideo.id, newInputs);
+          if (newItem) regenerated.push(newItem.id);
         }
+      }
+    } else if (frameChanged || videoOnlyChanged) {
+      // Pending shot — no frame item yet. Update the pending generate_video
+      // item's shot input so its eventual generation picks up the new fields.
+      const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
+      const videoItems = qm.getItemsByKey(videoKey);
+      const activeVideo = videoItems.find((i) => i.status === "pending");
+      if (activeVideo && updatedShot) {
+        activeVideo.inputs = { ...activeVideo.inputs, shot: updatedShot };
       }
     }
   }
