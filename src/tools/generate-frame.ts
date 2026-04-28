@@ -82,6 +82,23 @@ function buildCollageOutputPath(outputPath: string): string {
   return path.join(parsed.dir, `${parsed.name}_reference_collage.jpg`);
 }
 
+/** Canonical start-frame path for a shot. Exported so promotion callers
+ *  (apply.ts) can compute the destination without duplicating the naming
+ *  convention used by `generateFrame`. */
+export function buildStartFramePath(opts: {
+  outputDir: string;
+  sceneNumber: number;
+  shotInScene: number;
+  version?: number;
+}): string {
+  const v = opts.version ?? 1;
+  return path.join(
+    opts.outputDir,
+    'frames',
+    `scene_${opts.sceneNumber}_shot_${opts.shotInScene}_v${v}_start.png`,
+  );
+}
+
 const MAX_COLLAGE_CELL_PX = 512;
 
 async function createReferenceCollage(references: FrameReference[], outputPath: string): Promise<string> {
@@ -294,7 +311,12 @@ export async function generateFrame(params: {
     fs.mkdirSync(framesDir, { recursive: true });
   }
 
-  const startPath = path.join(framesDir, `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`);
+  const startPath = buildStartFramePath({
+    outputDir,
+    sceneNumber: shot.sceneNumber,
+    shotInScene: shot.shotInScene,
+    version,
+  });
 
   if (dryRun) {
     // Return placeholder paths without calling API

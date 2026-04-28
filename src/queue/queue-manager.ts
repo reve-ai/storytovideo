@@ -23,6 +23,19 @@ interface AddItemOptions {
   dependencies?: string[];
   inputs?: Record<string, unknown>;
   priority?: Priority;
+  /** When set to 'completed', the item is added directly in completed state with
+   *  `initialOutputs` populated. Used by the preview-promotion path so apply.ts
+   *  can register a pre-computed result without running the worker loop. */
+  initialStatus?: 'completed';
+  initialOutputs?: Record<string, unknown>;
+}
+
+interface PromoteCompletedOptions {
+  itemKey: string;
+  outputs: Record<string, unknown>;
+  /** Optional explicit id of the item being superseded. If omitted, the active
+   *  item with the matching itemKey is used. */
+  supersedeId?: string;
 }
 
 export class QueueManager {
@@ -182,28 +195,69 @@ export class QueueManager {
       ? Math.max(...existing.map(i => i.version)) + 1
       : 1;
 
+    const isCompleted = opts.initialStatus === 'completed';
+    const now = new Date().toISOString();
+
     const item: WorkItem = {
       id: randomUUID(),
       type: opts.type,
       queue: opts.queue,
-      status: 'pending',
+      status: isCompleted ? 'completed' : 'pending',
       priority: opts.priority ?? 'normal',
       version,
       itemKey: opts.itemKey,
       dependencies: opts.dependencies ?? [],
       inputs: opts.inputs ?? {},
-      outputs: {},
+      outputs: isCompleted ? (opts.initialOutputs ?? {}) : {},
       retryCount: 0,
       error: null,
       supersededBy: null,
-      createdAt: new Date().toISOString(),
-      startedAt: null,
-      completedAt: null,
+      createdAt: now,
+      startedAt: isCompleted ? now : null,
+      completedAt: isCompleted ? now : null,
     };
 
     this.state.workItems.push(item);
     this.touch();
     return this.snapshot(item);
+  }
+
+  /** Promote a pre-computed result into the queue as a completed work item.
+   *  Used by the preview-promotion path: apply.ts already has fresh outputs
+   *  (e.g. a sandbox preview frame) and wants to skip regeneration. The new
+   *  item is inserted as `completed`, the prior active item (if any) is
+   *  superseded, and the existing redo cascade re-supersedes stale
+   *  downstream items. The caller is still responsible for invoking
+   *  `seedDownstream` to create new downstream work items. */
+  promoteCompleted(opts: PromoteCompletedOptions): WorkItem {
+    const supersedeTarget = opts.supersedeId
+      ? this.requireItem(opts.supersedeId)
+      : this.findActiveItemByKey(opts.itemKey);
+
+    if (!supersedeTarget) {
+      throw new Error(
+        `promoteCompleted: no active item found for itemKey '${opts.itemKey}' and no supersedeId provided`,
+      );
+    }
+
+    const newItem = this.addItem({
+      type: supersedeTarget.type,
+      queue: supersedeTarget.queue,
+      itemKey: supersedeTarget.itemKey,
+      dependencies: supersedeTarget.dependencies.map(depId => this.latestVersionId(depId)),
+      inputs: { ...supersedeTarget.inputs },
+      priority: supersedeTarget.priority,
+      initialStatus: 'completed',
+      initialOutputs: opts.outputs,
+    });
+
+    this.setSuperseded(supersedeTarget);
+    supersedeTarget.supersededBy = newItem.id;
+
+    this.cascadeRedo(supersedeTarget.id, newItem.id);
+
+    this.touch();
+    return this.snapshot(newItem);
   }
 
   // --- Status transitions ---

@@ -68,8 +68,23 @@ type GenerateVideoParams = {
 /** Shared return type for all video backends. */
 type GenerateVideoResult = { shotNumber: number; path: string; duration: number; finalPrompt: string };
 
-function buildSceneShotFilename(sceneNumber: number, shotInScene: number, version: number = 1): string {
+export function buildSceneShotFilename(sceneNumber: number, shotInScene: number, version: number = 1): string {
   return `scene_${String(sceneNumber).padStart(2, "0")}_shot_${String(shotInScene).padStart(2, "0")}_v${version}`;
+}
+
+/** Canonical output path for a generated video clip. Exported so promotion
+ *  callers (apply.ts) can compute the destination without duplicating the
+ *  naming convention used by `generateVideo`. */
+export function buildVideoOutputPath(opts: {
+  outputDir: string;
+  sceneNumber: number;
+  shotInScene: number;
+  version?: number;
+}): string {
+  return join(
+    opts.outputDir,
+    `${buildSceneShotFilename(opts.sceneNumber, opts.shotInScene, opts.version ?? 1)}.mp4`,
+  );
 }
 
 function formatShotContext(params: Pick<GenerateVideoParams, "shotNumber" | "sceneNumber" | "shotInScene">): string {
