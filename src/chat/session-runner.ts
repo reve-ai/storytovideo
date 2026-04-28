@@ -40,6 +40,7 @@ export interface ActiveChatInfo {
   startedAt: string;
   lastEventAt: string;
   currentToolName: string | null;
+  queueDepth: number;
 }
 
 type Subscriber = {
@@ -107,6 +108,7 @@ export class ChatSessionRunner {
       startedAt: this.startedAt,
       lastEventAt: this.lastEventAt,
       currentToolName: this.currentToolName,
+      queueDepth: this.pending.length,
     };
   }
 

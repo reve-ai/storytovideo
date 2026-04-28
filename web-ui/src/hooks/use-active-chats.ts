@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ActiveChatScope = "shot" | "location" | "story";
 
@@ -8,6 +8,7 @@ export interface ActiveChat {
   startedAt: string;
   lastEventAt: string;
   currentToolName: string | null;
+  queueDepth: number;
 }
 
 interface ActiveChatsResponse {
@@ -15,18 +16,26 @@ interface ActiveChatsResponse {
   chats: ActiveChat[];
 }
 
+export interface UseActiveChatsResult {
+  chats: ActiveChat[];
+  refresh: () => void;
+}
+
 /**
  * Polls `/api/runs/:runId/chats/active` every `intervalMs` (default 2s) so the
  * TopBar can render a live indicator of in-flight chat agents. Polling is
- * cheap and avoids piggy-backing on the pipeline SSE.
+ * cheap and avoids piggy-backing on the pipeline SSE. Callers can also force
+ * an immediate refresh (e.g. after cancelling a chat).
  */
-export function useActiveChats(runId: string | null, intervalMs = 2000): ActiveChat[] {
+export function useActiveChats(runId: string | null, intervalMs = 2000): UseActiveChatsResult {
   const [chats, setChats] = useState<ActiveChat[]>([]);
   const inflight = useRef<AbortController | null>(null);
+  const tickRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!runId) {
       setChats([]);
+      tickRef.current = () => {};
       return;
     }
     let cancelled = false;
@@ -48,6 +57,7 @@ export function useActiveChats(runId: string | null, intervalMs = 2000): ActiveC
         // network error / aborted — keep previous state
       }
     };
+    tickRef.current = () => { void tick(); };
     void tick();
     const t = setInterval(tick, intervalMs);
     return () => {
@@ -57,5 +67,6 @@ export function useActiveChats(runId: string | null, intervalMs = 2000): ActiveC
     };
   }, [runId, intervalMs]);
 
-  return chats;
+  const refresh = useCallback(() => tickRef.current(), []);
+  return { chats, refresh };
 }
