@@ -1,5 +1,6 @@
 import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
+import { useUIStore } from "../stores/ui-store";
 import ShotCard from "./ShotCard";
 
 interface SceneData {
@@ -25,6 +26,7 @@ export default function SceneSection({
 }: SceneSectionProps) {
   const skippedShots = usePipelineStore(s => s.skippedShots);
   const existingShots = usePipelineStore(s => s.existingShots);
+  const openLocationChat = useUIStore(s => s.openLocationChat);
   const hasExistingShots = Object.keys(existingShots).length > 0;
   const shotNums = new Set([
     ...sceneData.frames.keys(),
@@ -42,7 +44,14 @@ export default function SceneSection({
           Scene {sceneNum}: {sceneTitle}
         </h2>
         {location && (
-          <span className="story-scene-location">📍 {location}</span>
+          <button
+            type="button"
+            className="story-scene-location"
+            onClick={() => openLocationChat(location)}
+            title="Edit location"
+          >
+            📍 {location}
+          </button>
         )}
       </div>
       <div className="story-shots-grid">

@@ -3,3 +3,4 @@
 // added here.
 import "./shot.js";
 import "./story.js";
+import "./location.js";

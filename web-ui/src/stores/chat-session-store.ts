@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { UIMessage } from "ai";
 
-export type ChatScope = "shot" | "story";
+export type ChatScope = "shot" | "story" | "location";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -17,7 +17,16 @@ export interface StoryDraft {
   storyFields: Record<string, unknown>;
 }
 
-export type ChatDraft = ShotDraft | StoryDraft;
+export interface PendingReferenceImage {
+  path: string;
+}
+
+export interface LocationDraft {
+  locationFields: Record<string, unknown>;
+  pendingReferenceImage: PendingReferenceImage | null;
+}
+
+export type ChatDraft = ShotDraft | StoryDraft | LocationDraft;
 
 export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
   return !!draft && "shotFields" in draft;
@@ -25,6 +34,10 @@ export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotD
 
 export function isStoryDraft(draft: ChatDraft | null | undefined): draft is StoryDraft {
   return !!draft && "storyFields" in draft;
+}
+
+export function isLocationDraft(draft: ChatDraft | null | undefined): draft is LocationDraft {
+  return !!draft && "locationFields" in draft;
 }
 
 export function draftFieldCount(draft: ChatDraft | null | undefined): number {
@@ -35,11 +48,14 @@ export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   if (isStoryDraft(draft)) {
     return Object.keys(draft.storyFields).length;
   }
+  if (isLocationDraft(draft)) {
+    return Object.keys(draft.locationFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
   return 0;
 }
 
 export interface ChatIntermediate {
-  kind: "frame" | "video";
+  kind: "frame" | "video" | "asset";
   path: string;
   fromToolCallId: string;
   createdAt: string;

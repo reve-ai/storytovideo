@@ -838,6 +838,35 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft]
+      if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "location") {
+        const scopeKey = pathParts[5];
+        const sub = pathParts[6];
+
+        if (method === "GET" && pathParts.length === 6) {
+          await handleChatGet({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 6) {
+          await handleChatPost({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+
       // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard]
       if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
         const sceneNumber = parseInt(pathParts[5], 10);
