@@ -136,7 +136,14 @@ export async function handleChatPost(opts: HandleChatOptions): Promise<void> {
     newMessages.length === 0 &&
     lastAssistantMessageIsCompleteWithApprovalResponses({ messages: incomingMessages });
   if (newMessages.length === 0 && !isApprovalContinuation) {
-    sendJson(res, 400, { error: "no new messages to send" });
+    // Benign no-op: the SDK's `sendAutomaticallyWhen` re-POSTs the same
+    // history after a turn that ended with a tool call (e.g. `proposeApply`),
+    // and after an approval-continuation finishes the SDK may also re-POST
+    // for reconciliation. Neither has anything for the runner to do. Return
+    // 204 No Content instead of 400 so the client doesn't render a red error
+    // block. Matches the /stream "nothing to resume" contract below.
+    res.statusCode = 204;
+    res.end();
     return;
   }
 
