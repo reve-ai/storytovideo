@@ -14,7 +14,7 @@ import {
   chatPreviewDir,
   chatPreviewRelative,
 } from "../session-store.js";
-import { emptyShotDraft, type ShotDraft } from "../types.js";
+import { emptyShotDraft, isShotDraft, type ShotDraft } from "../types.js";
 
 export interface ShotEditorContext {
   runId: string;
@@ -47,7 +47,7 @@ function mergedShot(qm: QueueManager, sceneNumber: number, shotInScene: number, 
 
 function loadDraft(ctx: ShotEditorContext): ShotDraft {
   const session = ctx.store.load("shot", ctx.scopeKey, ctx.runId);
-  return session.draft ?? emptyShotDraft();
+  return isShotDraft(session.draft) ? session.draft : emptyShotDraft();
 }
 
 function saveDraft(ctx: ShotEditorContext, draft: ShotDraft): void {

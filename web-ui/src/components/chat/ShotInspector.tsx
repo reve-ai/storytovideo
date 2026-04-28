@@ -4,6 +4,7 @@ import type { UIMessage } from "ai";
 import { useRunStore } from "../../stores/run-store";
 import { usePipelineStore, type WorkItem } from "../../stores/pipeline-store";
 import {
+  isShotDraft,
   selectSession,
   useChatSessionStore,
   type ChatScope,
@@ -90,7 +91,8 @@ export default function ShotInspector({
     locations?: string[];
     objects?: string[];
   } | null | undefined) ?? null;
-  const draftFields = session?.draft?.shotFields ?? {};
+  const draftFields: Record<string, unknown> =
+    session && isShotDraft(session.draft) ? session.draft.shotFields : {};
   const intermediates = session?.intermediates ?? [];
 
   const characterNames = (draftFields.charactersPresent as string[] | undefined)

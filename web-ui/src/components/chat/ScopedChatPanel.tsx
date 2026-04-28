@@ -9,6 +9,8 @@ import {
 
 import { useUIStore } from "../../stores/ui-store";
 import {
+  chatBaseUrl,
+  draftFieldCount as countDraftFields,
   selectSession,
   useChatSessionStore,
   type ChatScope,
@@ -35,8 +37,6 @@ interface ScopedChatPanelProps {
   runId: string;
   scope: ChatScope;
   scopeKey: string;
-  sceneNumber: number;
-  shotInScene: number;
   title: string;
   renderForm: () => ReactNode;
   renderInspector: (ctx: { messages: UIMessage[] }) => ReactNode;
@@ -46,8 +46,6 @@ export default function ScopedChatPanel({
   runId,
   scope,
   scopeKey,
-  sceneNumber,
-  shotInScene,
   title,
   renderForm,
   renderInspector,
@@ -61,7 +59,7 @@ export default function ScopedChatPanel({
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const apiUrl = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}`;
+  const apiUrl = chatBaseUrl(runId, scope, scopeKey);
   const transport = useMemo(
     () => new DefaultChatTransport<UIMessage>({ api: apiUrl }),
     [apiUrl],
@@ -123,9 +121,8 @@ export default function ScopedChatPanel({
   }, [messages, runId, scope, scopeKey, fetchSession]);
 
   const draft = session?.draft ?? null;
-  const draftFieldCount = draft ? Object.keys(draft.shotFields).length : 0;
-  const draftImageCount = draft ? draft.pendingImageReplacements.length : 0;
-  const hasDraft = draftFieldCount > 0 || draftImageCount > 0;
+  const draftCount = countDraftFields(draft);
+  const hasDraft = draftCount > 0;
 
   const handleSubmit = async (msg: PromptInputMessage) => {
     const text = msg.text?.trim();
@@ -140,7 +137,7 @@ export default function ScopedChatPanel({
 
   const handleApply = async () => {
     setBusy(true);
-    const result = await applyDraft(runId, scope, scopeKey, sceneNumber, shotInScene);
+    const result = await applyDraft(runId, scope, scopeKey);
     setBusy(false);
     if (!result.ok) showToast(result.error ?? "Apply failed", "error");
     else showToast("Applied draft to canonical document", "info");
@@ -148,7 +145,7 @@ export default function ScopedChatPanel({
 
   const handleDiscard = async () => {
     setBusy(true);
-    const result = await discardDraft(runId, scope, scopeKey, sceneNumber, shotInScene);
+    const result = await discardDraft(runId, scope, scopeKey);
     setBusy(false);
     if (!result.ok) showToast(result.error ?? "Discard failed", "error");
   };
@@ -170,7 +167,7 @@ export default function ScopedChatPanel({
                 onClick={handleApply}
                 title={hasDraft ? "Apply staged changes to the canonical document" : "No staged changes"}
               >
-                Apply{hasDraft ? ` (${draftFieldCount + draftImageCount})` : ""}
+                Apply{hasDraft ? ` (${draftCount})` : ""}
               </button>
               <button
                 className="secondary"

@@ -105,6 +105,7 @@ export default function TopBar() {
   const playDisabled = runStatus === "stopped" && !hasPendingWork;
   const activeRun = runs.find((run) => run.id === activeRunId);
   const clearActiveRun = useRunStore((s) => s.clearActiveRun);
+  const openStoryChat = useUIStore((s) => s.openStoryChat);
 
   const handleGoHome = useCallback(() => {
     const pipeline = usePipelineStore.getState();
@@ -168,6 +169,15 @@ export default function TopBar() {
             {runStatus && (
               <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
             )}
+
+            <button
+              type="button"
+              className="edit-story-btn"
+              onClick={openStoryChat}
+              title="Edit top-level story metadata (title, art style)"
+            >
+              ✏️ Edit Story
+            </button>
 
             {showPlayPause && (
               <button

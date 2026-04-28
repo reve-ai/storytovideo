@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  isShotDraft,
   selectSession,
   useChatSessionStore,
   type ChatScope,
@@ -10,8 +11,6 @@ interface Props {
   runId: string;
   scope: ChatScope;
   scopeKey: string;
-  sceneNumber: number;
-  shotInScene: number;
 }
 
 type FieldType = "string" | "longString" | "number" | "boolean" | "stringArray";
@@ -50,12 +49,13 @@ function arrayToString(v: unknown): string {
   return "";
 }
 
-export default function ShotForm({ runId, scope, scopeKey, sceneNumber, shotInScene }: Props) {
+export default function ShotForm({ runId, scope, scopeKey }: Props) {
   const session = useChatSessionStore((s) => selectSession(s, runId, scope, scopeKey));
   const stageDraftFields = useChatSessionStore((s) => s.stageDraftFields);
 
   const liveShot = (session?.scopeContext?.liveShot as Record<string, unknown> | null | undefined) ?? null;
-  const draftFields = session?.draft?.shotFields ?? {};
+  const draftFields: Record<string, unknown> =
+    session && isShotDraft(session.draft) ? session.draft.shotFields : {};
 
   // Per-field local edits and focus tracking.
   const [local, setLocal] = useState<Record<string, unknown>>({});
@@ -94,7 +94,7 @@ export default function ShotForm({ runId, scope, scopeKey, sceneNumber, shotInSc
         });
         return;
       }
-      await stageDraftFields(runId, scope, scopeKey, sceneNumber, shotInScene, {
+      await stageDraftFields(runId, scope, scopeKey, {
         [field.key]: localValue,
       });
       setLocal((prev) => {
@@ -103,7 +103,7 @@ export default function ShotForm({ runId, scope, scopeKey, sceneNumber, shotInSc
         return next;
       });
     },
-    [local, liveShot, draftFields, stageDraftFields, runId, scope, scopeKey, sceneNumber, shotInScene],
+    [local, liveShot, draftFields, stageDraftFields, runId, scope, scopeKey],
   );
 
   if (!liveShot) {

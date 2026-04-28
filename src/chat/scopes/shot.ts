@@ -2,6 +2,7 @@ import type { Shot } from "../../types.js";
 import { applyShotDraft } from "../apply.js";
 import { createShotEditorAgent } from "../agents/shot-editor.js";
 import { registerScope } from "../scope-registry.js";
+import { isShotDraft } from "../types.js";
 
 function getLiveShot(
   ctx: Parameters<NonNullable<Parameters<typeof registerScope>[1]["getScopeContext"]>>[0],
@@ -26,8 +27,10 @@ registerScope("shot", {
       runManager: ctx.runManager,
       queueManager: ctx.queueManager,
     }),
-  applyDraft: async (ctx, draft) =>
-    applyShotDraft(ctx.runManager, ctx.runId, ctx.sceneNumber, ctx.shotInScene, draft),
+  applyDraft: async (ctx, draft) => {
+    if (!isShotDraft(draft)) throw new Error("shot scope received non-shot draft");
+    return applyShotDraft(ctx.runManager, ctx.runId, ctx.sceneNumber, ctx.shotInScene, draft);
+  },
   getScopeContext: (ctx) => {
     const liveShot = getLiveShot(ctx);
     const qm = ctx.runManager.getQueueManager(ctx.runId);

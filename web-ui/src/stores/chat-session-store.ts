@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { UIMessage } from "ai";
 
-export type ChatScope = "shot";
+export type ChatScope = "shot" | "story";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -11,6 +11,31 @@ export interface PendingImageReplacement {
 export interface ShotDraft {
   shotFields: Record<string, unknown>;
   pendingImageReplacements: PendingImageReplacement[];
+}
+
+export interface StoryDraft {
+  storyFields: Record<string, unknown>;
+}
+
+export type ChatDraft = ShotDraft | StoryDraft;
+
+export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
+  return !!draft && "shotFields" in draft;
+}
+
+export function isStoryDraft(draft: ChatDraft | null | undefined): draft is StoryDraft {
+  return !!draft && "storyFields" in draft;
+}
+
+export function draftFieldCount(draft: ChatDraft | null | undefined): number {
+  if (!draft) return 0;
+  if (isShotDraft(draft)) {
+    return Object.keys(draft.shotFields).length + draft.pendingImageReplacements.length;
+  }
+  if (isStoryDraft(draft)) {
+    return Object.keys(draft.storyFields).length;
+  }
+  return 0;
 }
 
 export interface ChatIntermediate {
@@ -26,7 +51,7 @@ export interface ChatSessionData {
   scopeKey: string;
   runId: string;
   messages: UIMessage[];
-  draft: ShotDraft | null;
+  draft: ChatDraft | null;
   intermediates: ChatIntermediate[];
   lastSavedAt: string;
   /** Scope-specific snapshot supplied by the server (e.g. liveShot for shot scope). */
@@ -37,6 +62,24 @@ function sessionKey(runId: string, scope: ChatScope, scopeKey: string): string {
   return `${runId}::${scope}::${scopeKey}`;
 }
 
+/**
+ * Build the scope-aware base URL for chat endpoints.
+ * - shot: /api/runs/:id/chat/shot/:sceneNumber/:shotInScene (scopeKey is "scene-shot")
+ * - story: /api/runs/:id/chat/story/:scopeKey
+ */
+export function chatBaseUrl(
+  runId: string,
+  scope: ChatScope,
+  scopeKey: string,
+): string {
+  const prefix = `/api/runs/${encodeURIComponent(runId)}/chat`;
+  if (scope === "shot") {
+    const [scenePart, shotPart] = scopeKey.split("-");
+    return `${prefix}/shot/${scenePart}/${shotPart}`;
+  }
+  return `${prefix}/${scope}/${encodeURIComponent(scopeKey)}`;
+}
+
 interface ChatSessionState {
   sessions: Record<string, ChatSessionData>;
   loading: Record<string, boolean>;
@@ -45,9 +88,9 @@ interface ChatSessionState {
 interface ChatSessionActions {
   fetchSession: (runId: string, scope: ChatScope, scopeKey: string) => Promise<ChatSessionData | null>;
   setSession: (data: ChatSessionData) => void;
-  applyDraft: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number) => Promise<{ ok: boolean; error?: string }>;
-  discardDraft: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number) => Promise<{ ok: boolean; error?: string }>;
-  stageDraftFields: (runId: string, scope: ChatScope, scopeKey: string, sceneNumber: number, shotInScene: number, fields: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
+  applyDraft: (runId: string, scope: ChatScope, scopeKey: string) => Promise<{ ok: boolean; error?: string }>;
+  discardDraft: (runId: string, scope: ChatScope, scopeKey: string) => Promise<{ ok: boolean; error?: string }>;
+  stageDraftFields: (runId: string, scope: ChatScope, scopeKey: string, fields: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export type ChatSessionStore = ChatSessionState & ChatSessionActions;
@@ -60,8 +103,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     const key = sessionKey(runId, scope, scopeKey);
     set((s) => ({ loading: { ...s.loading, [key]: true } }));
     try {
-      const [scenePart, shotPart] = scopeKey.split("-");
-      const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${scenePart}/${shotPart}`;
+      const url = chatBaseUrl(runId, scope, scopeKey);
       const res = await fetch(url);
       if (!res.ok) {
         if (res.status === 404) return null;
@@ -84,8 +126,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     set((s) => ({ sessions: { ...s.sessions, [key]: data } }));
   },
 
-  applyDraft: async (runId, scope, scopeKey, sceneNumber, shotInScene) => {
-    const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}/apply`;
+  applyDraft: async (runId, scope, scopeKey) => {
+    const url = `${chatBaseUrl(runId, scope, scopeKey)}/apply`;
     try {
       const res = await fetch(url, { method: "POST" });
       const body = await res.json().catch(() => ({}));
@@ -98,8 +140,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }
   },
 
-  discardDraft: async (runId, scope, scopeKey, sceneNumber, shotInScene) => {
-    const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}/discard`;
+  discardDraft: async (runId, scope, scopeKey) => {
+    const url = `${chatBaseUrl(runId, scope, scopeKey)}/discard`;
     try {
       const res = await fetch(url, { method: "POST" });
       const body = await res.json().catch(() => ({}));
@@ -111,8 +153,8 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
     }
   },
 
-  stageDraftFields: async (runId, scope, scopeKey, sceneNumber, shotInScene, fields) => {
-    const url = `/api/runs/${encodeURIComponent(runId)}/chat/${scope}/${sceneNumber}/${shotInScene}/draft`;
+  stageDraftFields: async (runId, scope, scopeKey, fields) => {
+    const url = `${chatBaseUrl(runId, scope, scopeKey)}/draft`;
     try {
       const res = await fetch(url, {
         method: "POST",

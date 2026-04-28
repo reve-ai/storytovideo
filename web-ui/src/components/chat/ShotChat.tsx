@@ -17,16 +17,12 @@ export default function ShotChat({ sceneNumber, shotInScene }: Props) {
       runId={activeRunId}
       scope="shot"
       scopeKey={scopeKey}
-      sceneNumber={sceneNumber}
-      shotInScene={shotInScene}
       title={`Edit shot ${sceneNumber}.${shotInScene}`}
       renderForm={() => (
         <ShotForm
           runId={activeRunId}
           scope="shot"
           scopeKey={scopeKey}
-          sceneNumber={sceneNumber}
-          shotInScene={shotInScene}
         />
       )}
       renderInspector={({ messages }) => (

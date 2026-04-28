@@ -209,6 +209,44 @@ body {
   .detail-panel-wide { width: 100vw; right: -100vw; }
 }
 
+/* Story chat takeover — full-width slide-in panel for the Story scope. */
+.story-chat-takeover {
+  position: fixed;
+  top: 0;
+  right: -100vw;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg, #111);
+  border-left: 1px solid var(--border, #333);
+  z-index: 200;
+  transition: right 0.18s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+.story-chat-takeover.open { right: 0; }
+.story-chat-takeover-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border, #333);
+}
+.story-chat-takeover-close {
+  background: none;
+  border: 1px solid var(--border, #333);
+  color: inherit;
+  font-size: 1rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.story-chat-takeover-close:hover { background: var(--hover, #2a2a2a); }
+.story-chat-takeover-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.6rem;
+}
+
 /* Scoped chat panel three-region grid */
 .scoped-chat-panel {
   display: grid;
