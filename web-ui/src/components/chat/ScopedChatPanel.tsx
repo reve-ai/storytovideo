@@ -187,6 +187,57 @@ export default function ScopedChatPanel({
 
   const inputDisabled = status === "streaming" || status === "submitted";
 
+  const activity = useMemo(() => {
+    let lastAssistant: UIMessage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        lastAssistant = messages[i];
+        break;
+      }
+    }
+    if (lastAssistant) {
+      type ToolLikePart = { type: string; state?: string };
+      const parts = lastAssistant.parts as ToolLikePart[];
+      let lastInFlight: { name: string; state: string } | null = null;
+      for (const p of parts) {
+        const type = p.type ?? "";
+        const isTool = type.startsWith("tool-") || type.startsWith("dynamic-tool-");
+        if (!isTool) continue;
+        const state = p.state ?? "";
+        if (
+          state === "input-streaming" ||
+          state === "input-available" ||
+          state === "approval-requested" ||
+          state === "approval-responded"
+        ) {
+          const name = type.startsWith("tool-")
+            ? type.slice("tool-".length)
+            : type.slice("dynamic-tool-".length);
+          lastInFlight = { name, state };
+        }
+      }
+      if (lastInFlight) {
+        if (lastInFlight.state === "approval-requested") {
+          return { kind: "approval" as const };
+        }
+        return { kind: "running" as const, toolName: lastInFlight.name };
+      }
+    }
+    if (status === "submitted" || status === "streaming") {
+      return { kind: "thinking" as const };
+    }
+    return null;
+  }, [messages, status]);
+
+  const activityLabel =
+    activity?.kind === "thinking"
+      ? "Thinking…"
+      : activity?.kind === "running"
+        ? `Running ${activity.toolName}…`
+        : activity?.kind === "approval"
+          ? "Waiting for approval…"
+          : null;
+
   return (
     <TooltipProvider>
       <div className="scoped-chat-panel">
@@ -276,6 +327,14 @@ export default function ScopedChatPanel({
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
+          {activityLabel && (
+            <div className="shot-chat-activity" role="status" aria-live="polite">
+              <span className="shot-chat-activity-dots" aria-hidden="true">
+                <span /><span /><span />
+              </span>
+              <span className="shot-chat-activity-text">{activityLabel}</span>
+            </div>
+          )}
           <PromptInput onSubmit={handleSubmit} className="shot-chat-prompt">
             <PromptInputBody>
               <PromptInputTextarea
