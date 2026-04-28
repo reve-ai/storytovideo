@@ -411,6 +411,8 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
 }
+/* Reserve space for DetailPanel's absolute .close-btn so Discard/Apply don't sit under it. */
+.detail-panel-wide .shot-chat-header { padding-right: 3rem; }
 .shot-chat-title { font-weight: 600; font-size: 0.9rem; }
 .shot-chat-actions { display: flex; gap: 0.4rem; }
 .shot-chat-actions button {
