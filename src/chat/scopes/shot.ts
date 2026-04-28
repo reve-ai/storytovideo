@@ -30,6 +30,17 @@ registerScope("shot", {
     applyShotDraft(ctx.runManager, ctx.runId, ctx.sceneNumber, ctx.shotInScene, draft),
   getScopeContext: (ctx) => {
     const liveShot = getLiveShot(ctx);
-    return { liveShot };
+    const qm = ctx.runManager.getQueueManager(ctx.runId);
+    const analysis = qm?.getState().storyAnalysis;
+    const storyContext = analysis
+      ? {
+          title: analysis.title,
+          artStyle: analysis.artStyle,
+          characters: analysis.characters.map((c) => c.name),
+          locations: analysis.locations.map((l) => l.name),
+          objects: (analysis.objects ?? []).map((o) => o.name),
+        }
+      : null;
+    return { liveShot, storyContext };
   },
 });

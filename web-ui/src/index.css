@@ -257,12 +257,39 @@ body {
 .shot-form-field input:focus,
 .shot-form-field textarea:focus { outline: none; border-color: var(--accent); }
 
-/* Shot inspector */
-.shot-inspector { display: flex; flex-direction: column; gap: 0.5rem; }
-.shot-inspector-section { border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; }
-.shot-inspector-section > summary {
+/* Shot inspector / generic ContextInspector */
+.shot-inspector,
+.context-inspector { display: flex; flex-direction: column; gap: 0.5rem; }
+.shot-inspector-section,
+.context-inspector-section { border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; }
+.shot-inspector-section > summary,
+.context-inspector-section > summary {
   cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--muted);
   user-select: none;
+}
+.shot-inspector-name-pool {
+  display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem;
+}
+.shot-inspector-name-chip {
+  font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: var(--border); color: var(--text);
+}
+.shot-inspector-toolcalls {
+  list-style: none; padding: 0; margin: 0.4rem 0 0;
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.shot-inspector-toolcalls li {
+  display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem;
+}
+.shot-inspector-json-wrap { position: relative; margin-top: 0.4rem; }
+.shot-inspector-json-copy {
+  position: absolute; top: 0.2rem; right: 0.2rem; font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+}
+.shot-inspector-json {
+  font-family: monospace; font-size: 0.7rem; max-height: 320px;
+  overflow: auto; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; padding: 0.4rem; margin: 0;
 }
 .shot-inspector-empty { color: var(--muted); font-size: 0.8rem; padding: 0.3rem 0; }
 .shot-inspector-group { margin-top: 0.5rem; }

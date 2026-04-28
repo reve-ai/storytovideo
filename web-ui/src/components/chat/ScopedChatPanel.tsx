@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -39,7 +39,7 @@ interface ScopedChatPanelProps {
   shotInScene: number;
   title: string;
   renderForm: () => ReactNode;
-  renderInspector: () => ReactNode;
+  renderInspector: (ctx: { messages: UIMessage[] }) => ReactNode;
 }
 
 export default function ScopedChatPanel({
@@ -91,6 +91,37 @@ export default function ScopedChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, scope, scopeKey]);
 
+  // Per-tool-result live refresh: refetch session whenever a new completed
+  // tool call appears in the chat stream, not just at end-of-stream. The
+  // form's per-field focus tracking preserves in-progress edits.
+  const refreshedToolCallIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    refreshedToolCallIds.current = new Set();
+  }, [runId, scope, scopeKey]);
+  useEffect(() => {
+    let needsFetch = false;
+    for (const m of messages) {
+      for (const p of m.parts as Array<{ type?: string; state?: string; toolCallId?: string }>) {
+        const type = p.type ?? "";
+        if (!type.startsWith("tool-") && !type.startsWith("dynamic-tool-")) continue;
+        const state = p.state ?? "";
+        const id = p.toolCallId;
+        if (!id) continue;
+        const isTerminal =
+          state === "output-available" ||
+          state === "output-error" ||
+          state === "output-denied";
+        if (isTerminal && !refreshedToolCallIds.current.has(id)) {
+          refreshedToolCallIds.current.add(id);
+          needsFetch = true;
+        }
+      }
+    }
+    if (needsFetch) {
+      void fetchSession(runId, scope, scopeKey);
+    }
+  }, [messages, runId, scope, scopeKey, fetchSession]);
+
   const draft = session?.draft ?? null;
   const draftFieldCount = draft ? Object.keys(draft.shotFields).length : 0;
   const draftImageCount = draft ? draft.pendingImageReplacements.length : 0;
@@ -128,7 +159,7 @@ export default function ScopedChatPanel({
     <TooltipProvider>
       <div className="scoped-chat-panel">
         <div className="scoped-chat-form">{renderForm()}</div>
-        <div className="scoped-chat-inspector">{renderInspector()}</div>
+        <div className="scoped-chat-inspector">{renderInspector({ messages })}</div>
         <div className="scoped-chat-chat">
           <div className="shot-chat-header">
             <div className="shot-chat-title">{title}</div>
