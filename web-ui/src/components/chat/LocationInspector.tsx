@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { UIMessage } from "ai";
 
 import { useRunStore } from "../../stores/run-store";
+import { usePipelineStore, type ItemProgress, type WorkItem } from "../../stores/pipeline-store";
 import {
   isLocationDraft,
   selectSession,
@@ -10,6 +11,46 @@ import {
 } from "../../stores/chat-session-store";
 import { mediaUrl } from "../../utils/media-url";
 import ContextInspector, { type ContextInspectorSection } from "./ContextInspector";
+
+function findItemsByKey(
+  queues: ReturnType<typeof usePipelineStore.getState>["queues"],
+  itemKey: string,
+): WorkItem[] {
+  const out: WorkItem[] = [];
+  for (const qName of ["llm", "image", "video"] as const) {
+    const q = queues[qName];
+    if (!q) continue;
+    for (const group of [q.inProgress, q.pending, q.completed, q.failed]) {
+      for (const item of group) {
+        if (item.itemKey === itemKey && item.status !== "superseded") out.push(item);
+      }
+    }
+  }
+  return out;
+}
+
+function pickLatest(items: WorkItem[]): WorkItem | null {
+  if (items.length === 0) return null;
+  return items.reduce((best, cur) => (best === null || cur.version > best.version ? cur : best), null as WorkItem | null);
+}
+
+function progressLabel(progress: ItemProgress | undefined): string {
+  if (!progress) return "Regenerating…";
+  if (progress.status === "pending") {
+    return progress.queuePosition !== undefined
+      ? `Queued (position ${progress.queuePosition})`
+      : "Queued";
+  }
+  if (progress.progress !== undefined) {
+    const pct = Math.round(progress.progress * 100);
+    const stepStr =
+      progress.step !== undefined && progress.totalSteps !== undefined
+        ? ` · step ${progress.step}/${progress.totalSteps}`
+        : "";
+    return `Regenerating ${pct}%${stepStr}`;
+  }
+  return "Regenerating…";
+}
 
 interface Props {
   runId: string;
@@ -53,6 +94,9 @@ function extractToolCalls(messages: UIMessage[]): ToolCallEntry[] {
 
 export default function LocationInspector({ runId, scope, scopeKey, messages }: Props) {
   const activeRunId = useRunStore((s) => s.activeRunId);
+  const assets = usePipelineStore((s) => s.assets);
+  const queues = usePipelineStore((s) => s.queues);
+  const itemProgress = usePipelineStore((s) => s.itemProgress);
   const session = useChatSessionStore((s) => selectSession(s, runId, scope, scopeKey));
 
   const liveLocation =
@@ -81,6 +125,22 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
     return { ...liveLocation, ...draftFields };
   }, [liveLocation, draftFields]);
 
+  const locationName = (liveLocation?.name as string | undefined) ?? scopeKey;
+  const locationAsset = useMemo(
+    () => assets?.locations.find((l) => l.name === locationName) ?? null,
+    [assets, locationName],
+  );
+  const locationItems = useMemo(
+    () => findItemsByKey(queues, `asset:location:${locationName}`),
+    [queues, locationName],
+  );
+  const latestLocationItem = useMemo(() => pickLatest(locationItems), [locationItems]);
+  const isLocationInFlight =
+    latestLocationItem != null &&
+    (latestLocationItem.status === "pending" || latestLocationItem.status === "in_progress");
+  const isLocationFailed =
+    latestLocationItem != null && latestLocationItem.status === "failed";
+
   const handleCopyJson = () => {
     if (!resolvedLocation) return;
     void navigator.clipboard?.writeText(JSON.stringify(resolvedLocation, null, 2));
@@ -100,6 +160,68 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
   );
 
   const sections: ContextInspectorSection[] = [
+    {
+      id: "current-outputs",
+      title: "Current outputs",
+      defaultOpen: true,
+      render: () => (
+        <div className="shot-inspector-current-outputs">
+          <div className="shot-inspector-current-output">
+            <div className="shot-inspector-current-output-label">Reference image</div>
+            {locationAsset?.imagePath && activeRunId ? (
+              <div className="shot-inspector-current-thumb">
+                <img
+                  src={mediaUrl(activeRunId, locationAsset.imagePath)}
+                  alt={locationName || "location"}
+                  className="shot-inspector-current-img"
+                />
+                {isLocationInFlight && (
+                  <div className="shot-inspector-current-overlay">
+                    <span className="badge badge-in_progress">
+                      {progressLabel(
+                        latestLocationItem ? itemProgress[latestLocationItem.id] : undefined,
+                      )}
+                    </span>
+                  </div>
+                )}
+                {isLocationFailed && (
+                  <div className="shot-inspector-current-overlay shot-inspector-current-overlay-failed">
+                    <span className="badge badge-failed">Failed</span>
+                    {latestLocationItem?.error && (
+                      <div className="shot-inspector-current-error">
+                        {latestLocationItem.error}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : isLocationInFlight ? (
+              <div className="shot-inspector-current-placeholder">
+                <span className="badge badge-in_progress">
+                  {progressLabel(
+                    latestLocationItem ? itemProgress[latestLocationItem.id] : undefined,
+                  )}
+                </span>
+                <div className="shot-inspector-current-placeholder-hint">
+                  Generating first version…
+                </div>
+              </div>
+            ) : isLocationFailed ? (
+              <div className="shot-inspector-current-placeholder">
+                <span className="badge badge-failed">Failed</span>
+                {latestLocationItem?.error && (
+                  <div className="shot-inspector-current-error">
+                    {latestLocationItem.error}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="shot-inspector-empty">No reference image yet.</div>
+            )}
+          </div>
+        </div>
+      ),
+    },
     {
       id: "live-location",
       title: "Live location",

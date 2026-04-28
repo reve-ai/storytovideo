@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { UIMessage } from "ai";
 
 import { useRunStore } from "../../stores/run-store";
-import { usePipelineStore, type WorkItem } from "../../stores/pipeline-store";
+import { usePipelineStore, type ItemProgress, type WorkItem } from "../../stores/pipeline-store";
 import {
   isShotDraft,
   selectSession,
@@ -50,6 +50,33 @@ function findItemsByKey(
   return out;
 }
 
+function pickLatest(items: WorkItem[]): WorkItem | null {
+  if (items.length === 0) return null;
+  return items.reduce((best, cur) => (best === null || cur.version > best.version ? cur : best), null as WorkItem | null);
+}
+
+function pickLatestCompleted(items: WorkItem[]): WorkItem | null {
+  return pickLatest(items.filter((i) => i.status === "completed"));
+}
+
+function progressLabel(progress: ItemProgress | undefined): string {
+  if (!progress) return "Regenerating…";
+  if (progress.status === "pending") {
+    return progress.queuePosition !== undefined
+      ? `Queued (position ${progress.queuePosition})`
+      : "Queued";
+  }
+  if (progress.progress !== undefined) {
+    const pct = Math.round(progress.progress * 100);
+    const stepStr =
+      progress.step !== undefined && progress.totalSteps !== undefined
+        ? ` · step ${progress.step}/${progress.totalSteps}`
+        : "";
+    return `Regenerating ${pct}%${stepStr}`;
+  }
+  return "Regenerating…";
+}
+
 function extractToolCalls(messages: UIMessage[]): ToolCallEntry[] {
   const out: ToolCallEntry[] = [];
   for (const m of messages) {
@@ -81,6 +108,7 @@ export default function ShotInspector({
   const activeRunId = useRunStore((s) => s.activeRunId);
   const assets = usePipelineStore((s) => s.assets);
   const queues = usePipelineStore((s) => s.queues);
+  const itemProgress = usePipelineStore((s) => s.itemProgress);
   const session = useChatSessionStore((s) => selectSession(s, runId, scope, scopeKey));
 
   const liveShot = (session?.scopeContext?.liveShot as Record<string, unknown> | null | undefined) ?? null;
@@ -122,14 +150,24 @@ export default function ShotInspector({
     return { name: locationName, description: a?.description ?? "", imagePath: a?.imagePath ?? null };
   }, [locationName, assets]);
 
-  const downstream = useMemo(() => {
-    const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
-    const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
-    return [
-      ...findItemsByKey(queues, frameKey),
-      ...findItemsByKey(queues, videoKey),
-    ];
-  }, [queues, sceneNumber, shotInScene]);
+  const frameItems = useMemo(
+    () => findItemsByKey(queues, `frame:scene:${sceneNumber}:shot:${shotInScene}`),
+    [queues, sceneNumber, shotInScene],
+  );
+  const videoItems = useMemo(
+    () => findItemsByKey(queues, `video:scene:${sceneNumber}:shot:${shotInScene}`),
+    [queues, sceneNumber, shotInScene],
+  );
+
+  const downstream = useMemo(
+    () => [...frameItems, ...videoItems],
+    [frameItems, videoItems],
+  );
+
+  const latestFrame = useMemo(() => pickLatest(frameItems), [frameItems]);
+  const latestCompletedFrame = useMemo(() => pickLatestCompleted(frameItems), [frameItems]);
+  const latestVideo = useMemo(() => pickLatest(videoItems), [videoItems]);
+  const latestCompletedVideo = useMemo(() => pickLatestCompleted(videoItems), [videoItems]);
 
   const toolCalls = useMemo(() => {
     const all = extractToolCalls(messages);
@@ -177,7 +215,137 @@ export default function ShotInspector({
     </div>
   );
 
+  const renderCurrentFrame = () => {
+    if (!activeRunId) return null;
+    const latest = latestFrame;
+    const completed = latestCompletedFrame;
+    const isInFlight =
+      latest != null && (latest.status === "pending" || latest.status === "in_progress");
+    const isFailed = latest != null && latest.status === "failed";
+    const thumbItem = completed ?? (isInFlight || isFailed ? null : latest);
+    const thumbPath = thumbItem?.outputs?.startPath as string | undefined;
+    return (
+      <div className="shot-inspector-current-output">
+        <div className="shot-inspector-current-output-label">First frame</div>
+        {thumbPath ? (
+          <div className="shot-inspector-current-thumb">
+            <img
+              src={mediaUrl(activeRunId, thumbPath)}
+              alt={`frame v${thumbItem?.version ?? "?"}`}
+              className="shot-inspector-current-img"
+            />
+            {isInFlight && (
+              <div className="shot-inspector-current-overlay">
+                <span className="badge badge-in_progress">
+                  {progressLabel(latest ? itemProgress[latest.id] : undefined)}
+                </span>
+              </div>
+            )}
+            {isFailed && (
+              <div className="shot-inspector-current-overlay shot-inspector-current-overlay-failed">
+                <span className="badge badge-failed">Failed</span>
+                {latest?.error && (
+                  <div className="shot-inspector-current-error">{latest.error}</div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : isInFlight ? (
+          <div className="shot-inspector-current-placeholder">
+            <span className="badge badge-in_progress">
+              {progressLabel(latest ? itemProgress[latest.id] : undefined)}
+            </span>
+            <div className="shot-inspector-current-placeholder-hint">
+              Generating first version…
+            </div>
+          </div>
+        ) : isFailed ? (
+          <div className="shot-inspector-current-placeholder">
+            <span className="badge badge-failed">Failed</span>
+            {latest?.error && (
+              <div className="shot-inspector-current-error">{latest.error}</div>
+            )}
+          </div>
+        ) : (
+          <div className="shot-inspector-empty">No frame yet.</div>
+        )}
+      </div>
+    );
+  };
+
+  const renderCurrentVideo = () => {
+    if (!activeRunId) return null;
+    const latest = latestVideo;
+    const completed = latestCompletedVideo;
+    const isInFlight =
+      latest != null && (latest.status === "pending" || latest.status === "in_progress");
+    const isFailed = latest != null && latest.status === "failed";
+    const videoItem = completed ?? (isInFlight || isFailed ? null : latest);
+    const videoPath = videoItem?.outputs?.path as string | undefined;
+    const posterPath = latestCompletedFrame?.outputs?.startPath as string | undefined;
+    return (
+      <div className="shot-inspector-current-output">
+        <div className="shot-inspector-current-output-label">Video</div>
+        {videoPath ? (
+          <div className="shot-inspector-current-thumb">
+            <video
+              controls
+              className="shot-inspector-current-video"
+              poster={posterPath ? mediaUrl(activeRunId, posterPath) : undefined}
+            >
+              <source src={mediaUrl(activeRunId, videoPath)} />
+            </video>
+            {isInFlight && (
+              <div className="shot-inspector-current-overlay">
+                <span className="badge badge-in_progress">
+                  {progressLabel(latest ? itemProgress[latest.id] : undefined)}
+                </span>
+              </div>
+            )}
+            {isFailed && (
+              <div className="shot-inspector-current-overlay shot-inspector-current-overlay-failed">
+                <span className="badge badge-failed">Failed</span>
+                {latest?.error && (
+                  <div className="shot-inspector-current-error">{latest.error}</div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : isInFlight ? (
+          <div className="shot-inspector-current-placeholder">
+            <span className="badge badge-in_progress">
+              {progressLabel(latest ? itemProgress[latest.id] : undefined)}
+            </span>
+            <div className="shot-inspector-current-placeholder-hint">
+              Generating first version…
+            </div>
+          </div>
+        ) : isFailed ? (
+          <div className="shot-inspector-current-placeholder">
+            <span className="badge badge-failed">Failed</span>
+            {latest?.error && (
+              <div className="shot-inspector-current-error">{latest.error}</div>
+            )}
+          </div>
+        ) : (
+          <div className="shot-inspector-empty">No video yet.</div>
+        )}
+      </div>
+    );
+  };
+
   const sections: ContextInspectorSection[] = [
+    {
+      id: "current-outputs",
+      title: "Current outputs",
+      defaultOpen: true,
+      render: () => (
+        <div className="shot-inspector-current-outputs">
+          {renderCurrentFrame()}
+          {renderCurrentVideo()}
+        </div>
+      ),
+    },
     {
       id: "context",
       title: "Context",
