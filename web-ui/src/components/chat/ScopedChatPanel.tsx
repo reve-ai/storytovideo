@@ -151,7 +151,10 @@ export default function ScopedChatPanel({
   // When a fresh sandbox preview is available, smart-apply will promote it
   // instead of regenerating — surface that as "Apply (Fast)" so the user
   // knows the click is cheap.
-  const fastApplyAvailable = hasDraft && hasPromotablePreview(draft);
+  const fastApplyAvailable = hasPromotablePreview(draft);
+  // A preview-only draft (no field edits, but a fresh preview) is still
+  // applyable via the canonical apply path.
+  const canApply = hasDraft || fastApplyAvailable;
 
   const handleSubmit = async (msg: PromptInputMessage) => {
     const text = msg.text?.trim();
@@ -261,10 +264,10 @@ export default function ScopedChatPanel({
               <div className="shot-chat-apply">
                 <button
                   className="primary"
-                  disabled={!hasDraft || busy}
+                  disabled={!canApply || busy}
                   onClick={handleApply}
                   title={
-                    !hasDraft
+                    !canApply
                       ? "No staged changes"
                       : fastApplyAvailable
                         ? "Apply: a fresh preview will be promoted instead of regenerated"
@@ -272,7 +275,7 @@ export default function ScopedChatPanel({
                   }
                 >
                   {fastApplyAvailable ? "Apply (use preview)" : "Apply"}
-                  {hasDraft ? ` (${draftCount})` : ""}
+                  {draftCount > 0 ? ` (${draftCount})` : ""}
                 </button>
                 {fastApplyAvailable && (
                   <span className="shot-chat-apply-hint">
@@ -282,7 +285,7 @@ export default function ScopedChatPanel({
               </div>
               <button
                 className="secondary"
-                disabled={!hasDraft || busy}
+                disabled={!canApply || busy}
                 onClick={handleDiscard}
               >
                 Discard
