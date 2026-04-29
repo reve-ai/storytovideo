@@ -14,6 +14,9 @@ export default defineConfig({
     },
   },
   server: {
+    fs: {
+      allow: [path.resolve(__dirname, "..")],
+    },
     port: 5173,
     allowedHosts: ["director.corp.reve.com"],
     proxy: {
