@@ -9,7 +9,6 @@ import { generateVideo } from "../../tools/generate-video.js";
 import type { Shot } from "../../types.js";
 import type { RunManager } from "../../queue/run-manager.js";
 import type { QueueManager } from "../../queue/queue-manager.js";
-import type { WorkItem } from "../../queue/types.js";
 import {
   ChatSessionStore,
   chatPreviewDir,
@@ -54,27 +53,6 @@ function loadDraft(ctx: ShotEditorContext): ShotDraft {
 
 function saveDraft(ctx: ShotEditorContext, draft: ShotDraft): void {
   ctx.store.setDraft("shot", ctx.scopeKey, ctx.runId, draft);
-}
-
-function findLatestActiveItem(qm: QueueManager, itemKey: string): WorkItem | null {
-  const items = qm.getItemsByKey(itemKey)
-    .filter((i) => i.status !== "superseded" && i.status !== "cancelled");
-  if (items.length === 0) return null;
-  return items.sort((a, b) => b.version - a.version)[0];
-}
-
-async function regenerateByKey(
-  ctx: ShotEditorContext,
-  itemKey: string,
-  directorsNote: string | undefined,
-): Promise<{ ok: true; newItemId: string; supersededItemId: string } | { error: string }> {
-  const latest = findLatestActiveItem(ctx.queueManager, itemKey);
-  if (!latest) return { error: `No active item to regenerate for ${itemKey}` };
-  const newInputs = directorsNote ? { ...latest.inputs, directorsNote } : undefined;
-  const newItem = ctx.runManager.redoItem(ctx.runId, latest.id, newInputs);
-  if (!newItem) return { error: `Failed to redo item ${latest.id}` };
-  await ctx.runManager.resumeRun(ctx.runId);
-  return { ok: true, newItemId: newItem.id, supersededItemId: latest.id };
 }
 
 const updateShotFieldsSchema = z.object({
@@ -194,13 +172,12 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
 
     replaceFrameImage: ({
       description:
-        "Register a pending start/end frame image replacement. The user must approve. For 'upload', the client should have already uploaded the image and provide its sandbox path.",
+        "Register a pending start/end frame image replacement. For 'upload', the client should have already uploaded the image and provide its sandbox path.",
       inputSchema: z.object({
         which: z.enum(["start", "end"]),
         source: z.enum(["upload", "url"]),
         data: z.string().describe("Either the uploaded sandbox path or the URL"),
       }),
-      needsApproval: true,
       execute: async (input: { which: "start" | "end"; source: "upload" | "url"; data: string }) => {
         const draft = loadDraft(ctx);
         const filtered = draft.pendingImageReplacements.filter((r) => r.which !== input.which);
@@ -217,9 +194,8 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
 
     previewFrame: ({
       description:
-        "Generate a frame preview using the current draft Shot. Writes only to the chat sandbox. Approval required.",
+        "Generate a frame preview using the current draft Shot. Writes only to the chat sandbox. Expensive — only call when the user explicitly asks.",
       inputSchema: z.object({ note: z.string().optional() }),
-      needsApproval: true,
       execute: async ({ note }: { note?: string }) => {
         const draft = loadDraft(ctx);
         const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
@@ -276,9 +252,8 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
 
     previewVideo: ({
       description:
-        "Generate a video preview using the current draft Shot and the latest frame preview (or canonical start frame). Writes only to the chat sandbox. Approval required.",
+        "Generate a video preview using the current draft Shot and the latest frame preview (or canonical start frame). Writes only to the chat sandbox. Expensive — only call when the user explicitly asks.",
       inputSchema: z.object({ note: z.string().optional() }),
-      needsApproval: true,
       execute: async ({ note }: { note?: string }) => {
         const draft = loadDraft(ctx);
         const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
@@ -355,28 +330,6 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
       },
     }),
 
-    regenerateFrame: ({
-      description:
-        "Re-roll the start frame for this shot using its current inputs. Optional directorsNote biases the regen prompt without changing the document. Use this when the user wants to retry the frame as-is, not when they want to change shot fields. If shot fields need changing, use updateShotFields + proposeApply instead.",
-      inputSchema: z.object({ directorsNote: z.string().optional() }),
-      needsApproval: true,
-      execute: async ({ directorsNote }: { directorsNote?: string }) => {
-        const itemKey = `frame:scene:${ctx.sceneNumber}:shot:${ctx.shotInScene}`;
-        return regenerateByKey(ctx, itemKey, directorsNote);
-      },
-    }),
-
-    regenerateVideo: ({
-      description:
-        "Re-roll the video for this shot using its current inputs. Optional directorsNote biases the regen prompt without changing the document. Use this when the user wants to retry the video as-is, not when they want to change shot fields. If shot fields need changing, use updateShotFields + proposeApply instead.",
-      inputSchema: z.object({ directorsNote: z.string().optional() }),
-      needsApproval: true,
-      execute: async ({ directorsNote }: { directorsNote?: string }) => {
-        const itemKey = `video:scene:${ctx.sceneNumber}:shot:${ctx.shotInScene}`;
-        return regenerateByKey(ctx, itemKey, directorsNote);
-      },
-    }),
-
     proposeApply: ({
       description:
         "Terminal tool. Call this when the draft is ready and the UI should show Apply / Discard. Always end the conversation by calling this.",
@@ -399,16 +352,17 @@ The Shot is part of a larger story analysis document. You can:
 - See available characters/locations/objects via getStoryContext.
 - See which downstream queue items would be regenerated via getDownstreamImpact.
 - Stage a partial update to the Shot via updateShotFields. This goes into a draft, not the live document.
-- Stage an image replacement via replaceFrameImage (requires user approval).
-- Generate a preview of the new start frame via previewFrame (requires approval). This writes to a sandbox.
-- Generate a preview of the new video via previewVideo (requires approval). Costly — only do this if the user explicitly asks.
-- Re-roll the canonical start frame via regenerateFrame, or the canonical video via regenerateVideo (both require approval). These re-run the existing pipeline item with the same inputs (optionally biased by a directorsNote) without changing the Shot document.
+- Stage an image replacement via replaceFrameImage.
+- Generate a preview of the new start frame via previewFrame, writing to a sandbox.
+- Generate a preview of the new video via previewVideo, writing to a sandbox.
+
+Previews are expensive — only call previewFrame / previewVideo when the user explicitly asks for a regenerated artifact, not as a default.
 
 Tool selection:
-- If the user wants to retry the current frame/video as-is (same shot fields, just roll again), use regenerateFrame / regenerateVideo. They do NOT modify the document and skip the Apply step.
-- If the user wants to change Shot fields (composition, prompts, dialogue, location, etc.), stage edits with updateShotFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
+- If the user wants to regenerate the frame or video (with or without changes), call previewFrame or previewVideo with an optional \`note\` to bias the prompt. Then call proposeApply. The user can apply the preview if they like it, or discard.
+- If the user wants to change Shot fields (composition, prompts, dialogue, location, etc.) without generating a preview, stage edits with updateShotFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
 
-Always finish field-editing work by calling proposeApply with a short summary of the staged changes. Pure regenerate-only requests do not need proposeApply if no draft fields were staged.
+Always finish by calling proposeApply with a short summary of the staged changes (or of the previews that are ready to promote).
 
 Never invent character/location/object names — only use those returned by getStoryContext. Validate before staging.`;
 
