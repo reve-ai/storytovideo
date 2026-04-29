@@ -34,6 +34,28 @@ function pickLatest(items: WorkItem[]): WorkItem | null {
   return items.reduce((best, cur) => (best === null || cur.version > best.version ? cur : best), null as WorkItem | null);
 }
 
+function shallowEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  return false;
+}
+
+function formatScalar(v: unknown): string {
+  if (v === undefined || v === null || v === "") return "";
+  if (Array.isArray(v)) return (v as unknown[]).map(String).join(", ");
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+}
+
+const LOCATION_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  visualDescription: "Visual description",
+};
+
 function progressLabel(progress: ItemProgress | undefined): string {
   if (!progress) return "Regenerating…";
   if (progress.status === "pending") {
@@ -113,6 +135,8 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
     session && isLocationDraft(session.draft) ? session.draft.locationFields : {};
   const pendingReferenceImage =
     session && isLocationDraft(session.draft) ? session.draft.pendingReferenceImage : null;
+  const previewArtifacts =
+    session && isLocationDraft(session.draft) ? session.draft.previewArtifacts : undefined;
   const intermediates = session?.intermediates ?? [];
 
   const toolCalls = useMemo(() => {
@@ -124,6 +148,35 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
     if (!liveLocation) return null;
     return { ...liveLocation, ...draftFields };
   }, [liveLocation, draftFields]);
+
+  // Per-field diffs between draft and canonical for inline Proposed rows.
+  const proposedField = (key: string): unknown | null => {
+    if (!(key in draftFields)) return null;
+    const proposed = draftFields[key];
+    if (shallowEqual(proposed, liveLocation?.[key])) return null;
+    return proposed;
+  };
+  const proposedName = proposedField("name");
+  const proposedVisualDescription = proposedField("visualDescription");
+
+  // Other (non-name/visualDescription) draft fields, surfaced as a list.
+  const pendingScalarFields = useMemo(() => {
+    const skip = new Set(["name", "visualDescription"]);
+    const out: { key: string; label: string; canonical: unknown; proposed: unknown }[] = [];
+    for (const key of Object.keys(draftFields)) {
+      if (skip.has(key)) continue;
+      const proposed = draftFields[key];
+      const canonical = liveLocation?.[key];
+      if (shallowEqual(proposed, canonical)) continue;
+      out.push({
+        key,
+        label: LOCATION_FIELD_LABELS[key] ?? key,
+        canonical,
+        proposed,
+      });
+    }
+    return out;
+  }, [draftFields, liveLocation]);
 
   const locationName = (liveLocation?.name as string | undefined) ?? scopeKey;
   const locationAsset = useMemo(
@@ -219,6 +272,19 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
               <div className="shot-inspector-empty">No reference image yet.</div>
             )}
           </div>
+          {previewArtifacts?.referenceImage && activeRunId && (
+            <div className="shot-inspector-current-output">
+              <div className="shot-inspector-current-output-label">Proposed reference image</div>
+              <div className="shot-inspector-current-thumb">
+                <span className="shot-inspector-proposed-badge">Proposed</span>
+                <img
+                  src={mediaUrl(activeRunId, previewArtifacts.referenceImage.sandboxPath)}
+                  alt="proposed reference image"
+                  className="shot-inspector-current-img"
+                />
+              </div>
+            </div>
+          )}
         </div>
       ),
     },
@@ -227,14 +293,48 @@ export default function LocationInspector({ runId, scope, scopeKey, messages }: 
       title: "Live location",
       defaultOpen: true,
       render: () => (
-        <dl className="inspector-dl">
-          <dt>Name</dt>
-          <dd>{(liveLocation?.name as string | undefined) ?? "—"}</dd>
-          <dt>Visual description</dt>
-          <dd style={{ whiteSpace: "pre-wrap" }}>
-            {(liveLocation?.visualDescription as string | undefined) ?? "—"}
-          </dd>
-        </dl>
+        <>
+          <dl className="inspector-dl">
+            <dt>Name</dt>
+            <dd>{(liveLocation?.name as string | undefined) ?? "—"}</dd>
+            {proposedName !== null && (
+              <dd>
+                <div className="shot-inspector-proposed-row">
+                  <span className="shot-inspector-proposed-label">Proposed</span>
+                  {formatScalar(proposedName) || <em className="shot-inspector-pending-canonical-empty">(empty)</em>}
+                </div>
+              </dd>
+            )}
+            <dt>Visual description</dt>
+            <dd style={{ whiteSpace: "pre-wrap" }}>
+              {(liveLocation?.visualDescription as string | undefined) ?? "—"}
+            </dd>
+            {proposedVisualDescription !== null && (
+              <dd>
+                <div className="shot-inspector-proposed-row">
+                  <span className="shot-inspector-proposed-label">Proposed</span>
+                  {formatScalar(proposedVisualDescription) || <em className="shot-inspector-pending-canonical-empty">(empty)</em>}
+                </div>
+              </dd>
+            )}
+          </dl>
+          {pendingScalarFields.map((f) => {
+            const canonicalText = formatScalar(f.canonical);
+            const proposedText = formatScalar(f.proposed);
+            return (
+              <div className="shot-inspector-pending-field" key={f.key}>
+                <div className="shot-inspector-group-label">{f.label}</div>
+                {canonicalText
+                  ? <div className="shot-inspector-pending-canonical">{canonicalText}</div>
+                  : <div className="shot-inspector-pending-canonical-empty">(empty)</div>}
+                <div className="shot-inspector-proposed-row">
+                  <span className="shot-inspector-proposed-label">Proposed</span>
+                  {proposedText || <em className="shot-inspector-pending-canonical-empty">(empty)</em>}
+                </div>
+              </div>
+            );
+          })}
+        </>
       ),
     },
     {

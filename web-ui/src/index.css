@@ -402,6 +402,58 @@ body {
   font-size: 0.75rem; color: var(--muted);
 }
 
+/* Proposed (staged but not yet applied) value rows */
+.shot-inspector-proposed-row {
+  margin-top: 0.2rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--orange);
+  background: var(--orange-dim);
+  border-radius: 0 3px 3px 0;
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.shot-inspector-proposed-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  color: var(--orange); margin-right: 0.4rem;
+  letter-spacing: 0.05em;
+}
+.shot-inspector-proposed-pool {
+  display: flex; flex-wrap: wrap; gap: 0.25rem;
+  margin-top: 0.2rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--orange);
+  background: var(--orange-dim);
+  border-radius: 0 3px 3px 0;
+}
+.shot-inspector-proposed-chip {
+  font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: rgba(251, 146, 60, 0.25); color: var(--text);
+  border: 1px solid rgba(251, 146, 60, 0.5);
+}
+.shot-inspector-proposed-empty-chip {
+  font-size: 0.7rem; color: var(--muted); font-style: italic;
+}
+.shot-inspector-proposed-badge {
+  position: absolute; top: 0.3rem; left: 0.3rem;
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  padding: 0.15rem 0.4rem; border-radius: 3px;
+  background: var(--orange); color: #1a1a1a;
+  letter-spacing: 0.05em; z-index: 1;
+}
+.shot-inspector-pending-field {
+  display: flex; flex-direction: column; gap: 0.1rem;
+  margin-top: 0.55rem;
+}
+.shot-inspector-pending-field:first-child { margin-top: 0; }
+.shot-inspector-pending-canonical {
+  font-size: 0.8rem; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.shot-inspector-pending-canonical-empty {
+  font-size: 0.8rem; color: var(--muted); font-style: italic;
+}
+
 /* Shot chat panel */
 .shot-chat {
   display: flex; flex-direction: column; gap: 0.5rem;

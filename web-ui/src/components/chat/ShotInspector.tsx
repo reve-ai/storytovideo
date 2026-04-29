@@ -77,6 +77,41 @@ function progressLabel(progress: ItemProgress | undefined): string {
   return "Regenerating…";
 }
 
+const SHOT_FIELD_LABELS: Record<string, string> = {
+  durationSeconds: "Duration (s)",
+  composition: "Composition",
+  location: "Location",
+  speaker: "Speaker",
+  dialogue: "Dialogue",
+  videoPrompt: "Video Prompt",
+  startFramePrompt: "Start Frame Prompt",
+  endFramePrompt: "End Frame Prompt",
+  actionPrompt: "Action Prompt",
+  soundEffects: "Sound Effects",
+  cameraDirection: "Camera Direction",
+  charactersPresent: "Characters Present",
+  objectsPresent: "Objects Present",
+  continuousFromPrevious: "Continuous From Previous",
+  skipped: "Skipped",
+};
+
+function shallowEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  return false;
+}
+
+function formatScalar(v: unknown): string {
+  if (v === undefined || v === null || v === "") return "";
+  if (Array.isArray(v)) return (v as unknown[]).map(String).join(", ");
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+}
+
 function extractToolCalls(messages: UIMessage[]): ToolCallEntry[] {
   const out: ToolCallEntry[] = [];
   for (const m of messages) {
@@ -121,14 +156,26 @@ export default function ShotInspector({
   } | null | undefined) ?? null;
   const draftFields: Record<string, unknown> =
     session && isShotDraft(session.draft) ? session.draft.shotFields : {};
+  const previewArtifacts =
+    session && isShotDraft(session.draft) ? session.draft.previewArtifacts : undefined;
   const intermediates = session?.intermediates ?? [];
 
-  const characterNames = (draftFields.charactersPresent as string[] | undefined)
-    ?? (liveShot?.charactersPresent as string[] | undefined) ?? [];
-  const objectNames = (draftFields.objectsPresent as string[] | undefined)
-    ?? (liveShot?.objectsPresent as string[] | undefined) ?? [];
-  const locationName = (draftFields.location as string | undefined)
-    ?? (liveShot?.location as string | undefined) ?? "";
+  const characterNames = (liveShot?.charactersPresent as string[] | undefined) ?? [];
+  const objectNames = (liveShot?.objectsPresent as string[] | undefined) ?? [];
+  const locationName = (liveShot?.location as string | undefined) ?? "";
+
+  const proposedCharacterNames =
+    "charactersPresent" in draftFields && !shallowEqual(draftFields.charactersPresent, liveShot?.charactersPresent)
+      ? ((draftFields.charactersPresent as string[] | undefined) ?? [])
+      : null;
+  const proposedObjectNames =
+    "objectsPresent" in draftFields && !shallowEqual(draftFields.objectsPresent, liveShot?.objectsPresent)
+      ? ((draftFields.objectsPresent as string[] | undefined) ?? [])
+      : null;
+  const proposedLocationName =
+    "location" in draftFields && !shallowEqual(draftFields.location, liveShot?.location)
+      ? ((draftFields.location as string | undefined) ?? "")
+      : null;
 
   const characters: AssetRow[] = useMemo(
     () => characterNames.map((n) => {
@@ -178,6 +225,26 @@ export default function ShotInspector({
     if (!liveShot) return null;
     return { ...liveShot, ...draftFields };
   }, [liveShot, draftFields]);
+
+  // Scalar (non-array, non-context) draft fields that differ from canonical.
+  // Excludes charactersPresent/objectsPresent/location, which render in Context.
+  const pendingScalarFields = useMemo(() => {
+    const skip = new Set(["charactersPresent", "objectsPresent", "location"]);
+    const out: { key: string; label: string; canonical: unknown; proposed: unknown }[] = [];
+    for (const key of Object.keys(draftFields)) {
+      if (skip.has(key)) continue;
+      const proposed = draftFields[key];
+      const canonical = liveShot?.[key];
+      if (shallowEqual(proposed, canonical)) continue;
+      out.push({
+        key,
+        label: SHOT_FIELD_LABELS[key] ?? key,
+        canonical,
+        proposed,
+      });
+    }
+    return out;
+  }, [draftFields, liveShot]);
 
   const renderAsset = (row: AssetRow, label: string) => (
     <div className="shot-inspector-asset" key={`${label}-${row.name}`}>
@@ -334,6 +401,62 @@ export default function ShotInspector({
     );
   };
 
+  const renderProposedFrame = () => {
+    if (!activeRunId || !previewArtifacts?.frame) return null;
+    const path = previewArtifacts.frame.sandboxPath;
+    return (
+      <div className="shot-inspector-current-output">
+        <div className="shot-inspector-current-output-label">Proposed first frame</div>
+        <div className="shot-inspector-current-thumb">
+          <span className="shot-inspector-proposed-badge">Proposed</span>
+          <img
+            src={mediaUrl(activeRunId, path)}
+            alt="proposed frame"
+            className="shot-inspector-current-img"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderProposedVideo = () => {
+    if (!activeRunId || !previewArtifacts?.video) return null;
+    const path = previewArtifacts.video.sandboxPath;
+    const posterPath = previewArtifacts.frame?.sandboxPath
+      ?? (latestCompletedFrame?.outputs?.startPath as string | undefined);
+    return (
+      <div className="shot-inspector-current-output">
+        <div className="shot-inspector-current-output-label">Proposed video</div>
+        <div className="shot-inspector-current-thumb">
+          <span className="shot-inspector-proposed-badge">Proposed</span>
+          <video
+            controls
+            className="shot-inspector-current-video"
+            poster={posterPath ? mediaUrl(activeRunId, posterPath) : undefined}
+          >
+            <source src={mediaUrl(activeRunId, path)} />
+          </video>
+        </div>
+      </div>
+    );
+  };
+
+  const renderProposedChipPool = (label: string, names: string[]) => (
+    <div className="shot-inspector-group">
+      <div className="shot-inspector-group-label">
+        <span className="shot-inspector-proposed-label">Proposed</span>
+        {label} ({names.length})
+      </div>
+      <div className="shot-inspector-proposed-pool">
+        {names.length === 0
+          ? <span className="shot-inspector-proposed-empty-chip">none</span>
+          : names.map((n) => (
+              <span className="shot-inspector-proposed-chip" key={n}>{n}</span>
+            ))}
+      </div>
+    </div>
+  );
+
   const sections: ContextInspectorSection[] = [
     {
       id: "current-outputs",
@@ -342,7 +465,9 @@ export default function ShotInspector({
       render: () => (
         <div className="shot-inspector-current-outputs">
           {renderCurrentFrame()}
+          {renderProposedFrame()}
           {renderCurrentVideo()}
+          {renderProposedVideo()}
         </div>
       ),
     },
@@ -358,24 +483,62 @@ export default function ShotInspector({
               {renderAsset(location, "loc")}
             </div>
           )}
+          {proposedLocationName !== null && (
+            <div className="shot-inspector-proposed-row">
+              <span className="shot-inspector-proposed-label">Proposed location</span>
+              {proposedLocationName || <em className="shot-inspector-pending-canonical-empty">(none)</em>}
+            </div>
+          )}
           {characters.length > 0 && (
             <div className="shot-inspector-group">
               <div className="shot-inspector-group-label">Characters</div>
               {characters.map((c) => renderAsset(c, "char"))}
             </div>
           )}
+          {proposedCharacterNames !== null && renderProposedChipPool("characters", proposedCharacterNames)}
           {objects.length > 0 && (
             <div className="shot-inspector-group">
               <div className="shot-inspector-group-label">Objects</div>
               {objects.map((o) => renderAsset(o, "obj"))}
             </div>
           )}
-          {!location && characters.length === 0 && objects.length === 0 && (
+          {proposedObjectNames !== null && renderProposedChipPool("objects", proposedObjectNames)}
+          {!location && characters.length === 0 && objects.length === 0
+            && proposedLocationName === null
+            && proposedCharacterNames === null
+            && proposedObjectNames === null && (
             <div className="shot-inspector-empty">No characters, objects, or location set.</div>
           )}
         </>
       ),
     },
+    ...(pendingScalarFields.length > 0
+      ? [{
+          id: "pending-edits",
+          title: `Pending edits (${pendingScalarFields.length})`,
+          defaultOpen: true,
+          render: () => (
+            <>
+              {pendingScalarFields.map((f) => {
+                const canonicalText = formatScalar(f.canonical);
+                const proposedText = formatScalar(f.proposed);
+                return (
+                  <div className="shot-inspector-pending-field" key={f.key}>
+                    <div className="shot-inspector-group-label">{f.label}</div>
+                    {canonicalText
+                      ? <div className="shot-inspector-pending-canonical">{canonicalText}</div>
+                      : <div className="shot-inspector-pending-canonical-empty">(empty)</div>}
+                    <div className="shot-inspector-proposed-row">
+                      <span className="shot-inspector-proposed-label">Proposed</span>
+                      {proposedText || <em className="shot-inspector-pending-canonical-empty">(empty)</em>}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          ),
+        }]
+      : []),
     {
       id: "story-context",
       title: "Story-wide context",
