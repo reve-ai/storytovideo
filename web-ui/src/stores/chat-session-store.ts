@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { UIMessage } from "ai";
+import { useChatDraftsStore } from "./chat-drafts-store";
 
 export type ChatScope = "shot" | "story" | "location";
 
@@ -192,6 +193,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
       // Re-fetch the now-empty session.
       await get().fetchSession(runId, scope, scopeKey);
+      void useChatDraftsStore.getState().fetchDrafts(runId);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -205,6 +207,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
       await get().fetchSession(runId, scope, scopeKey);
+      void useChatDraftsStore.getState().fetchDrafts(runId);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -222,6 +225,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
       await get().fetchSession(runId, scope, scopeKey);
+      void useChatDraftsStore.getState().fetchDrafts(runId);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -243,6 +247,7 @@ export const useChatSessionStore = create<ChatSessionStore>((set, get) => ({
         return { sessions: nextSessions };
       });
       await get().fetchSession(runId, scope, scopeKey);
+      void useChatDraftsStore.getState().fetchDrafts(runId);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };

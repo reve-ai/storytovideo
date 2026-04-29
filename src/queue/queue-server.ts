@@ -42,6 +42,7 @@ import {
   handleChatCancel,
   handleChatReset,
   handleChatActive,
+  handleChatDraftsList,
 } from "../chat/route-handler.js";
 
 // ---------------------------------------------------------------------------
@@ -816,6 +817,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       // GET /api/runs/:id/chats/active — list runners currently active for this run
       if (method === "GET" && action === "chats" && pathParts.length === 5 && pathParts[4] === "active") {
         handleChatActive(runManager, runId, res);
+        return;
+      }
+
+      // GET /api/runs/:id/chat-drafts — enumerate scopes whose persisted session has an unapplied draft
+      if (method === "GET" && action === "chat-drafts" && pathParts.length === 4) {
+        handleChatDraftsList(runManager, runId, res);
         return;
       }
 

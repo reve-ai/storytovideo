@@ -6,7 +6,7 @@ import {
 } from "ai";
 
 import type { RunManager } from "../queue/run-manager.js";
-import { ChatSessionStore, chatPreviewDir } from "./session-store.js";
+import { ChatSessionStore, chatPreviewDir, listChatDrafts } from "./session-store.js";
 import { getScopeRegistration } from "./scope-registry.js";
 import "./scopes/index.js";
 import { clearEvents, readEvents } from "./event-log.js";
@@ -320,6 +320,22 @@ export function handleChatActive(
   const run = runManager.getRun(runId);
   if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
   sendJson(res, 200, { runId, chats: listActiveChats(runId) });
+}
+
+/**
+ * GET /api/runs/:id/chat-drafts — enumerate every chat scope in the run whose
+ * persisted session has a non-null draft. Powers the story-view "unapplied
+ * changes" badges so the user can spot and return to in-flight edits.
+ */
+export function handleChatDraftsList(
+  runManager: RunManager,
+  runId: string,
+  res: ServerResponse,
+): void {
+  const run = runManager.getRun(runId);
+  if (!run) { sendJson(res, 404, { error: `Run not found: ${runId}` }); return; }
+  const drafts = listChatDrafts(run.outputDir);
+  sendJson(res, 200, { drafts });
 }
 
 /**

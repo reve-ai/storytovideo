@@ -1,7 +1,9 @@
 import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
+import { useHasDraft } from "../stores/chat-drafts-store";
 import ShotCard from "./ShotCard";
+import DraftBadge from "./DraftBadge";
 
 interface SceneData {
   frames: Map<number, WorkItem>;
@@ -27,6 +29,7 @@ export default function SceneSection({
   const skippedShots = usePipelineStore(s => s.skippedShots);
   const existingShots = usePipelineStore(s => s.existingShots);
   const openLocationChat = useUIStore(s => s.openLocationChat);
+  const locationHasDraft = useHasDraft("location", location || null);
   const hasExistingShots = Object.keys(existingShots).length > 0;
   const shotNums = new Set([
     ...sceneData.frames.keys(),
@@ -51,6 +54,7 @@ export default function SceneSection({
             title="Edit location"
           >
             📍 {location}
+            {locationHasDraft && <DraftBadge />}
           </button>
         )}
       </div>

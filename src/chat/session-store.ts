@@ -1,9 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
 import { join, resolve, isAbsolute } from "path";
 import { randomUUID } from "crypto";
 import type { UIMessage } from "ai";
 import {
   emptyChatSession,
+  isLocationDraft,
+  isShotDraft,
+  isStoryDraft,
   type ChatDraft,
   type ChatRunStatus,
   type ChatScope,
@@ -132,4 +135,74 @@ export class ChatSessionStore {
     this.save(next);
     return next;
   }
+}
+
+export interface DraftSummary {
+  scope: ChatScope;
+  scopeKey: string;
+  hasFieldEdits: boolean;
+  hasPreview: boolean;
+  lastSavedAt: string;
+}
+
+function draftHasFieldEdits(draft: ChatDraft): boolean {
+  if (isShotDraft(draft)) return Object.keys(draft.shotFields).length > 0;
+  if (isLocationDraft(draft)) return Object.keys(draft.locationFields).length > 0;
+  if (isStoryDraft(draft)) return Object.keys(draft.storyFields).length > 0;
+  return false;
+}
+
+function draftHasPreview(draft: ChatDraft): boolean {
+  if (isShotDraft(draft)) {
+    const a = draft.previewArtifacts;
+    return Boolean(a?.frame || a?.video);
+  }
+  if (isLocationDraft(draft)) {
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  return false;
+}
+
+/**
+ * Scan `<outputDir>/chats/<scope>/*.json` and return one row per session whose
+ * persisted `draft` is non-null. Used by `GET /api/runs/:id/chat-drafts` to
+ * power the story-view "unapplied changes" badges.
+ */
+export function listChatDrafts(outputDir: string): DraftSummary[] {
+  const root = join(resolveOutputDir(outputDir), "chats");
+  if (!existsSync(root)) return [];
+  const scopes: ChatScope[] = ["shot", "location", "story"];
+  const out: DraftSummary[] = [];
+  for (const scope of scopes) {
+    const scopeDir = join(root, scope);
+    if (!existsSync(scopeDir)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(scopeDir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      const filePath = join(scopeDir, entry);
+      try {
+        if (!statSync(filePath).isFile()) continue;
+        const raw = readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw) as Partial<ChatSession>;
+        const draft = parsed.draft;
+        if (!draft) continue;
+        const scopeKey = entry.slice(0, -".json".length);
+        out.push({
+          scope,
+          scopeKey,
+          hasFieldEdits: draftHasFieldEdits(draft),
+          hasPreview: draftHasPreview(draft),
+          lastSavedAt: parsed.lastSavedAt ?? new Date(0).toISOString(),
+        });
+      } catch (err) {
+        console.error(`[listChatDrafts] failed to read ${filePath}:`, err);
+      }
+    }
+  }
+  return out;
 }
