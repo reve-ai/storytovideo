@@ -296,6 +296,59 @@ async function testPreviewOnlyDraftPromotesWithoutFieldEdits(): Promise<void> {
   console.log('  ✓ preview-only draft (no field edits, no proposeApply) promotes; no redoItem');
 }
 
+async function testFieldEditsThenVideoPreviewPromotesNoRedo(): Promise<void> {
+  // Reproduces run 6695c2fc / shot 1-10. Agent staged several updateShotFields
+  // (durationSeconds + startFramePrompt + videoPrompt + soundEffects +
+  // cameraDirection + dialogue) and finished with previewVideo. The user
+  // never asked for a frame regen, so no previewFrame ran. Apply must promote
+  // the video and not trigger a video regen via the frame-redo cascade.
+  const dir = mkdtempSync(join(tmpdir(), 'apply-fields-then-preview-'));
+  const qm = new QueueManager('run-1', '(test)', dir);
+  const liveShot = makeShot();
+  qm.setStoryAnalysis(makeAnalysis(liveShot));
+  qm.addItem({ type: 'generate_frame', queue: 'image', itemKey: 'frame:scene:1:shot:1', inputs: { shot: liveShot } });
+  qm.addItem({
+    type: 'generate_video', queue: 'video', itemKey: 'video:scene:1:shot:1',
+    inputs: { shot: liveShot, startFramePath: 'frames/1.png' },
+  });
+
+  // Accumulated draft fields, including the frame-affecting startFramePrompt.
+  const draftFields: Partial<Shot> = {
+    durationSeconds: 12,
+    startFramePrompt: 'Medium shot inside the cab, door closing',
+    videoPrompt: 'Frank slams door, camera sweeps to windshield, starts the truck',
+    soundEffects: 'Door slam, engine roar',
+    cameraDirection: 'Side then sweep to front windshield',
+    dialogue: "Don't hang up, Emma. I'm calling the police on another phone.",
+  };
+  // previewVideo's hash uses the merged shot (live + draft), exactly as
+  // shot-editor.ts builds it via mergedShot().
+  const mergedShot = { ...liveShot, ...draftFields } as Shot;
+  const previewHash = shotVideoInputsHash({ artStyle: 'cinematic', shot: mergedShot });
+
+  const sandboxRel = 'chat-sandbox/shot/1-1/preview.mp4';
+  mkdirSync(join(dir, 'chat-sandbox/shot/1-1'), { recursive: true });
+  writeFileSync(join(dir, sandboxRel), 'fake-video-bytes');
+
+  const draft: ShotDraft = {
+    shotFields: draftFields,
+    pendingImageReplacements: [],
+    previewArtifacts: {
+      video: { sandboxPath: sandboxRel, createdAt: new Date().toISOString(), inputsHash: previewHash },
+    },
+  };
+
+  const spy: RedoSpy = { calls: 0, redoneItemKeys: [] };
+  const runManager = makeStubRunManager(qm, 'run-1', spy);
+  const result = await applyShotDraft(runManager, 'run-1', 1, 1, draft);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.promoted, ['video'], 'video should have been promoted');
+  assert.equal(spy.calls, 0,
+    `redoItem must not run when video preview is promoted (got redos on: ${spy.redoneItemKeys.join(', ') || '<none>'})`);
+  console.log('  ✓ field edits + fresh video preview promotes; no redoItem cascade');
+}
+
 async function main(): Promise<void> {
   console.log('Apply promotion tests:');
   await testPromotionTakesOverWhenPreviewIsFresh();
@@ -304,6 +357,7 @@ async function main(): Promise<void> {
   await testVideoOnlyFieldWithoutPreviewRedosVideoOnly();
   await testFrameAffectingFieldRedosFrame();
   await testPreviewOnlyDraftPromotesWithoutFieldEdits();
+  await testFieldEditsThenVideoPreviewPromotesNoRedo();
   console.log('\nAll tests passed ✓');
 }
 

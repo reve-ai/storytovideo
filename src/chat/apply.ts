@@ -277,6 +277,13 @@ export async function applyShotDraft(
   //      just-promoted video preview.
   //    Skipped when image replacements already redo the frame, or when the
   //    matching layer was promoted from a fresh preview.
+  //    Also skipped when the video was promoted: the user previewed and
+  //    accepted a video that was generated against the canonical start frame
+  //    (or the latest preview frame), so a frame redo here would cascade via
+  //    seedAfterGenerateFrame into a new pending video item and Grok would
+  //    regenerate the clip we just promoted. The canonical frame stays at
+  //    whatever the promoted video was conditioned on; the user can ask for
+  //    a fresh frame explicitly if they want one.
   if (fieldKeys.length > 0 && draft.pendingImageReplacements.length === 0) {
     const frameAffectingFields = new Set<keyof Shot>([
       "composition", "startFramePrompt", "endFramePrompt",
@@ -299,7 +306,7 @@ export async function applyShotDraft(
       ?.shots.find((s) => s.shotInScene === shotInScene);
 
     if (activeFrame) {
-      if (frameChanged && !promotedFrame) {
+      if (frameChanged && !promotedFrame && !promotedVideo) {
         const newInputs = updatedShot
           ? { ...activeFrame.inputs, shot: updatedShot }
           : { ...activeFrame.inputs };
