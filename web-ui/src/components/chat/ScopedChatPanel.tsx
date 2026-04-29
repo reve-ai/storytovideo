@@ -3,7 +3,6 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
-  lastAssistantMessageIsCompleteWithToolCalls,
   type UIMessage,
 } from "ai";
 
@@ -76,8 +75,15 @@ export default function ScopedChatPanel({
   const { messages, sendMessage, status, setMessages, error, addToolApprovalResponse, resumeStream } = useChat({
     id: `${scope}-${runId}-${scopeKey}`,
     transport,
+    // Only auto-resend after a tool approval response — the server needs the
+    // updated message to continue the agent past the approval gate. We
+    // intentionally do NOT include `lastAssistantMessageIsCompleteWithToolCalls`:
+    // every tool in this app executes server-side inside the runner, which runs
+    // the full agent loop and emits `finish` on its own. The default predicate
+    // would re-POST after each terminal tool call (e.g. `proposeApply`),
+    // sending an unchanged history that the server returns 204 for, which leaves
+    // `useChat.status` stuck and the activity indicator hung at "Thinking…".
     sendAutomaticallyWhen: ({ messages: msgs }) =>
-      lastAssistantMessageIsCompleteWithToolCalls({ messages: msgs }) ||
       lastAssistantMessageIsCompleteWithApprovalResponses({ messages: msgs }),
   });
 
