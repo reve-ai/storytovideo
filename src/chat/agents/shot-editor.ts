@@ -16,6 +16,7 @@ import {
 } from "../session-store.js";
 import { emptyShotDraft, isShotDraft, type ShotDraft } from "../types.js";
 import {
+  FRAME_AFFECTING_SHOT_FIELDS,
   shotFrameInputsHash,
   shotVideoInputsHash,
   shotFrameFieldsDiffer,
@@ -445,6 +446,17 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
   return tools as unknown as ToolSet;
 }
 
+// Sourced from the canonical export so the prompt cannot drift from the
+// set apply.ts / pickVideoStartFrame use to decide frame-vs-video redo.
+const FRAME_AFFECTING_LIST = FRAME_AFFECTING_SHOT_FIELDS.join(", ");
+// No canonical export exists for video-only fields — they are the
+// remaining writable Shot fields in updateShotFieldsSchema. If a
+// VIDEO_ONLY_AFFECTING_SHOT_FIELDS export is added to preview-hash.ts
+// later, interpolate it here too. Keep this list in sync with the
+// schema until then.
+const VIDEO_ONLY_LIST =
+  "durationSeconds, videoPrompt, actionPrompt, dialogue, speaker, soundEffects, cameraDirection";
+
 const SYSTEM_INSTRUCTIONS = `You are an editor for a single Shot in an AI video pipeline.
 
 The Shot is part of a larger story analysis document. You can:
@@ -457,6 +469,8 @@ The Shot is part of a larger story analysis document. You can:
 - Generate a preview of the new video via previewVideo, writing to a sandbox.
 
 Previews are expensive — only call previewFrame / previewVideo when the user explicitly asks for a regenerated artifact, not as a default.
+
+Minimal-change discipline. Only modify fields the user explicitly asked to change. Treat the existing field values as the source of truth and edit narrowly. Frame-affecting fields (${FRAME_AFFECTING_LIST}) trigger a frame regeneration that cascades into a video regeneration when applied. Video-only fields (${VIDEO_ONLY_LIST}) only trigger a video regeneration. When the user asks about action, dialogue, timing, sound, or camera direction, edit only the relevant video-only fields and leave the frame-affecting fields alone — rewriting composition or startFramePrompt to "match" a dialogue tweak burns a frame and a video for no user-visible benefit. When the user does ask about framing, blocking, who/what is in the shot, or location, editing the relevant frame-affecting fields is correct and expected. When in doubt about whether an edit needs a frame-affecting field, ask the user before staging it.
 
 Tool selection:
 - If the user wants to regenerate the frame or video (with or without changes), call previewFrame or previewVideo with an optional \`note\` to bias the prompt. Then call proposeApply. The user can apply the preview if they like it, or discard.

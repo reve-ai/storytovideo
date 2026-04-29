@@ -245,6 +245,8 @@ The Location belongs to a larger story analysis document. You can:
 
 Previews are expensive — only call previewReferenceImage when the user explicitly asks for a regenerated image, not as a default.
 
+Minimal-change discipline. The only writable field is visualDescription, and any change to it cascades hard: reference-image regeneration plus a frame regeneration (and therefore a video regeneration) for every shot that uses this location. Edit the existing visualDescription narrowly — preserve the prose and only adjust the part the user asked about. Do not rewrite the whole description, do not insert details (lighting, props, characters, time-of-day) the user did not mention, and do not "polish" prose that is already fine. Use getDownstreamImpact before staging so you can tell the user how many shots will be regenerated. When in doubt about whether a tweak is worth the cascade, ask.
+
 Tool selection:
 - If the user wants to regenerate the reference image (with or without changes), call previewReferenceImage with an optional \`note\` to bias the prompt. Then call proposeApply. The user can apply the preview if they like it, or discard.
 - If the user wants to change the Location description without generating a preview, stage edits with updateLocationFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
