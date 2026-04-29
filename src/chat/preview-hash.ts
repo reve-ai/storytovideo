@@ -40,6 +40,31 @@ export function shotVideoInputsHash(opts: {
   return sha256Hex(stableStringify({ kind: "video", artStyle: opts.artStyle, shot: opts.shot }));
 }
 
+/** Shot fields whose values flow into frame generation. Edits to any of
+ *  these invalidate the canonical start frame. apply.ts uses this set to
+ *  pick frame-vs-video redo, and `pickVideoStartFrame` uses it to decide
+ *  whether previewVideo can reuse the canonical frame as-is. */
+export const FRAME_AFFECTING_SHOT_FIELDS: ReadonlyArray<keyof Shot> = [
+  "composition",
+  "startFramePrompt",
+  "endFramePrompt",
+  "charactersPresent",
+  "objectsPresent",
+  "location",
+  "continuousFromPrevious",
+  "skipped",
+];
+
+/** True when `merged` differs from `live` on any frame-affecting field. */
+export function shotFrameFieldsDiffer(live: Shot, merged: Shot): boolean {
+  for (const key of FRAME_AFFECTING_SHOT_FIELDS) {
+    if (JSON.stringify(live[key] ?? null) !== JSON.stringify(merged[key] ?? null)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Hash of the inputs that drive a reference-image preview for a location. */
 export function locationReferenceInputsHash(opts: {
   artStyle: string;

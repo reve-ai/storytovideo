@@ -15,7 +15,11 @@ import {
   chatPreviewRelative,
 } from "../session-store.js";
 import { emptyShotDraft, isShotDraft, type ShotDraft } from "../types.js";
-import { shotFrameInputsHash, shotVideoInputsHash } from "../preview-hash.js";
+import {
+  shotFrameInputsHash,
+  shotVideoInputsHash,
+  shotFrameFieldsDiffer,
+} from "../preview-hash.js";
 
 export interface ShotEditorContext {
   runId: string;
@@ -53,6 +57,129 @@ function loadDraft(ctx: ShotEditorContext): ShotDraft {
 
 function saveDraft(ctx: ShotEditorContext, draft: ShotDraft): void {
   ctx.store.setDraft("shot", ctx.scopeKey, ctx.runId, draft);
+}
+
+/** Decision returned by `pickVideoStartFrame`. The previewVideo executor
+ *  dispatches on `kind` to decide what to feed into the video backend.
+ *  - `fresh-preview`: a sandbox frame in `previewArtifacts.frame` whose
+ *    inputs hash matches the current merged-draft shot. Use it directly.
+ *  - `dirty-needs-preview`: the merged shot differs from canonical on
+ *    frame-affecting fields and no fresh sandbox preview exists. Caller
+ *    must auto-generate a frame preview first (via `runFramePreview`) and
+ *    then use that sandbox file.
+ *  - `canonical`: the merged shot's frame inputs equal the canonical
+ *    shot's. Use the canonical generated start frame from `generatedOutputs`.
+ *  - `no-frame-available`: nothing to fall back on (shot was never
+ *    rendered). Caller surfaces an error. */
+export type VideoStartFrameDecision =
+  | { kind: "fresh-preview"; sandboxRel: string }
+  | { kind: "dirty-needs-preview" }
+  | { kind: "canonical"; canonicalRel: string }
+  | { kind: "no-frame-available" };
+
+/** Pure decision function: given the current draft + canonical state,
+ *  pick which start frame `previewVideo` should feed into the backend.
+ *  - Freshness check uses the same hash that `runFramePreview` writes so a
+ *    just-generated preview is recognized.
+ *  - Dirty check compares only frame-affecting fields against the live
+ *    shot, so a draft that edits video-only fields (durationSeconds,
+ *    videoPrompt, dialogue, ...) still uses the canonical start frame. */
+export function pickVideoStartFrame(opts: {
+  artStyle: string;
+  mergedShot: Shot;
+  liveShot: Shot;
+  draft: ShotDraft;
+  generatedOutputs: Record<string, string>;
+}): VideoStartFrameDecision {
+  const mergedHash = shotFrameInputsHash({ artStyle: opts.artStyle, shot: opts.mergedShot });
+  const previewArt = opts.draft.previewArtifacts?.frame;
+  if (previewArt && previewArt.inputsHash === mergedHash) {
+    return { kind: "fresh-preview", sandboxRel: previewArt.sandboxPath };
+  }
+  if (shotFrameFieldsDiffer(opts.liveShot, opts.mergedShot)) {
+    return { kind: "dirty-needs-preview" };
+  }
+  const canonicalRel = opts.generatedOutputs[
+    `frame:scene:${opts.mergedShot.sceneNumber}:shot:${opts.mergedShot.shotInScene}:start`
+  ];
+  if (canonicalRel) return { kind: "canonical", canonicalRel };
+  return { kind: "no-frame-available" };
+}
+
+export interface FramePreviewSuccess {
+  ok: true;
+  sandboxAbs: string;
+  sandboxRel: string;
+  inputsHash: string;
+  url: string;
+}
+export interface FramePreviewFailure { ok: false; error: string }
+export type FramePreviewResult = FramePreviewSuccess | FramePreviewFailure;
+
+/** Generate a frame preview for the current draft shot, persist it as
+ *  `previewArtifacts.frame` and append a session intermediate. Used by both
+ *  the explicit `previewFrame` tool and `previewVideo`'s auto-refresh path
+ *  so the inputs-hash recorded on the artifact is always computed by the
+ *  same code (the freshness check on the way back out depends on it).
+ *  `generate` is injectable for tests; production callers use the default. */
+export async function runFramePreview(
+  ctx: ShotEditorContext,
+  opts: { note?: string; generate?: typeof generateFrame } = {},
+): Promise<FramePreviewResult> {
+  const draft = loadDraft(ctx);
+  const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
+  if (!shot) return { ok: false, error: "Shot not found" };
+  const state = ctx.queueManager.getState();
+  const analysis = state.storyAnalysis;
+  if (!analysis) return { ok: false, error: "No storyAnalysis available" };
+  const assetLibrary = ctx.queueManager.resolveAssetLibrary();
+  if (!assetLibrary) return { ok: false, error: "Asset library not built yet" };
+
+  const runOutputAbs = resolveOutputDirAbs(state.outputDir);
+  const sandboxAbs = chatPreviewDir(runOutputAbs, "shot", ctx.scopeKey);
+  mkdirSync(sandboxAbs, { recursive: true });
+
+  const version = Date.now();
+  const generate = opts.generate ?? generateFrame;
+  const result = await generate({
+    shot,
+    artStyle: analysis.artStyle,
+    assetLibrary,
+    outputDir: sandboxAbs,
+    imageBackend: state.options?.imageBackend ?? "grok",
+    aspectRatio: state.options?.aspectRatio,
+    version,
+    directorsNote: opts.note,
+  });
+  if (!result.startPath) return { ok: false, error: "Frame generation produced no output" };
+  const rel = chatPreviewRelative(
+    "shot", ctx.scopeKey, "frames",
+    `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`,
+  );
+  const createdAt = new Date().toISOString();
+  ctx.store.appendIntermediate("shot", ctx.scopeKey, ctx.runId, {
+    kind: "frame",
+    path: rel,
+    fromToolCallId: "previewFrame",
+    createdAt,
+    note: opts.note,
+  });
+  const inputsHash = shotFrameInputsHash({ artStyle: analysis.artStyle, shot });
+  const refreshed = loadDraft(ctx);
+  saveDraft(ctx, {
+    ...refreshed,
+    previewArtifacts: {
+      ...(refreshed.previewArtifacts ?? {}),
+      frame: { sandboxPath: rel, createdAt, inputsHash },
+    },
+  });
+  return {
+    ok: true,
+    sandboxAbs: result.startPath,
+    sandboxRel: rel,
+    inputsHash,
+    url: `/api/runs/${ctx.runId}/media/${rel.split("/").map(encodeURIComponent).join("/")}`,
+  };
 }
 
 const updateShotFieldsSchema = z.object({
@@ -197,84 +324,60 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
         "Generate a frame preview using the current draft Shot. Writes only to the chat sandbox. Expensive — only call when the user explicitly asks.",
       inputSchema: z.object({ note: z.string().optional() }),
       execute: async ({ note }: { note?: string }) => {
-        const draft = loadDraft(ctx);
-        const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
-        if (!shot) return { error: "Shot not found" };
-        const state = ctx.queueManager.getState();
-        const analysis = state.storyAnalysis;
-        if (!analysis) return { error: "No storyAnalysis available" };
-        const assetLibrary = ctx.queueManager.resolveAssetLibrary();
-        if (!assetLibrary) return { error: "Asset library not built yet" };
-
-        const runOutputAbs = resolveOutputDirAbs(state.outputDir);
-        const sandboxAbs = chatPreviewDir(runOutputAbs, "shot", ctx.scopeKey);
-        mkdirSync(sandboxAbs, { recursive: true });
-
-        const version = Date.now();
-        const result = await generateFrame({
-          shot,
-          artStyle: analysis.artStyle,
-          assetLibrary,
-          outputDir: sandboxAbs,
-          imageBackend: state.options?.imageBackend ?? "grok",
-          aspectRatio: state.options?.aspectRatio,
-          version,
-          directorsNote: note,
-        });
-        if (!result.startPath) return { error: "Frame generation produced no output" };
-        const rel = chatPreviewRelative("shot", ctx.scopeKey, "frames", `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`);
-        const createdAt = new Date().toISOString();
-        ctx.store.appendIntermediate("shot", ctx.scopeKey, ctx.runId, {
-          kind: "frame",
-          path: rel,
-          fromToolCallId: "previewFrame",
-          createdAt,
-          note,
-        });
-        // Record promotion metadata so apply.ts can copy this preview into
-        // the canonical frame path instead of regenerating.
-        const inputsHash = shotFrameInputsHash({ artStyle: analysis.artStyle, shot });
-        const refreshed = loadDraft(ctx);
-        saveDraft(ctx, {
-          ...refreshed,
-          previewArtifacts: {
-            ...(refreshed.previewArtifacts ?? {}),
-            frame: { sandboxPath: rel, createdAt, inputsHash },
-          },
-        });
-        return {
-          ok: true,
-          path: rel,
-          url: `/api/runs/${ctx.runId}/media/${rel.split("/").map(encodeURIComponent).join("/")}`,
-        };
+        const result = await runFramePreview(ctx, { note });
+        if (!result.ok) return { error: result.error };
+        return { ok: true, path: result.sandboxRel, url: result.url };
       },
     }),
 
     previewVideo: ({
       description:
-        "Generate a video preview using the current draft Shot and the latest frame preview (or canonical start frame). Writes only to the chat sandbox. Expensive — only call when the user explicitly asks.",
+        "Generate a video preview using the current draft Shot. Writes only to the chat sandbox. " +
+        "Start-frame handling is automatic: if the draft has frame-affecting edits and no fresh frame preview, " +
+        "previewVideo first regenerates the frame preview and uses it. You do NOT need to call previewFrame " +
+        "before previewVideo. Use previewFrame only when you want to iterate on framing without burning a video. " +
+        "Expensive — only call when the user explicitly asks.",
       inputSchema: z.object({ note: z.string().optional() }),
       execute: async ({ note }: { note?: string }) => {
         const draft = loadDraft(ctx);
         const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
         if (!shot) return { error: "Shot not found" };
+        const liveShot = getShotFromState(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene);
+        if (!liveShot) return { error: "Shot not found" };
         const state = ctx.queueManager.getState();
+        const analysis = state.storyAnalysis;
+        if (!analysis) return { error: "No storyAnalysis available" };
 
         const runOutputAbs = resolveOutputDirAbs(state.outputDir);
         const sandboxAbs = chatPreviewDir(runOutputAbs, "shot", ctx.scopeKey);
         mkdirSync(sandboxAbs, { recursive: true });
 
-        // Pick a start frame: latest preview frame > canonical start frame
-        const session = ctx.store.load("shot", ctx.scopeKey, ctx.runId);
-        const lastFrame = [...session.intermediates].reverse().find((i) => i.kind === "frame");
+        // Decide which start frame to feed into the video backend. The
+        // sandbox preview is preferred when its inputs hash matches the
+        // current merged-draft shot — that guarantees the user sees a video
+        // built on the framing they just previewed. When the draft has
+        // frame-affecting edits but no fresh preview, auto-regenerate via
+        // the same helper that powers `previewFrame` so the artifact
+        // persists into the draft and Apply can promote it later.
+        const decision = pickVideoStartFrame({
+          artStyle: analysis.artStyle,
+          mergedShot: shot,
+          liveShot,
+          draft,
+          generatedOutputs: state.generatedOutputs,
+        });
         let startFrameAbs: string | null = null;
-        if (lastFrame) {
-          startFrameAbs = join(runOutputAbs, lastFrame.path);
+        if (decision.kind === "fresh-preview") {
+          startFrameAbs = join(runOutputAbs, decision.sandboxRel);
+        } else if (decision.kind === "dirty-needs-preview") {
+          const r = await runFramePreview(ctx, { note });
+          if (!r.ok) return { error: `Auto frame preview failed: ${r.error}` };
+          startFrameAbs = r.sandboxAbs;
+        } else if (decision.kind === "canonical") {
+          startFrameAbs = join(runOutputAbs, decision.canonicalRel);
         } else {
-          const canonicalRel = state.generatedOutputs[`frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}:start`];
-          if (canonicalRel) startFrameAbs = join(runOutputAbs, canonicalRel);
+          return { error: "No start frame available — call previewFrame first." };
         }
-        if (!startFrameAbs) return { error: "No start frame available — call previewFrame first." };
 
         const version = Date.now();
         const result = await generateVideo({
@@ -309,18 +412,15 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
         });
         // Record promotion metadata so apply.ts can copy this preview video
         // into the canonical clip path instead of regenerating.
-        const analysis = state.storyAnalysis;
-        if (analysis) {
-          const inputsHash = shotVideoInputsHash({ artStyle: analysis.artStyle, shot });
-          const refreshed = loadDraft(ctx);
-          saveDraft(ctx, {
-            ...refreshed,
-            previewArtifacts: {
-              ...(refreshed.previewArtifacts ?? {}),
-              video: { sandboxPath: rel, createdAt, inputsHash },
-            },
-          });
-        }
+        const inputsHash = shotVideoInputsHash({ artStyle: analysis.artStyle, shot });
+        const refreshed = loadDraft(ctx);
+        saveDraft(ctx, {
+          ...refreshed,
+          previewArtifacts: {
+            ...(refreshed.previewArtifacts ?? {}),
+            video: { sandboxPath: rel, createdAt, inputsHash },
+          },
+        });
         return {
           ok: true,
           path: rel,
