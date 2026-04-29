@@ -126,14 +126,16 @@ export function isShotDraftEmpty(draft: ShotDraft | null): boolean {
   if (!draft) return true;
   const noFields = Object.keys(draft.shotFields).length === 0;
   const noImages = draft.pendingImageReplacements.length === 0;
-  return noFields && noImages;
+  const noPreviews = !draft.previewArtifacts?.frame && !draft.previewArtifacts?.video;
+  return noFields && noImages && noPreviews;
 }
 
 export function isLocationDraftEmpty(draft: LocationDraft | null): boolean {
   if (!draft) return true;
   const noFields = Object.keys(draft.locationFields).length === 0;
   const noImage = !draft.pendingReferenceImage;
-  return noFields && noImage;
+  const noPreviews = !draft.previewArtifacts?.referenceImage;
+  return noFields && noImage && noPreviews;
 }
 
 export function isStoryDraftEmpty(draft: StoryDraft | null): boolean {

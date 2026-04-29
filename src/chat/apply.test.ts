@@ -10,7 +10,7 @@ import type { RunManager } from '../queue/run-manager.js';
 import type { Shot, StoryAnalysis } from '../types.js';
 import { applyShotDraft } from './apply.js';
 import { shotFrameInputsHash, shotVideoInputsHash } from './preview-hash.js';
-import type { ShotDraft } from './types.js';
+import { isShotDraftEmpty, type ShotDraft } from './types.js';
 
 function makeShot(): Shot {
   return {
@@ -239,6 +239,63 @@ async function testFrameAffectingFieldRedosFrame(): Promise<void> {
   console.log('  ✓ frame-affecting field redoes the frame');
 }
 
+async function testPreviewOnlyDraftPromotesWithoutFieldEdits(): Promise<void> {
+  // Reproduces the user's exact path: agent calls previewVideo, never calls
+  // proposeApply, and never edits any fields. The user clicks Apply directly.
+  // The draft has only previewArtifacts populated. Apply must run the smart
+  // promote path, NOT short-circuit as a no-op and NOT call redoItem.
+  const dir = mkdtempSync(join(tmpdir(), 'apply-preview-only-'));
+  const qm = new QueueManager('run-1', '(test)', dir);
+  const shot = makeShot();
+  qm.setStoryAnalysis(makeAnalysis(shot));
+  qm.addItem({
+    type: 'generate_video', queue: 'video', itemKey: 'video:scene:1:shot:1',
+    inputs: { shot, startFramePath: 'frames/1.png' },
+  });
+
+  const sandboxRel = 'chat-sandbox/shot/1-1/preview.mp4';
+  mkdirSync(join(dir, 'chat-sandbox/shot/1-1'), { recursive: true });
+  writeFileSync(join(dir, sandboxRel), 'fake-video-bytes');
+
+  const draft: ShotDraft = {
+    shotFields: {},
+    pendingImageReplacements: [],
+    previewArtifacts: {
+      video: {
+        sandboxPath: sandboxRel,
+        createdAt: new Date().toISOString(),
+        inputsHash: shotVideoInputsHash({ artStyle: 'cinematic', shot }),
+      },
+    },
+  };
+
+  // Route-handler gate: a draft carrying only a fresh preview must NOT be
+  // treated as empty, otherwise handleChatApply short-circuits and the smart
+  // promote path is never reached.
+  assert.equal(
+    isShotDraftEmpty(draft), false,
+    'preview-only draft must not be considered empty (else apply short-circuits)',
+  );
+
+  const spy: RedoSpy = { calls: 0, redoneItemKeys: [] };
+  const runManager = makeStubRunManager(qm, 'run-1', spy);
+  const result = await applyShotDraft(runManager, 'run-1', 1, 1, draft);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.promoted, ['video'], 'video should have been promoted');
+  assert.equal(spy.calls, 0, 'redoItem must not be called for preview-only apply');
+  assert.equal(result.regeneratedItemIds.length, 1);
+
+  const promotedId = result.regeneratedItemIds[0];
+  const promoted = qm.getItem(promotedId);
+  assert.ok(promoted);
+  assert.equal(promoted.status, 'completed');
+  const canonicalAbs = join(dir, promoted.outputs.path as string);
+  assert.ok(existsSync(canonicalAbs), 'canonical video file should exist on disk');
+  assert.equal(readFileSync(canonicalAbs, 'utf-8'), 'fake-video-bytes');
+  console.log('  ✓ preview-only draft (no field edits, no proposeApply) promotes; no redoItem');
+}
+
 async function main(): Promise<void> {
   console.log('Apply promotion tests:');
   await testPromotionTakesOverWhenPreviewIsFresh();
@@ -246,6 +303,7 @@ async function main(): Promise<void> {
   await testVideoOnlyFieldWithFreshVideoPreviewPromotesNoRedo();
   await testVideoOnlyFieldWithoutPreviewRedosVideoOnly();
   await testFrameAffectingFieldRedosFrame();
+  await testPreviewOnlyDraftPromotesWithoutFieldEdits();
   console.log('\nAll tests passed ✓');
 }
 
