@@ -478,6 +478,15 @@ Tool selection:
 
 Always finish by calling proposeApply with a short summary of the staged changes (or of the previews that are ready to promote).
 
+GROK VIDEO PROMPT FORMAT: when you rewrite videoPrompt, follow these rules.
+- Aim for a 30-80 word director's brief; ordering subject → environment → lighting → style → camera/technical.
+- Lead with action verbs and a named camera move (pans, tracks, follows, dolly-in, pushes in, pulls back).
+- Name the shot type in the prose (wide, overhead, close-up, low-angle, etc.) and call out motion pace (smooth, natural rhythm, fast snap).
+- Use positive descriptions only — Grok ignores negative prompts. Say what's in the shot, not what to avoid.
+- Use lighting cues that steer mood: golden hour, soft natural light, neon reflections, hard rim light.
+- Keep one aesthetic per prompt; avoid crowded or visually complex scenes (they cause motion artifacts).
+- For a continuation, describe only what happens next; don't re-describe the standing scene the start frame already shows.
+
 Never invent character/location/object names — only use those returned by getStoryContext. Validate before staging.`;
 
 export function createShotEditorAgent(ctx: ShotEditorContext): Agent<never, ToolSet> {

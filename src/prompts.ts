@@ -74,6 +74,18 @@ DIALOGUE FORMATTING:
 - Only use ALL CAPS for actual acronyms (FBI, CIA, DNA, NASA, etc.).
 - For emphasis, use the word normally — TTS handles natural stress from context.
 
+GROK VIDEO PROMPT FORMAT:
+- Treat each videoPrompt as a 30-80 word "director's brief" — long enough to direct, short enough to stay on-model.
+- Structure roughly as: subject → environment → lighting → style → camera/technical.
+- Lead with scene-setting verbs that name a camera move: pans, tracks, follows, zooms, dollies in/out, pushes in, pulls back.
+- State the shot type explicitly in the prose: wide, overhead, close-up, low-angle, etc. Don't rely on the composition field alone.
+- Specify motion pace: smooth flow, natural rhythm, fast snap, slow drift, sharp transition. Grok responds to tempo cues.
+- Keep it positive — Grok ignores negative prompts. Describe what should be in the shot, not what to avoid. ("empty street" beats "no people".)
+- For a continuation shot, describe ONLY what happens next; do not re-describe the standing scene that the start frame already shows.
+- Lighting words steer mood: golden hour, soft natural light, overcast diffuse, neon reflections, low-key, hard rim light.
+- One aesthetic per prompt — don't mix styles in a single videoPrompt.
+- Avoid crowded or visually complex scenes; they trigger motion artifacts. Favor clean staging with one or two active subjects.
+
 SCENE TRANSITIONS:
 - Scene 1 always uses "cut"
 - "cut" for immediate cuts (default, most common)

@@ -15,7 +15,7 @@ const perSceneShotSchema = z.object({
   speaker: z.string().describe("Who is speaking the dialogue (character name, 'narrator', 'voiceover', etc). Empty if no dialogue"),
   soundEffects: z.string(),
   cameraDirection: z.string(),
-  videoPrompt: z.string().describe("Complete video direction as natural prose: action, dialogue with visual attribution, gaze, sound effects, camera movement. Use visual descriptors (not character names) since the video model only sees pixels."),
+  videoPrompt: z.string().describe("Complete video direction as natural prose: action, dialogue with visual attribution, gaze, sound effects, camera movement. Use visual descriptors (not character names) since the video model only sees pixels. Aim for 30-80 words. Lead with action verbs and camera moves (pans/tracks/follows), name the shot type, describe motion pace and lighting. Use positive descriptions only — Grok ignores negative prompts. One aesthetic per prompt; avoid crowded scenes."),
   charactersPresent: z.array(z.string()),
   objectsPresent: z.array(z.string()),
   location: z.string(),
