@@ -2,7 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { getVideoDuration } from "./tools/assemble-video.js";
+import { assembleVideo, getVideoDuration } from "./tools/assemble-video.js";
+import type { Scene } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -29,19 +30,20 @@ function ensureDir(filePath: string): void {
 }
 
 /**
- * Call the ElevenLabs Video-to-Music API to generate a music track from a video.
- * Returns the path to the generated music file (MP3).
+ * Internal: upload a video to the ElevenLabs Video-to-Music API and write the
+ * resulting MP3 to outMp3Path. Shared by both the legacy single-call flow and
+ * the per-scene flow.
  */
-export async function generateMusicFromVideo(
+async function uploadVideoForMusic(
   videoPath: string,
-  outputPath: string,
+  outMp3Path: string,
 ): Promise<string> {
   if (!fs.existsSync(videoPath)) {
     throw new Error(`Video file not found: ${videoPath}`);
   }
 
   const apiKey = getApiKey();
-  ensureDir(outputPath);
+  ensureDir(outMp3Path);
 
   const videoBuffer = fs.readFileSync(videoPath);
   const blob = new Blob([videoBuffer], { type: "video/mp4" });
@@ -66,10 +68,21 @@ export async function generateMusicFromVideo(
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(outputPath, audioBuffer);
-  console.log(`[elevenlabs] Music generated: ${outputPath} (${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
+  fs.writeFileSync(outMp3Path, audioBuffer);
+  console.log(`[elevenlabs] Music generated: ${outMp3Path} (${(audioBuffer.length / 1024 / 1024).toFixed(1)}MB)`);
 
-  return outputPath;
+  return outMp3Path;
+}
+
+/**
+ * Call the ElevenLabs Video-to-Music API to generate a music track from a video.
+ * Returns the path to the generated music file (MP3).
+ */
+export async function generateMusicFromVideo(
+  videoPath: string,
+  outputPath: string,
+): Promise<string> {
+  return uploadVideoForMusic(videoPath, outputPath);
 }
 
 /**
@@ -147,5 +160,175 @@ export async function mixMusicIntoVideo(
   }
 
   console.log(`[elevenlabs] Final video with music: ${outputPath}`);
+  return outputPath;
+}
+
+/**
+ * Generate one music track per scene using the ElevenLabs Video-to-Music API.
+ *
+ * For each scene:
+ *   1. Resolve the highest-version mp4 in `videosDir` for each non-skipped
+ *      shot (filename pattern `scene_NN_shot_NN_vN.mp4`).
+ *   2. Stitch the shot mp4s into a single per-scene source mp4 under
+ *      `outputDir/temp/music-source/scene-NN.mp4` (resolution-normalized
+ *      concat via `assembleVideo`).
+ *   3. Upload the source mp4, save the returned MP3 to
+ *      `outputDir/music/scene-NN.mp3`.
+ *   4. Delete the per-scene source mp4 (try/finally).
+ *
+ * Returns paths to the generated per-scene MP3s and the duration of each
+ * scene's source mp4 (used for cost tracking).
+ */
+export async function generatePerSceneMusic(
+  scenes: Scene[],
+  videosDir: string,
+  outputDir: string,
+): Promise<{ compositePath: string; scenePaths: string[]; sceneDurations: number[] }> {
+  const musicDir = path.join(outputDir, "music");
+  const tempDir = path.join(outputDir, "temp", "music-source");
+  fs.mkdirSync(musicDir, { recursive: true });
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  // Index videos/ once: for each (sceneNumber, shotInScene) keep the highest version.
+  const versionMap = new Map<string, { version: number; file: string }>();
+  const videoRe = /^scene_(\d{2})_shot_(\d{2})_v(\d+)\.mp4$/;
+  if (fs.existsSync(videosDir)) {
+    for (const f of fs.readdirSync(videosDir)) {
+      const m = videoRe.exec(f);
+      if (!m) continue;
+      const sceneNum = parseInt(m[1], 10);
+      const shotIn = parseInt(m[2], 10);
+      const version = parseInt(m[3], 10);
+      const key = `${sceneNum}:${shotIn}`;
+      const existing = versionMap.get(key);
+      if (!existing || version > existing.version) {
+        versionMap.set(key, { version, file: f });
+      }
+    }
+  }
+
+  const scenePaths: string[] = [];
+  const sceneDurations: number[] = [];
+
+  for (const scene of scenes) {
+    const padded = String(scene.sceneNumber).padStart(2, "0");
+    const shots = (scene.shots || [])
+      .filter((s) => s.skipped !== true)
+      .sort((a, b) => a.shotInScene - b.shotInScene);
+
+    const shotVideoPaths: string[] = [];
+    for (const shot of shots) {
+      const entry = versionMap.get(`${shot.sceneNumber}:${shot.shotInScene}`);
+      if (!entry) continue;
+      shotVideoPaths.push(path.join(videosDir, entry.file));
+    }
+
+    if (shotVideoPaths.length === 0) {
+      console.warn(`[elevenlabs] No shot videos found for scene ${padded}; skipping`);
+      continue;
+    }
+
+    const sourceMp4 = path.join(tempDir, `scene-${padded}.mp4`);
+    const sceneMp3 = path.join(musicDir, `scene-${padded}.mp3`);
+
+    try {
+      console.log(`[elevenlabs] Assembling scene ${padded} source mp4 from ${shotVideoPaths.length} shot(s)...`);
+      await assembleVideo({
+        videoPaths: shotVideoPaths,
+        transitions: shotVideoPaths.slice(1).map(() => ({ type: "cut", durationMs: 0 })),
+        outputDir: tempDir,
+        outputFile: `scene-${padded}.mp4`,
+      });
+
+      const duration = await getVideoDuration(sourceMp4);
+      await uploadVideoForMusic(sourceMp4, sceneMp3);
+      scenePaths.push(sceneMp3);
+      sceneDurations.push(duration);
+    } finally {
+      try { fs.unlinkSync(sourceMp4); } catch { /* ignore */ }
+    }
+  }
+
+  if (scenePaths.length === 0) {
+    throw new Error("generatePerSceneMusic: no scenes produced music tracks (no matching shot videos found)");
+  }
+
+  return {
+    compositePath: path.join(outputDir, "generated-music.mp3"),
+    scenePaths,
+    sceneDurations,
+  };
+}
+
+/**
+ * Compose multiple per-scene MP3 tracks into a single MP3 with 0.5s crossfades
+ * between adjacent tracks, then trim/pad the result to exactly `targetDuration`.
+ *
+ * The crossfade chain is built pairwise:
+ *   [0:a][1:a]acrossfade=d=0.5 → [a01]
+ *   [a01][2:a]acrossfade=d=0.5 → [a012]
+ *   ... and so on.
+ *
+ * The final stage applies `atrim=0:T,apad=whole_dur=T` and writes a WAV
+ * intermediate, which is then re-encoded to MP3 (libmp3lame, 192k).
+ */
+export async function composeSceneMusicTracks(
+  mp3Paths: string[],
+  targetDuration: number,
+  outputPath: string,
+): Promise<string> {
+  if (mp3Paths.length === 0) {
+    throw new Error("composeSceneMusicTracks: at least one mp3 is required");
+  }
+  ensureDir(outputPath);
+
+  const inputs: string[] = [];
+  for (const p of mp3Paths) {
+    inputs.push("-i", p);
+  }
+
+  let filterComplex = "";
+  let lastLabel: string;
+  if (mp3Paths.length === 1) {
+    lastLabel = "0:a";
+  } else {
+    let labelTail = "0";
+    let prevLabel = "0:a";
+    for (let i = 1; i < mp3Paths.length; i++) {
+      labelTail += String(i);
+      const out = `a${labelTail}`;
+      filterComplex += `[${prevLabel}][${i}:a]acrossfade=d=0.5:c1=tri:c2=tri[${out}];`;
+      prevLabel = out;
+    }
+    lastLabel = prevLabel;
+  }
+  filterComplex += `[${lastLabel}]atrim=0:${targetDuration},apad=whole_dur=${targetDuration}[out]`;
+
+  const wavPath = outputPath.replace(/\.mp3$/, ".wav");
+  console.log(`[elevenlabs] Composing ${mp3Paths.length} scene track(s) → ${wavPath} (target ${targetDuration.toFixed(2)}s)...`);
+  await execFileAsync("ffmpeg", [
+    "-y",
+    ...inputs,
+    "-filter_complex", filterComplex,
+    "-map", "[out]",
+    "-ar", "44100",
+    "-ac", "2",
+    "-sample_fmt", "s16",
+    wavPath,
+  ]);
+
+  console.log(`[elevenlabs] Encoding composite WAV → MP3: ${outputPath}`);
+  try {
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i", wavPath,
+      "-c:a", "libmp3lame",
+      "-b:a", "192k",
+      outputPath,
+    ]);
+  } finally {
+    try { fs.unlinkSync(wavPath); } catch { /* ignore */ }
+  }
+
   return outputPath;
 }
