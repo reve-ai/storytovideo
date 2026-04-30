@@ -353,12 +353,6 @@ runManager.on("item:completed", (data: { runId: string; item: WorkItem }) => {
   }
 });
 
-// Forward cost updates triggered outside the work-item loop (e.g. chat
-// preview generations in src/chat/preview-cost.ts) to SSE clients.
-runManager.on("cost:updated", (data: { runId: string; summary: Record<string, unknown> }) => {
-  emitEvent(data.runId, "cost_updated", { ...data.summary });
-});
-
 runManager.on("item:progress", (data: { runId: string; itemId: string; itemKey: string; progress: { status: string; progress?: number; step?: number; totalSteps?: number; queuePosition?: number } }) => {
   emitEvent(data.runId, "item_progress", {
     itemId: data.itemId,
