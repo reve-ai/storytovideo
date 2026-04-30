@@ -22,9 +22,21 @@ export interface PreviewArtifact {
   inputsHash: string;
 }
 
+/** Mode of a video preview artifact. `generate` reuses the existing
+ *  shotVideoInputsHash semantics; `extend` requires `extendMeta` so apply.ts
+ *  can recompute the hash without re-reading the (possibly large) source
+ *  video bytes. Older saved drafts have no `mode` field — those are
+ *  treated as `generate` for backward compatibility. */
+export type ShotVideoPreviewMode = "generate" | "extend";
+
+export interface ShotVideoPreviewArtifact extends PreviewArtifact {
+  mode?: ShotVideoPreviewMode;
+  extendMeta?: { sourceVideoSha: string; continuationPrompt: string };
+}
+
 export interface ShotPreviewArtifacts {
   frame?: PreviewArtifact;
-  video?: PreviewArtifact;
+  video?: ShotVideoPreviewArtifact;
 }
 
 export interface LocationPreviewArtifacts {

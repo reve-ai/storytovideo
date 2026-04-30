@@ -40,6 +40,24 @@ export function shotVideoInputsHash(opts: {
   return sha256Hex(stableStringify({ kind: "video", artStyle: opts.artStyle, shot: opts.shot }));
 }
 
+/** Hash of the inputs that drive an extend-video preview for one shot.
+ *  Independent of the generate hash so promotion doesn't collide between
+ *  the two modes for the same shot. The shot itself is intentionally
+ *  excluded — extend's only inputs are the source clip bytes plus the
+ *  continuation prompt, and apply.ts will re-probe the returned video to
+ *  set durationSeconds. */
+export function shotExtendVideoInputsHash(opts: {
+  sourceVideoSha: string;
+  continuationPrompt: string;
+}): string {
+  return sha256Hex(stableStringify({
+    kind: "video",
+    mode: "extend",
+    sourceVideoSha: opts.sourceVideoSha,
+    continuationPrompt: opts.continuationPrompt,
+  }));
+}
+
 /** Shot fields whose values flow into frame generation. Edits to any of
  *  these invalidate the canonical start frame. apply.ts uses this set to
  *  pick frame-vs-video redo, and `pickVideoStartFrame` uses it to decide

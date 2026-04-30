@@ -28,6 +28,18 @@ export type GrokVideoOptions = {
   abortSignal?: AbortSignal;
 };
 
+export type GrokVideoExtensionOptions = {
+  /** Source video to extend, as a public URL or a base64 data URL
+   *  (`data:video/mp4;base64,...`). The Grok API accepts either; this
+   *  client always passes a data URL today. */
+  video: string | { url: string };
+  /** Extension segment length in seconds (Grok accepts 1–10). Defaults
+   *  to 6 server-side if omitted. */
+  duration?: number;
+  outputPath: string;
+  abortSignal?: AbortSignal;
+};
+
 export type GrokVideoResult = {
   url: string;
   duration: number;
@@ -95,6 +107,21 @@ async function submitGeneration(
   if (options.aspectRatio) body.aspect_ratio = options.aspectRatio;
   if (options.resolution) body.resolution = options.resolution;
   const resp = await apiRequest<GenerationResponse>("POST", "/videos/generations", body, abortSignal);
+  return resp.request_id;
+}
+
+async function submitExtension(
+  prompt: string,
+  options: GrokVideoExtensionOptions,
+  abortSignal?: AbortSignal,
+): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: MODEL,
+    prompt,
+    video: typeof options.video === "string" ? { url: options.video } : options.video,
+  };
+  if (options.duration !== undefined) body.duration = Math.max(1, Math.min(10, Math.round(options.duration)));
+  const resp = await apiRequest<GenerationResponse>("POST", "/videos/extensions", body, abortSignal);
   return resp.request_id;
 }
 
@@ -176,6 +203,70 @@ export async function generateVideoGrok(
       }
       if (attempt >= MAX_RETRIES) {
         console.error(`[grok] All ${MAX_RETRIES} retries exhausted`);
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Extend an existing video using the Grok Imagine Video API.
+ * Same async-poll + retry plumbing as `generateVideoGrok`; only the submit
+ * endpoint and request body shape differ. The source video is encoded as a
+ * `data:video/mp4;base64,...` URL by the caller.
+ */
+export async function extendVideoGrok(
+  prompt: string,
+  options: GrokVideoExtensionOptions,
+): Promise<GrokVideoResult> {
+  const { outputPath, abortSignal } = options;
+  await mkdir(path.dirname(outputPath), { recursive: true });
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (abortSignal?.aborted) {
+        throw new Error("Video generation cancelled due to pipeline interruption");
+      }
+      console.log(`[grok] Submitting extension (attempt ${attempt}/${MAX_RETRIES})`);
+      const requestId = await submitExtension(prompt, options, abortSignal);
+      console.log(`[grok] Extension request submitted: ${requestId}`);
+
+      const result = await pollUntilDone(requestId, abortSignal);
+      if (result.status === "failed") {
+        throw new Error(`Grok video extension failed: ${result.error ?? "unknown error"}`);
+      }
+      if (result.status === "expired") {
+        throw new Error("Grok video extension request expired");
+      }
+      if (!result.video?.url) {
+        throw new Error("Grok video extension completed but no video URL returned");
+      }
+
+      console.log(`[grok] Downloading extended video (${result.video.duration}s) to ${outputPath}`);
+      await downloadVideo(result.video.url, outputPath, abortSignal);
+      console.log(`[grok] Extended video saved to ${outputPath}`);
+      return { url: result.video.url, duration: result.video.duration, path: outputPath };
+    } catch (error: unknown) {
+      lastError = error;
+      const err = error as { message?: string; status?: number };
+      if (err.message?.includes("cancelled due to pipeline interruption") || abortSignal?.aborted) {
+        throw error;
+      }
+      const isContentModeration = err.status === 400 && err.message?.includes("content moderation");
+      const isRetryable = err.status === 429 || (err.status !== undefined && err.status >= 500) || isContentModeration;
+      if (isRetryable && attempt < MAX_RETRIES) {
+        if (isContentModeration) {
+          console.warn("[grok] Content moderation rejection on extension, retrying...");
+        }
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 60_000);
+        console.warn(`[grok] Retryable error (${err.status}), backoff ${backoffMs / 1000}s (retry ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      if (attempt >= MAX_RETRIES) {
+        console.error(`[grok] All ${MAX_RETRIES} extension retries exhausted`);
       }
       throw error;
     }

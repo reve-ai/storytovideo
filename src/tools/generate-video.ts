@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { getGoogleClient } from "../google-client";
 import { getGoogleVertexClient } from "../google-vertex-client";
-import { generateVideoGrok as grokGenerateVideo } from "../grok-client";
+import { extendVideoGrok as grokExtendVideo, generateVideoGrok as grokGenerateVideo } from "../grok-client";
 import { generateVideoLtx as ltxGenerateVideo, type LtxProgressInfo } from "../ltx-client";
 import { rateLimiters } from "../queue/rate-limiter-registry.js";
 import type { VideoBackend } from "../types";
@@ -655,4 +655,65 @@ async function generateVideoLtxBackend(params: GenerateVideoParams, mode: "full"
     console.error(`[generateVideo] Error generating ${shotContext} via LTX:`, error);
     throw error;
   }
+}
+
+/** Parameters for extending an existing video clip. Only the Grok backend
+ *  supports extension today; other backends throw. The source video is
+ *  loaded from disk and forwarded as a base64 data URL. */
+export type ExtendVideoParams = {
+  sceneNumber: number;
+  shotInScene: number;
+  /** Absolute or run-relative path to the existing clip to extend. */
+  sourceVideoPath: string;
+  /** Continuation prompt — describes what should happen next. */
+  continuationPrompt: string;
+  /** Extension segment length in seconds (Grok accepts 1–10). */
+  extensionDurationSeconds: number;
+  outputDir: string;
+  /** Output filename version suffix (default 1). */
+  version?: number;
+  videoBackend?: VideoBackend;
+  abortSignal?: AbortSignal;
+};
+
+export type ExtendVideoResult = { path: string; duration: number; finalPrompt: string };
+
+/**
+ * Extend an existing video clip from its last frame.
+ * Today only the Grok backend supports this; other backends throw a clear
+ * error so callers can surface a helpful message to the user.
+ */
+export async function extendVideo(params: ExtendVideoParams): Promise<ExtendVideoResult> {
+  const backend = (params.videoBackend || process.env.VIDEO_BACKEND || "veo").toLowerCase();
+  if (backend !== "grok") {
+    throw new Error(`extend mode requires the grok backend (got "${backend}")`);
+  }
+
+  const {
+    sceneNumber,
+    shotInScene,
+    sourceVideoPath,
+    continuationPrompt,
+    extensionDurationSeconds,
+    outputDir,
+    version = 1,
+    abortSignal,
+  } = params;
+
+  await mkdir(outputDir, { recursive: true });
+  const outputPath = join(outputDir, `${buildSceneShotFilename(sceneNumber, shotInScene, version)}.mp4`);
+
+  const videoBuffer = readFileSync(sourceVideoPath);
+  const dataUri = `data:video/mp4;base64,${videoBuffer.toString("base64")}`;
+
+  // TODO(wave-2.M): wrap with recordPreviewVideoCost once the cost-tracking
+  // helper from Wave 2.M lands.
+  const result = await grokExtendVideo(continuationPrompt, {
+    video: dataUri,
+    duration: extensionDurationSeconds,
+    outputPath,
+    abortSignal,
+  });
+
+  return { path: result.path, duration: result.duration, finalPrompt: continuationPrompt };
 }

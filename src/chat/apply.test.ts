@@ -9,7 +9,7 @@ import type { WorkItem } from '../queue/types.js';
 import type { RunManager } from '../queue/run-manager.js';
 import type { Shot, StoryAnalysis } from '../types.js';
 import { applyShotDraft } from './apply.js';
-import { shotFrameInputsHash, shotVideoInputsHash } from './preview-hash.js';
+import { shotExtendVideoInputsHash, shotFrameInputsHash, shotVideoInputsHash } from './preview-hash.js';
 import { isShotDraftEmpty, type ShotDraft } from './types.js';
 
 function makeShot(): Shot {
@@ -349,6 +349,80 @@ async function testFieldEditsThenVideoPreviewPromotesNoRedo(): Promise<void> {
   console.log('  ✓ field edits + fresh video preview promotes; no redoItem cascade');
 }
 
+async function testExtendPreviewPromotionUpdatesShotDuration(): Promise<void> {
+  // Wave 2.P: an extend-mode video preview is promoted, and apply.ts
+  // re-probes the canonical clip to set shot.durationSeconds to the actual
+  // returned duration. The hash check uses sourceVideoSha + continuationPrompt,
+  // not the shot itself, so promotion succeeds even when durationSeconds
+  // hasn't been staged on the draft.
+  const dir = mkdtempSync(join(tmpdir(), 'apply-extend-promote-'));
+  const qm = new QueueManager('run-1', '(test)', dir);
+  const shot = makeShot(); // durationSeconds=4 in canonical state
+  qm.setStoryAnalysis(makeAnalysis(shot));
+  qm.addItem({
+    type: 'generate_video', queue: 'video', itemKey: 'video:scene:1:shot:1',
+    inputs: { shot, startFramePath: 'frames/1.png' },
+  });
+
+  const sandboxRel = 'chat-sandbox/shot/1-1/extend.mp4';
+  mkdirSync(join(dir, 'chat-sandbox/shot/1-1'), { recursive: true });
+  writeFileSync(join(dir, sandboxRel), 'fake-extended-video-bytes');
+
+  const sourceVideoSha = 'deadbeef'.repeat(8);
+  const continuationPrompt = 'He walks to the door and opens it slowly.';
+  const draft: ShotDraft = {
+    shotFields: {},
+    pendingImageReplacements: [],
+    previewArtifacts: {
+      video: {
+        sandboxPath: sandboxRel,
+        createdAt: new Date().toISOString(),
+        inputsHash: shotExtendVideoInputsHash({ sourceVideoSha, continuationPrompt }),
+        mode: 'extend',
+        extendMeta: { sourceVideoSha, continuationPrompt },
+      },
+    },
+  };
+
+  // Stub probe — production would call ffprobe; tests must not touch the
+  // filesystem with a binary they don't control.
+  let probeCalls = 0;
+  const probedDuration = 14;
+  const probeStub = async (_path: string): Promise<number> => {
+    probeCalls += 1;
+    return probedDuration;
+  };
+
+  const spy: RedoSpy = { calls: 0, redoneItemKeys: [] };
+  const runManager = makeStubRunManager(qm, 'run-1', spy);
+  const result = await applyShotDraft(
+    runManager, 'run-1', 1, 1, draft, { probeDuration: probeStub },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.promoted, ['video'], 'extend video should have been promoted');
+  assert.equal(spy.calls, 0, 'no redoItem call when extend preview promotes');
+  assert.equal(probeCalls, 1, 'probeDuration must run exactly once for extend mode');
+
+  const updatedShot = qm.getState().storyAnalysis!.scenes[0].shots[0];
+  assert.equal(updatedShot.durationSeconds, probedDuration,
+    'shot.durationSeconds must be updated to the probed duration');
+
+  // Idempotency: re-applying the same draft against the now-promoted state
+  // should still find the active video item and re-promote (hash check uses
+  // sourceVideoSha + prompt, not durationSeconds, so it stays valid).
+  const spy2: RedoSpy = { calls: 0, redoneItemKeys: [] };
+  const runManager2 = makeStubRunManager(qm, 'run-1', spy2);
+  const result2 = await applyShotDraft(
+    runManager2, 'run-1', 1, 1, draft, { probeDuration: probeStub },
+  );
+  assert.equal(result2.ok, true);
+  assert.deepEqual(result2.promoted, ['video'], 're-promotion stays a no-op for the cascade (no redos)');
+  assert.equal(spy2.calls, 0, 're-promote must not trigger any redoItem');
+
+  console.log('  ✓ extend-mode video preview promotes and updates shot.durationSeconds via probe');
+}
+
 async function main(): Promise<void> {
   console.log('Apply promotion tests:');
   await testPromotionTakesOverWhenPreviewIsFresh();
@@ -358,6 +432,7 @@ async function main(): Promise<void> {
   await testFrameAffectingFieldRedosFrame();
   await testPreviewOnlyDraftPromotesWithoutFieldEdits();
   await testFieldEditsThenVideoPreviewPromotesNoRedo();
+  await testExtendPreviewPromotionUpdatesShotDuration();
   console.log('\nAll tests passed ✓');
 }
 

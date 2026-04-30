@@ -5,10 +5,11 @@ import { randomUUID } from "crypto";
 import type { RunManager } from "../queue/run-manager.js";
 import type { QueueManager } from "../queue/queue-manager.js";
 import type { Shot } from "../types.js";
-import type { ShotDraft } from "./types.js";
-import { shotFrameInputsHash, shotVideoInputsHash } from "./preview-hash.js";
+import type { ShotDraft, ShotVideoPreviewArtifact } from "./types.js";
+import { shotExtendVideoInputsHash, shotFrameInputsHash, shotVideoInputsHash } from "./preview-hash.js";
 import { buildStartFramePath } from "../tools/generate-frame.js";
 import { buildVideoOutputPath } from "../tools/generate-video.js";
+import { getVideoDuration } from "../tools/assemble-video.js";
 
 interface ApplyShotDraftResult {
   ok: boolean;
@@ -102,8 +103,38 @@ function tryPromoteShotFrame(
   return newItem?.id ?? null;
 }
 
+/** Result of a successful video promotion. The caller uses
+ *  `canonicalAbs` to ffprobe the actual returned duration (relevant for
+ *  extend mode, where the duration changes on apply). */
+interface PromotedVideo {
+  itemId: string;
+  canonicalAbs: string;
+  canonicalRel: string;
+  mode: "generate" | "extend";
+}
+
+/** Recompute the expected hash for a video preview artifact so the
+ *  freshness check matches what shot-editor.ts wrote when the preview was
+ *  generated. Mode defaults to `generate` for older saved drafts that
+ *  predate the extend tool. */
+function expectedVideoPreviewHash(
+  previewArt: ShotVideoPreviewArtifact,
+  artStyle: string,
+  shot: Shot,
+): string | null {
+  const mode = previewArt.mode ?? "generate";
+  if (mode === "extend") {
+    if (!previewArt.extendMeta) return null;
+    return shotExtendVideoInputsHash({
+      sourceVideoSha: previewArt.extendMeta.sourceVideoSha,
+      continuationPrompt: previewArt.extendMeta.continuationPrompt,
+    });
+  }
+  return shotVideoInputsHash({ artStyle, shot });
+}
+
 /** Try to promote a sandbox video preview into the canonical clip output.
- *  Returns the new item id on success, or null. Must be called AFTER any
+ *  Returns promotion details on success, or null. Must be called AFTER any
  *  frame promotion so it picks up the freshly-seeded pending video item as
  *  its supersede target. */
 function tryPromoteShotVideo(
@@ -114,7 +145,7 @@ function tryPromoteShotVideo(
   shotInScene: number,
   draft: ShotDraft,
   outputDirAbs: string,
-): string | null {
+): PromotedVideo | null {
   const previewArt = draft.previewArtifacts?.video;
   if (!previewArt) return null;
 
@@ -125,8 +156,8 @@ function tryPromoteShotVideo(
     ?.shots.find((s) => s.shotInScene === shotInScene);
   if (!shot) return null;
 
-  const expected = shotVideoInputsHash({ artStyle: analysis.artStyle, shot });
-  if (expected !== previewArt.inputsHash) return null;
+  const expected = expectedVideoPreviewHash(previewArt, analysis.artStyle, shot);
+  if (expected === null || expected !== previewArt.inputsHash) return null;
 
   const sandboxAbs = isAbsolute(previewArt.sandboxPath)
     ? previewArt.sandboxPath
@@ -170,7 +201,13 @@ function tryPromoteShotVideo(
     inputsOverride: { shot },
     outputs: { shotNumber: shot.shotNumber, path: canonicalRel, duration: shot.durationSeconds },
   });
-  return newItem?.id ?? null;
+  if (!newItem?.id) return null;
+  return {
+    itemId: newItem.id,
+    canonicalAbs,
+    canonicalRel,
+    mode: previewArt.mode ?? "generate",
+  };
 }
 
 /**
@@ -184,16 +221,26 @@ function tryPromoteShotVideo(
  * - For other Shot field changes that affect generation, all active generate_frame
  *   items for this shot are redone so the cascade re-queues downstream video.
  */
+/** Optional injectable duration probe for tests. Production callers omit
+ *  it and ffprobe is used. The probe runs after a successful video
+ *  promotion in `extend` mode so `shot.durationSeconds` reflects the
+ *  actual returned clip length. */
+export interface ApplyShotDraftOptions {
+  probeDuration?: (videoPath: string) => Promise<number>;
+}
+
 export async function applyShotDraft(
   runManager: RunManager,
   runId: string,
   sceneNumber: number,
   shotInScene: number,
   draft: ShotDraft,
+  options: ApplyShotDraftOptions = {},
 ): Promise<ApplyShotDraftResult> {
   const qm = runManager.getQueueManager(runId);
   if (!qm) throw new Error(`Run not found: ${runId}`);
 
+  const probe = options.probeDuration ?? getVideoDuration;
   const regenerated: string[] = [];
   const promoted: Array<"frame" | "video"> = [];
   const imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }> = [];
@@ -249,7 +296,7 @@ export async function applyShotDraft(
   //    the legacy redoItem path. Skipped entirely when image replacements are
   //    pending, since those invalidate previews.
   let promotedFrame: string | null = null;
-  let promotedVideo: string | null = null;
+  let promotedVideo: PromotedVideo | null = null;
   if (draft.pendingImageReplacements.length === 0 && draft.previewArtifacts) {
     promotedFrame = tryPromoteShotFrame(
       runManager, qm, runId, sceneNumber, shotInScene, draft, outputDirAbs,
@@ -265,8 +312,28 @@ export async function applyShotDraft(
       runManager, qm, runId, sceneNumber, shotInScene, draft, outputDirAbs,
     );
     if (promotedVideo) {
-      regenerated.push(promotedVideo);
+      regenerated.push(promotedVideo.itemId);
       promoted.push("video");
+      // Extend mode: ffprobe the promoted clip and update the shot's
+      // canonical duration so downstream assembly + UI reflect the actual
+      // length of the returned video. Failure here only logs a warning;
+      // the promotion itself stays committed.
+      if (promotedVideo.mode === "extend") {
+        try {
+          const measured = await probe(promotedVideo.canonicalAbs);
+          if (Number.isFinite(measured) && measured > 0) {
+            qm.updateShotFields(sceneNumber, shotInScene, { durationSeconds: measured });
+          } else {
+            console.warn(
+              `[applyShotDraft] extend probe returned non-positive duration for ${promotedVideo.canonicalAbs}: ${measured}`,
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[applyShotDraft] extend duration probe failed: ${(err as Error).message}`,
+          );
+        }
+      }
     }
   }
 
