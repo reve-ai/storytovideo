@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { EventEmitter } from 'node:events';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -120,7 +121,7 @@ async function testRunFramePreviewPersistsArtifact(): Promise<void> {
   qm.setStoryAnalysis(makeAnalysis(shot));
   qm.setAssetLibrary({ characterImages: {}, locationImages: {}, objectImages: {} });
 
-  const stubRunManager = {} as unknown as RunManager;
+  const stubRunManager = new EventEmitter() as unknown as RunManager;
   const ctx: ShotEditorContext = {
     runId: 'run-1', sceneNumber: 1, shotInScene: 1, scopeKey: '1-1',
     store: new ChatSessionStore(dir), runManager: stubRunManager, queueManager: qm,

@@ -20,6 +20,7 @@ import {
   type LocationFields,
 } from "../types.js";
 import { locationReferenceInputsHash } from "../preview-hash.js";
+import { recordPreviewImageCost } from "../preview-cost.js";
 
 export interface LocationEditorContext {
   runId: string;
@@ -178,17 +179,22 @@ export function buildLocationEditorTools(ctx: LocationEditorContext): ToolSet {
         mkdirSync(sandboxAbs, { recursive: true });
 
         const version = Date.now();
+        const imageBackend = state.options?.assetImageBackend ?? state.options?.imageBackend ?? "grok";
         const result = await generateAsset({
           locationName: location.name,
           description: location.visualDescription,
           artStyle: analysis.artStyle,
           outputDir: sandboxAbs,
-          imageBackend: state.options?.assetImageBackend ?? state.options?.imageBackend ?? "grok",
+          imageBackend,
           aspectRatio: state.options?.aspectRatio,
           version,
           directorsNote: note,
         });
         if (!result?.path) return { error: "Reference image generation produced no output" };
+        recordPreviewImageCost(
+          ctx.queueManager, ctx.runManager, ctx.runId,
+          "location", ctx.scopeKey, "referenceImage", imageBackend,
+        );
         const fileName = result.path.split("/").pop()!;
         const rel = chatPreviewRelative("location", ctx.scopeKey, fileName);
         const createdAt = new Date().toISOString();

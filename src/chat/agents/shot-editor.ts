@@ -1,11 +1,12 @@
-import { mkdirSync } from "fs";
+import { createHash } from "crypto";
+import { mkdirSync, readFileSync } from "fs";
 import { isAbsolute, join, resolve } from "path";
 import { z } from "zod";
 import { ToolLoopAgent, hasToolCall, stepCountIs, type Agent, type ToolSet } from "ai";
 
 import { getLlmModel } from "../../llm-provider.js";
 import { generateFrame } from "../../tools/generate-frame.js";
-import { generateVideo } from "../../tools/generate-video.js";
+import { extendVideo, generateVideo } from "../../tools/generate-video.js";
 import type { Shot } from "../../types.js";
 import type { RunManager } from "../../queue/run-manager.js";
 import type { QueueManager } from "../../queue/queue-manager.js";
@@ -17,10 +18,12 @@ import {
 import { emptyShotDraft, isShotDraft, type ShotDraft } from "../types.js";
 import {
   FRAME_AFFECTING_SHOT_FIELDS,
+  shotExtendVideoInputsHash,
   shotFrameInputsHash,
   shotVideoInputsHash,
   shotFrameFieldsDiffer,
 } from "../preview-hash.js";
+import { recordPreviewImageCost, recordPreviewVideoCost } from "../preview-cost.js";
 
 export interface ShotEditorContext {
   runId: string;
@@ -142,17 +145,22 @@ export async function runFramePreview(
 
   const version = Date.now();
   const generate = opts.generate ?? generateFrame;
+  const imageBackend = state.options?.imageBackend ?? "grok";
   const result = await generate({
     shot,
     artStyle: analysis.artStyle,
     assetLibrary,
     outputDir: sandboxAbs,
-    imageBackend: state.options?.imageBackend ?? "grok",
+    imageBackend,
     aspectRatio: state.options?.aspectRatio,
     version,
     directorsNote: opts.note,
   });
   if (!result.startPath) return { ok: false, error: "Frame generation produced no output" };
+  recordPreviewImageCost(
+    ctx.queueManager, ctx.runManager, ctx.runId,
+    "shot", ctx.scopeKey, "frame", imageBackend,
+  );
   const rel = chatPreviewRelative(
     "shot", ctx.scopeKey, "frames",
     `scene_${shot.sceneNumber}_shot_${shot.shotInScene}_v${version}_start.png`,
@@ -381,6 +389,7 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
         }
 
         const version = Date.now();
+        const videoBackend = state.options?.videoBackend ?? "grok";
         const result = await generateVideo({
           shotNumber: shot.shotNumber,
           sceneNumber: shot.sceneNumber,
@@ -395,11 +404,15 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
           durationSeconds: shot.durationSeconds,
           startFramePath: startFrameAbs,
           outputDir: sandboxAbs,
-          videoBackend: state.options?.videoBackend ?? "grok",
+          videoBackend,
           aspectRatio: state.options?.aspectRatio,
           version,
           directorsNote: note,
         });
+        recordPreviewVideoCost(
+          ctx.queueManager, ctx.runManager, ctx.runId,
+          "shot", ctx.scopeKey, "video", videoBackend, result.duration,
+        );
 
         const fileName = result.path.split("/").pop()!;
         const rel = chatPreviewRelative("shot", ctx.scopeKey, fileName);
@@ -427,6 +440,106 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
           path: rel,
           url: `/api/runs/${ctx.runId}/media/${rel.split("/").map(encodeURIComponent).join("/")}`,
           duration: result.duration,
+        };
+      },
+    }),
+
+    previewExtendedVideo: ({
+      description:
+        "Extend an existing video clip by appending new content from its last frame. " +
+        "Source resolution: prefers the most recent sandbox preview video for this shot, " +
+        "falling back to the canonical clip. If neither exists, call previewVideo first. " +
+        "Writes only to the chat sandbox; does NOT regenerate the start frame. " +
+        "Use when the user wants the same clip to keep going (e.g. \"make it longer and have him walk to the door\"). " +
+        "Expensive — only call when the user explicitly asks.",
+      inputSchema: z.object({
+        extensionDurationSeconds: z.number().int().min(1).max(10).describe(
+          "Length of the extension segment in seconds (1–10).",
+        ),
+        continuationPrompt: z.string().min(1).describe(
+          "What should happen next in the video. Don't re-describe the standing scene the source clip already shows.",
+        ),
+      }),
+      execute: async (input: { extensionDurationSeconds: number; continuationPrompt: string }) => {
+        const draft = loadDraft(ctx);
+        const shot = mergedShot(ctx.queueManager, ctx.sceneNumber, ctx.shotInScene, draft);
+        if (!shot) return { error: "Shot not found" };
+        const state = ctx.queueManager.getState();
+        const analysis = state.storyAnalysis;
+        if (!analysis) return { error: "No storyAnalysis available" };
+
+        const runOutputAbs = resolveOutputDirAbs(state.outputDir);
+        const sandboxAbs = chatPreviewDir(runOutputAbs, "shot", ctx.scopeKey);
+        mkdirSync(sandboxAbs, { recursive: true });
+
+        // Source preference: latest sandbox preview video → canonical clip.
+        // The agent doesn't pick — we always prefer the freshest artifact so
+        // chained extensions compound naturally.
+        const previewVideoRel = draft.previewArtifacts?.video?.sandboxPath ?? null;
+        const canonicalKey = `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`;
+        const canonicalRel = state.generatedOutputs[canonicalKey] ?? null;
+        const sourceRel = previewVideoRel ?? canonicalRel;
+        if (!sourceRel) {
+          return {
+            error: "No source video available to extend — call previewVideo first to render the base clip.",
+          };
+        }
+        const sourceAbs = isAbsolute(sourceRel) ? sourceRel : join(runOutputAbs, sourceRel);
+
+        const sourceBytes = readFileSync(sourceAbs);
+        const sourceVideoSha = createHash("sha256").update(sourceBytes).digest("hex");
+
+        const version = Date.now();
+        const videoBackend = state.options?.videoBackend ?? "grok";
+        const result = await extendVideo({
+          sceneNumber: shot.sceneNumber,
+          shotInScene: shot.shotInScene,
+          sourceVideoPath: sourceAbs,
+          continuationPrompt: input.continuationPrompt,
+          extensionDurationSeconds: input.extensionDurationSeconds,
+          outputDir: sandboxAbs,
+          version,
+          videoBackend,
+        });
+        recordPreviewVideoCost(
+          ctx.queueManager, ctx.runManager, ctx.runId,
+          "shot", ctx.scopeKey, "extendedVideo", videoBackend, result.duration,
+        );
+
+        const fileName = result.path.split("/").pop()!;
+        const rel = chatPreviewRelative("shot", ctx.scopeKey, fileName);
+        const createdAt = new Date().toISOString();
+        ctx.store.appendIntermediate("shot", ctx.scopeKey, ctx.runId, {
+          kind: "video",
+          path: rel,
+          fromToolCallId: "previewExtendedVideo",
+          createdAt,
+          note: input.continuationPrompt,
+        });
+        const inputsHash = shotExtendVideoInputsHash({
+          sourceVideoSha,
+          continuationPrompt: input.continuationPrompt,
+        });
+        const refreshed = loadDraft(ctx);
+        saveDraft(ctx, {
+          ...refreshed,
+          previewArtifacts: {
+            ...(refreshed.previewArtifacts ?? {}),
+            video: {
+              sandboxPath: rel,
+              createdAt,
+              inputsHash,
+              mode: "extend",
+              extendMeta: { sourceVideoSha, continuationPrompt: input.continuationPrompt },
+            },
+          },
+        });
+        return {
+          ok: true,
+          path: rel,
+          url: `/api/runs/${ctx.runId}/media/${rel.split("/").map(encodeURIComponent).join("/")}`,
+          duration: result.duration,
+          sourceUsed: previewVideoRel ? "preview" : "canonical",
         };
       },
     }),
@@ -467,8 +580,9 @@ The Shot is part of a larger story analysis document. You can:
 - Stage an image replacement via replaceFrameImage.
 - Generate a preview of the new start frame via previewFrame, writing to a sandbox.
 - Generate a preview of the new video via previewVideo, writing to a sandbox.
+- Extend an existing video clip (without regenerating the start frame) via previewExtendedVideo, writing to a sandbox.
 
-Previews are expensive — only call previewFrame / previewVideo when the user explicitly asks for a regenerated artifact, not as a default.
+Previews are expensive — only call previewFrame / previewVideo / previewExtendedVideo when the user explicitly asks for a regenerated artifact, not as a default.
 
 Minimal-change discipline. Only modify fields the user explicitly asked to change. Treat the existing field values as the source of truth and edit narrowly. Frame-affecting fields (${FRAME_AFFECTING_LIST}) trigger a frame regeneration that cascades into a video regeneration when applied. Video-only fields (${VIDEO_ONLY_LIST}) only trigger a video regeneration. When the user asks about action, dialogue, timing, sound, or camera direction, edit only the relevant video-only fields and leave the frame-affecting fields alone — rewriting composition or startFramePrompt to "match" a dialogue tweak burns a frame and a video for no user-visible benefit. When the user does ask about framing, blocking, who/what is in the shot, or location, editing the relevant frame-affecting fields is correct and expected. When in doubt about whether an edit needs a frame-affecting field, ask the user before staging it.
 

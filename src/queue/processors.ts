@@ -28,6 +28,7 @@ import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
 import { analyzeVideoClip, buildAnalyzeVideoPrompt } from '../tools/analyze-video-pacing.js';
 import type { Shot } from '../types.js';
 import { computeLlmCost, computeImageCost, computeVideoCost } from './cost-tracker.js';
+import { imageBackendToModel, videoBackendToModel } from './backend-models.js';
 
 // ---------------------------------------------------------------------------
 // Per-scene shot schema (matches plan-shots.ts perSceneShotSchema)
@@ -524,8 +525,7 @@ ${JSON.stringify(scene, null, 2)}`;
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
 
     // Record image generation cost
-    const imageModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
-    this.recordImageCost(item, imageModelName);
+    this.recordImageCost(item, imageBackendToModel(imageBackend));
 
     // Build asset library from generated outputs
     this.rebuildAssetLibrary();
@@ -663,11 +663,7 @@ ${JSON.stringify(scene, null, 2)}`;
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
 
     // Record video generation cost
-    const videoModelName = videoBackend === 'grok' ? 'grok-imagine-video'
-      : videoBackend === 'veo' ? 'veo-3.1-generate-preview'
-      : videoBackend === 'veo-reve' ? 'veo-3.1-generate-001'
-      : 'ltx';
-    this.recordVideoCost(item, videoModelName, result.duration);
+    this.recordVideoCost(item, videoBackendToModel(videoBackend), result.duration);
 
     return {
       shotNumber: result.shotNumber,
