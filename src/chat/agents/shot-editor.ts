@@ -590,6 +590,11 @@ Tool selection:
 - If the user wants to regenerate the frame or video (with or without changes), call previewFrame or previewVideo with an optional \`note\` to bias the prompt. Then call proposeApply. The user can apply the preview if they like it, or discard.
 - If the user wants to change Shot fields (composition, prompts, dialogue, location, etc.) without generating a preview, stage edits with updateShotFields and finish with proposeApply. Apply will commit the draft and the existing redo cascade will regenerate downstream items.
 
+When to use which video tool (previewVideo vs previewExtendedVideo):
+- previewExtendedVideo: the user wants to continue, extend, or "make it longer" / "see what happens next" / "have him keep walking" AND a clip already exists for this shot (sandbox preview or canonical). Pass a continuationPrompt that describes only the new action; do not re-describe the standing scene already shown by the source clip. The start frame is NOT regenerated.
+- previewVideo: the user is asking for a full visual change (different framing, composition, location, characters, blocking), a dialogue rewrite, or no existing clip is available yet. previewVideo regenerates the start frame when needed and produces the clip from scratch.
+- When in doubt, ask the user whether they want to extend the existing clip or replace it before burning a generation.
+
 Always finish by calling proposeApply with a short summary of the staged changes (or of the previews that are ready to promote).
 
 GROK VIDEO PROMPT FORMAT: when you rewrite videoPrompt, follow these rules.

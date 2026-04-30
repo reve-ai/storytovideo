@@ -51,6 +51,7 @@ SHOT PLANNING PRINCIPLES:
 - DEFAULT TO TRUE within a scene. Set continuousFromPrevious=true whenever the location is the same as the previous shot and the characters present are the same or a subset of the previous shot — even if the camera angle or composition changes (the video model handles camera changes well).
 - Set continuousFromPrevious=false ONLY when: it is the first shot in the scene, the location changes within the scene, a new character enters who was not in the previous shot (the model can't add someone who isn't in the extracted frame), a character's face needs to be visible but wasn't clearly shown in the previous shot (e.g. after an over-the-shoulder or behind-the-subject shot), or there is a significant time jump within the scene.
 - When in doubt, use continuousFromPrevious=true. Breaking continuity should be the exception, not the norm.
+- EDIT-TIME VIDEO TOOL TRIAGE: the same split applies when re-rendering a single shot during editing. "Continue / make it longer / what happens next" against an existing clip should extend that clip rather than re-render; a full visual change, dialogue rewrite, or absence of any existing clip means re-rendering from the start frame.
 
 COMPOSITION TYPES (what the camera sees and what happens):
 - wide_establishing: Wide view of the setting. Shows the environment, characters in context, spatial relationships. Action: characters move through space, enter/exit, interact with environment.
