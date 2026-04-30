@@ -611,7 +611,8 @@ ${JSON.stringify(scene, null, 2)}`;
     }
 
     // Record frame generation cost (only if an image was actually generated, not ffmpeg extraction)
-    this.recordImageCost(item, imageBackendToModel(imageBackend));
+    const frameModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
+    this.recordImageCost(item, frameModelName);
 
     return {
       shotNumber: result.shotNumber,
