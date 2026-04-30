@@ -176,14 +176,21 @@ export async function mixMusicIntoVideo(
  *      `outputDir/music/scene-NN.mp3`.
  *   4. Delete the per-scene source mp4 (try/finally).
  *
- * Returns paths to the generated per-scene MP3s and the duration of each
- * scene's source mp4 (used for cost tracking).
+ * Returns the planned composite mp3 path plus a typed entry per generated
+ * scene track (scene number, mp3 path, source-video duration used for cost
+ * tracking).
  */
+export type PerSceneMusicTrack = {
+  sceneNumber: number;
+  mp3Path: string;
+  durationSeconds: number;
+};
+
 export async function generatePerSceneMusic(
   scenes: Scene[],
   videosDir: string,
   outputDir: string,
-): Promise<{ compositePath: string; scenePaths: string[]; sceneDurations: number[] }> {
+): Promise<{ compositePath: string; scenes: PerSceneMusicTrack[] }> {
   const musicDir = path.join(outputDir, "music");
   const tempDir = path.join(outputDir, "temp", "music-source");
   fs.mkdirSync(musicDir, { recursive: true });
@@ -207,8 +214,7 @@ export async function generatePerSceneMusic(
     }
   }
 
-  const scenePaths: string[] = [];
-  const sceneDurations: number[] = [];
+  const tracks: PerSceneMusicTrack[] = [];
 
   for (const scene of scenes) {
     const padded = String(scene.sceneNumber).padStart(2, "0");
@@ -242,21 +248,19 @@ export async function generatePerSceneMusic(
 
       const duration = await getVideoDuration(sourceMp4);
       await uploadVideoForMusic(sourceMp4, sceneMp3);
-      scenePaths.push(sceneMp3);
-      sceneDurations.push(duration);
+      tracks.push({ sceneNumber: scene.sceneNumber, mp3Path: sceneMp3, durationSeconds: duration });
     } finally {
       try { fs.unlinkSync(sourceMp4); } catch { /* ignore */ }
     }
   }
 
-  if (scenePaths.length === 0) {
+  if (tracks.length === 0) {
     throw new Error("generatePerSceneMusic: no scenes produced music tracks (no matching shot videos found)");
   }
 
   return {
     compositePath: path.join(outputDir, "generated-music.mp3"),
-    scenePaths,
-    sceneDurations,
+    scenes: tracks,
   };
 }
 

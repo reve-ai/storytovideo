@@ -2753,23 +2753,20 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         } else {
           // Per-scene flow: one Video-to-Music call per scene, crossfade-stitched into generated-music.mp3.
           console.log(`[add-music] Per-scene flow over ${scenes.length} scene(s)`);
-          const { scenePaths, sceneDurations } = await generatePerSceneMusic(scenes, videosDir, outputDir);
-          await composeSceneMusicTracks(scenePaths, videoDuration, musicPath);
+          const { scenes: musicTracks } = await generatePerSceneMusic(scenes, videosDir, outputDir);
+          await composeSceneMusicTracks(musicTracks.map((t) => t.mp3Path), videoDuration, musicPath);
           await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
 
-          // Record one CostEntry per scene that produced a track. scenePaths/sceneDurations
-          // are aligned by index; recover the scene number from the mp3 filename suffix.
-          for (let i = 0; i < scenePaths.length; i++) {
-            const m = /scene-(\d{2})\.mp3$/.exec(scenePaths[i]);
-            const padded = m ? m[1] : String(i + 1).padStart(2, "0");
-            const dur = sceneDurations[i];
-            const costUsd = computeAudioCost('elevenlabs-music', dur);
+          // Record one CostEntry per scene that produced a track.
+          for (const track of musicTracks) {
+            const padded = String(track.sceneNumber).padStart(2, "0");
+            const costUsd = computeAudioCost('elevenlabs-music', track.durationSeconds);
             qm.recordCost({
               itemId: `music-add-scene-${padded}`,
               itemKey: `music:add:scene:${padded}`,
               model: 'elevenlabs-music',
               category: 'audio',
-              durationSeconds: dur,
+              durationSeconds: track.durationSeconds,
               costUsd,
               timestamp: new Date().toISOString(),
             });
