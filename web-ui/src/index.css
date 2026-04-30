@@ -3,6 +3,8 @@
 @import "./styles/dialog.css";
 @import "./styles/home.css";
 
+@custom-variant dark (&:is(.dark *));
+
 :root {
   --bg: #0f1117;
   --surface: #1a1d27;
@@ -35,6 +37,70 @@
   --col-video-text: #4ade80;
 
   --radius: 8px;
+
+  /* shadcn / AI Elements tokens (mapped to app palette, dark by default) */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface2);
+  --secondary-foreground: var(--text);
+  --muted-bg: var(--surface2);
+  --muted-foreground: var(--muted);
+  --accent-bg: var(--surface2);
+  --accent-foreground: var(--text);
+  --destructive: var(--red);
+  --destructive-foreground: #ffffff;
+  --border-color: var(--border);
+  --input: var(--surface2);
+  --ring: var(--accent);
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--surface2);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+/* Tailwind v4 token bridge so shadcn/AI Elements `bg-background`, `text-foreground`, etc. work. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-bg);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border-color);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 *,
@@ -130,11 +196,388 @@ body {
 .save-inputs-btn.visible { display: block; }
 .save-inputs-btn:hover { opacity: 0.9; }
 
+/* Wide detail panel for scoped chat (form + inspector + chat) */
+.detail-panel-wide {
+  width: min(1100px, 95vw);
+  right: calc(-1 * min(1100px, 95vw));
+}
+.detail-panel-wide.open { right: 0; }
+
 /* Responsive detail panel */
 @media (max-width: 900px) {
   .detail-panel { width: 100vw; right: -100vw; }
+  .detail-panel-wide { width: 100vw; right: -100vw; }
 }
 
+/* Story chat takeover — full-width slide-in panel for the Story scope. */
+.story-chat-takeover {
+  position: fixed;
+  top: 0;
+  right: -100vw;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg, #111);
+  border-left: 1px solid var(--border, #333);
+  z-index: 200;
+  transition: right 0.18s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+.story-chat-takeover.open { right: 0; }
+.story-chat-takeover-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border, #333);
+}
+.story-chat-takeover-close {
+  background: none;
+  border: 1px solid var(--border, #333);
+  color: inherit;
+  font-size: 1rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.story-chat-takeover-close:hover { background: var(--hover, #2a2a2a); }
+.story-chat-takeover-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.6rem;
+}
+
+/* Scoped chat panel three-region grid */
+.scoped-chat-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr);
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "form chat"
+    "inspector chat";
+  gap: 0.6rem;
+  height: calc(100vh - 3rem);
+}
+.scoped-chat-form { grid-area: form; overflow-y: auto; min-height: 0; }
+.scoped-chat-inspector { grid-area: inspector; overflow-y: auto; min-height: 0; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.scoped-chat-chat {
+  grid-area: chat; display: flex; flex-direction: column; gap: 0.5rem;
+  min-height: 0; border-left: 1px solid var(--border); padding-left: 0.6rem;
+}
+@media (max-width: 900px) {
+  .scoped-chat-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "form" "inspector" "chat";
+    height: auto;
+  }
+  .scoped-chat-chat { border-left: none; padding-left: 0; min-height: 60vh; }
+}
+
+/* Shot form */
+.shot-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.shot-form-empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem; }
+.shot-form-field { display: flex; flex-direction: column; gap: 0.2rem; }
+.shot-form-field-bool label { display: flex; align-items: center; gap: 0.4rem; }
+.shot-form-label {
+  font-size: 0.7rem; font-weight: 600; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 0.25rem;
+}
+.shot-form-draft-badge { color: var(--accent); font-size: 0.7rem; }
+.shot-form-field input[type="text"],
+.shot-form-field input[type="number"],
+.shot-form-field textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 4px; padding: 0.3rem 0.45rem; font-size: 0.8rem;
+  font-family: inherit; box-sizing: border-box;
+}
+.shot-form-field textarea { min-height: 50px; resize: vertical; }
+.shot-form-field input:focus,
+.shot-form-field textarea:focus { outline: none; border-color: var(--accent); }
+
+/* Shot inspector / generic ContextInspector */
+.shot-inspector,
+.context-inspector { display: flex; flex-direction: column; gap: 0.5rem; }
+.shot-inspector-section,
+.context-inspector-section { border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem 0.6rem; }
+.shot-inspector-section > summary,
+.context-inspector-section > summary {
+  cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--muted);
+  user-select: none;
+}
+.shot-inspector-name-pool {
+  display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem;
+}
+.shot-inspector-name-chip {
+  font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: var(--border); color: var(--text);
+}
+.shot-inspector-toolcalls {
+  list-style: none; padding: 0; margin: 0.4rem 0 0;
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.shot-inspector-toolcalls li {
+  display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem;
+}
+.shot-inspector-json-wrap { position: relative; margin-top: 0.4rem; }
+.shot-inspector-json-copy {
+  position: absolute; top: 0.2rem; right: 0.2rem; font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+}
+.shot-inspector-json {
+  font-family: monospace; font-size: 0.7rem; max-height: 320px;
+  overflow: auto; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; padding: 0.4rem; margin: 0;
+}
+.shot-inspector-empty { color: var(--muted); font-size: 0.8rem; padding: 0.3rem 0; }
+.shot-inspector-group { margin-top: 0.5rem; }
+.shot-inspector-group-label {
+  font-size: 0.7rem; font-weight: 600; color: var(--muted); margin-bottom: 0.25rem;
+}
+.shot-inspector-asset {
+  display: flex; gap: 0.5rem; padding: 0.25rem 0;
+}
+.shot-inspector-asset-img {
+  width: 48px; height: 48px; object-fit: cover; border-radius: 4px;
+  border: 1px solid var(--border); flex-shrink: 0;
+}
+.shot-inspector-asset-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.shot-inspector-asset-name { font-size: 0.8rem; font-weight: 600; }
+.shot-inspector-asset-desc {
+  font-size: 0.7rem; color: var(--muted); white-space: pre-wrap;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.shot-inspector-intermediates { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.4rem; }
+.shot-inspector-intermediate img,
+.shot-inspector-intermediate video {
+  max-width: 100%; border-radius: 4px; border: 1px solid var(--border);
+}
+.shot-inspector-intermediate-meta {
+  display: flex; gap: 0.5rem; font-size: 0.7rem; color: var(--muted); margin-top: 0.2rem;
+}
+.shot-inspector-downstream {
+  list-style: none; padding: 0; margin: 0.4rem 0 0; display: flex; flex-direction: column; gap: 0.25rem;
+}
+.shot-inspector-downstream li {
+  display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem;
+}
+.shot-inspector-downstream-key { color: var(--muted); font-family: monospace; font-size: 0.7rem; }
+
+/* Current outputs section (Shot/Location inspector) */
+.shot-inspector-current-outputs {
+  display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.4rem;
+}
+.shot-inspector-current-output { display: flex; flex-direction: column; gap: 0.25rem; }
+.shot-inspector-current-output-label {
+  font-size: 0.7rem; font-weight: 600; color: var(--muted);
+}
+.shot-inspector-current-thumb {
+  position: relative; display: inline-block; max-width: 320px;
+}
+.shot-inspector-current-img {
+  display: block; width: 100%; max-width: 320px; height: auto;
+  border-radius: 4px; border: 1px solid var(--border);
+}
+.shot-inspector-current-video {
+  display: block; width: 100%; max-width: 480px; height: auto;
+  border-radius: 4px; border: 1px solid var(--border); background: black;
+}
+.shot-inspector-current-overlay {
+  position: absolute; top: 0.3rem; left: 0.3rem; right: 0.3rem;
+  display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;
+  padding: 0.3rem; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.shot-inspector-current-overlay-failed { background: rgba(80, 0, 0, 0.55); }
+.shot-inspector-current-error {
+  font-size: 0.7rem; color: var(--text); white-space: pre-wrap;
+  max-height: 4.5em; overflow: hidden;
+}
+.shot-inspector-current-placeholder {
+  display: flex; flex-direction: column; gap: 0.3rem;
+  padding: 0.6rem; border: 1px dashed var(--border); border-radius: 4px;
+  background: var(--surface); align-items: flex-start;
+}
+.shot-inspector-current-placeholder-hint {
+  font-size: 0.75rem; color: var(--muted);
+}
+
+/* Proposed (staged but not yet applied) value rows */
+.shot-inspector-proposed-row {
+  margin-top: 0.2rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--orange);
+  background: var(--orange-dim);
+  border-radius: 0 3px 3px 0;
+  font-size: 0.8rem;
+  color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.shot-inspector-proposed-label {
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  color: var(--orange); margin-right: 0.4rem;
+  letter-spacing: 0.05em;
+}
+.shot-inspector-proposed-pool {
+  display: flex; flex-wrap: wrap; gap: 0.25rem;
+  margin-top: 0.2rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--orange);
+  background: var(--orange-dim);
+  border-radius: 0 3px 3px 0;
+}
+.shot-inspector-proposed-chip {
+  font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 3px;
+  background: rgba(251, 146, 60, 0.25); color: var(--text);
+  border: 1px solid rgba(251, 146, 60, 0.5);
+}
+.shot-inspector-proposed-empty-chip {
+  font-size: 0.7rem; color: var(--muted); font-style: italic;
+}
+.shot-inspector-proposed-badge {
+  position: absolute; top: 0.3rem; left: 0.3rem;
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  padding: 0.15rem 0.4rem; border-radius: 3px;
+  background: var(--orange); color: #1a1a1a;
+  letter-spacing: 0.05em; z-index: 1;
+}
+.shot-inspector-pending-field {
+  display: flex; flex-direction: column; gap: 0.1rem;
+  margin-top: 0.55rem;
+}
+.shot-inspector-pending-field:first-child { margin-top: 0; }
+.shot-inspector-pending-canonical {
+  font-size: 0.8rem; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.shot-inspector-pending-canonical-empty {
+  font-size: 0.8rem; color: var(--muted); font-style: italic;
+}
+
+/* Shot chat panel */
+.shot-chat {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  height: calc(100vh - 6rem);
+}
+.shot-chat-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+}
+/* Reserve space for DetailPanel's absolute .close-btn so Discard/Apply don't sit under it. */
+.detail-panel-wide .shot-chat-header { padding-right: 3rem; }
+.shot-chat-title { font-weight: 600; font-size: 0.9rem; }
+.shot-chat-actions { display: flex; gap: 0.4rem; }
+.shot-chat-actions button {
+  padding: 0.3rem 0.7rem; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text); font-size: 0.8rem; cursor: pointer;
+}
+.shot-chat-actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.shot-chat-actions button.primary:disabled,
+.shot-chat-actions button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.shot-chat-apply { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; }
+.shot-chat-apply-hint { font-size: 0.7rem; color: var(--muted, #888); }
+
+.shot-chat-conversation { flex: 1; min-height: 0; }
+.shot-chat-prompt { margin-top: 0.4rem; }
+.shot-chat-interrupted {
+  margin: 0.4rem 0; padding: 0.5rem 0.7rem; border-radius: 4px;
+  background: rgba(220, 150, 0, 0.12); color: var(--text);
+  border: 1px solid rgba(220, 150, 0, 0.4); font-size: 0.8rem;
+}
+
+.shot-chat-activity {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin: 0.25rem 0.1rem; padding: 0.15rem 0.2rem;
+  font-size: 0.75rem; color: var(--muted); font-style: italic;
+}
+.shot-chat-activity-dots { display: inline-flex; gap: 3px; }
+.shot-chat-activity-dots span {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: currentColor; opacity: 0.3;
+  animation: shot-chat-activity-dot 1.2s infinite ease-in-out both;
+}
+.shot-chat-activity-dots span:nth-child(2) { animation-delay: 0.15s; }
+.shot-chat-activity-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes shot-chat-activity-dot {
+  0%, 80%, 100% { opacity: 0.25; }
+  40%           { opacity: 1; }
+}
+
+.active-chats-indicator { position: relative; display: inline-block; }
+.active-chats-button {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.25rem 0.55rem; border-radius: 4px; cursor: pointer;
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); font-size: 0.85rem;
+}
+.active-chats-count {
+  background: var(--accent); color: #fff; font-size: 0.7rem;
+  padding: 0 0.35rem; border-radius: 999px; min-width: 1rem; text-align: center;
+}
+.active-chats-menu {
+  position: absolute; top: 100%; right: 0; margin-top: 0.25rem;
+  background: var(--surface, #1e1e1e); border: 1px solid var(--border, #333);
+  border-radius: 0.375rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  z-index: 100; min-width: 16rem; overflow: hidden;
+}
+.active-chats-item {
+  display: flex; align-items: stretch; width: 100%;
+  border-bottom: 1px solid var(--border, #333); font-size: 0.85rem;
+}
+.active-chats-item:last-child { border-bottom: none; }
+.active-chats-item-main {
+  flex: 1; text-align: left; padding: 0.5rem 0.75rem;
+  background: none; border: none; color: inherit; cursor: pointer;
+}
+.active-chats-item-main:hover { background: var(--hover, #2a2a2a); }
+.active-chats-item-cancel {
+  padding: 0 0.6rem; background: none; border: none; border-left: 1px solid var(--border, #333);
+  color: var(--muted); cursor: pointer; font-size: 0.75rem;
+}
+.active-chats-item-cancel:hover:not(:disabled) { background: var(--hover, #2a2a2a); color: #ff6b6b; }
+.active-chats-item-cancel:disabled { cursor: default; opacity: 0.6; }
+.active-chats-item-line { display: flex; justify-content: space-between; gap: 0.5rem; }
+.active-chats-item-label { font-weight: 500; }
+.active-chats-item-time { color: var(--muted); font-size: 0.75rem; }
+.active-chats-item-tool { color: var(--muted); font-size: 0.75rem; margin-top: 0.15rem; font-family: monospace; }
+.active-chats-item-queue { color: var(--muted); font-size: 0.75rem; margin-top: 0.15rem; }
+
+.chat-tool-part {
+  border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem;
+  background: var(--bg); margin-top: 0.3rem;
+}
+.chat-tool-head { display: flex; justify-content: space-between; font-size: 0.75rem; }
+.chat-tool-name { font-family: monospace; color: var(--accent); }
+.chat-tool-state { color: var(--muted); }
+.chat-tool-state.state-output-error { color: var(--red); }
+.chat-tool-detail summary { cursor: pointer; color: var(--muted); font-size: 0.75rem; padding: 0.2rem 0; }
+.chat-tool-detail pre {
+  background: var(--surface); padding: 0.4rem; border-radius: 4px;
+  font-size: 0.7rem; overflow-x: auto; max-height: 180px; overflow-y: auto;
+}
+.chat-tool-error { color: var(--red); font-size: 0.75rem; }
+.chat-tool-approval {
+  margin-top: 0.4rem; padding: 0.4rem; border-radius: 4px;
+  background: var(--orange-dim); border: 1px solid var(--orange);
+}
+.chat-tool-approval-msg { font-size: 0.8rem; margin-bottom: 0.35rem; }
+.chat-tool-approval-args {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.35rem 0.5rem; font-size: 0.75rem; margin: 0 0 0.35rem;
+  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.chat-tool-approval-actions { display: flex; gap: 0.4rem; }
+.chat-tool-approval-actions button {
+  padding: 0.25rem 0.7rem; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text); font-size: 0.75rem; cursor: pointer;
+}
+.chat-tool-approval-actions button.primary {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.chat-tool-approval-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-tool-approval-result {
+  margin-top: 0.3rem; font-size: 0.75rem; color: var(--muted); font-style: italic;
+}
 
 /* Queue item hover */
 .queue-item {

@@ -3,6 +3,9 @@ import { NavLink, useNavigate } from "react-router";
 import { useRunStore, getUrlState } from "../stores/run-store";
 import { usePipelineStore } from "../stores/pipeline-store";
 import { useUIStore, type ViewName } from "../stores/ui-store";
+import { useChatDraftsStore, useHasDraft } from "../stores/chat-drafts-store";
+import ActiveChatsIndicator from "./ActiveChatsIndicator";
+import DraftBadge from "./DraftBadge";
 
 const VIEW_TABS = [
   { to: "/", label: "Queues", end: true },
@@ -91,6 +94,20 @@ export default function TopBar() {
   }, [activeRunId, exportRun]);
 
   const queues = usePipelineStore((s) => s.queues);
+  const fetchDrafts = useChatDraftsStore((s) => s.fetchDrafts);
+  const clearDrafts = useChatDraftsStore((s) => s.clear);
+  const storyHasDraft = useHasDraft("story", "main");
+
+  // Refresh the drafts cache once when the active run changes. The cache is
+  // kept fresh after that by the chat-session-store apply/discard/stage/reset
+  // fan-out, so no polling is needed.
+  useEffect(() => {
+    if (!activeRunId) {
+      clearDrafts();
+      return;
+    }
+    void fetchDrafts(activeRunId);
+  }, [activeRunId, fetchDrafts, clearDrafts]);
 
   // Check if there's any pending or in-progress work left
   const hasPendingWork = (["llm", "image", "video"] as const).some((qName) => {
@@ -105,6 +122,7 @@ export default function TopBar() {
   const playDisabled = runStatus === "stopped" && !hasPendingWork;
   const activeRun = runs.find((run) => run.id === activeRunId);
   const clearActiveRun = useRunStore((s) => s.clearActiveRun);
+  const openStoryChat = useUIStore((s) => s.openStoryChat);
 
   const handleGoHome = useCallback(() => {
     const pipeline = usePipelineStore.getState();
@@ -165,9 +183,21 @@ export default function TopBar() {
       <div className="top-bar-right">
         {activeRunId && (
           <>
+            <ActiveChatsIndicator runId={activeRunId} />
+
             {runStatus && (
               <span className={`run-status-badge ${runStatus}`}>{runStatus}</span>
             )}
+
+            <button
+              type="button"
+              className="edit-story-btn"
+              onClick={openStoryChat}
+              title="Edit top-level story metadata (title, art style)"
+            >
+              ✏️ Edit Story
+              {storyHasDraft && <DraftBadge />}
+            </button>
 
             {showPlayPause && (
               <button

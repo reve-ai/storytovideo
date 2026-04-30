@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { QueueManager } from './queue-manager.js';
-import { QueueProcessor } from './processors.js';
+import { seedAfterGenerateFrame, seedAfterGenerateVideo } from './seed-downstream.js';
 import type { Shot, StoryAnalysis } from '../types.js';
 
 async function sleep(ms: number): Promise<void> {
@@ -294,7 +294,6 @@ function testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete(): v
     inputs: { shot: shot3 },
   });
 
-  const processor = new QueueProcessor('video', qm, 'run-1', 1);
   const newFrame1 = qm.redoItem(frame1.id);
 
   const frame2Items = qm.getItemsByKey('frame:scene:1:shot:2');
@@ -309,14 +308,14 @@ function testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete(): v
   assert.equal(frame3Items.length, 1);
   assert.equal(frame3Items[0].status, 'superseded');
 
-  (processor as any).seedAfterGenerateFrame(newFrame1, { startPath: 'frames/1-v2.png' });
+  seedAfterGenerateFrame(qm, newFrame1, { startPath: 'frames/1-v2.png' });
 
   const video1Items = qm.getItemsByKey('video:scene:1:shot:1');
   const activeVideo1 = video1Items.find(item => item.status !== 'superseded' && item.status !== 'cancelled');
   assert.ok(activeVideo1);
   assert.deepEqual(activeVideo1.dependencies, [newFrame1.id]);
 
-  (processor as any).seedAfterGenerateVideo(activeVideo1, {
+  seedAfterGenerateVideo(qm, activeVideo1, {
     shotNumber: 1,
     path: 'videos/1-v2.mp4',
   });
@@ -326,14 +325,14 @@ function testFrameRedoRebuildsContinuityChainAfterReplacementVideosComplete(): v
   assert.ok(recreatedFrame2);
   assert.deepEqual(recreatedFrame2.dependencies, [activeVideo1.id]);
 
-  (processor as any).seedAfterGenerateFrame(recreatedFrame2, { startPath: 'frames/2-v2.png' });
+  seedAfterGenerateFrame(qm, recreatedFrame2, { startPath: 'frames/2-v2.png' });
 
   const recreatedVideo2 = qm.getItemsByKey('video:scene:1:shot:2')
     .find(item => item.status !== 'superseded' && item.status !== 'cancelled');
   assert.ok(recreatedVideo2);
   assert.deepEqual(recreatedVideo2.dependencies, [recreatedFrame2.id]);
 
-  (processor as any).seedAfterGenerateVideo(recreatedVideo2, {
+  seedAfterGenerateVideo(qm, recreatedVideo2, {
     shotNumber: 2,
     path: 'videos/2-v2.mp4',
   });
@@ -359,8 +358,7 @@ function testGenerateVideoSeedsMissingContinuityFrame(): void {
     priority: 'high',
   });
 
-  const processor = new QueueProcessor('video', qm, 'run-1', 1);
-  (processor as any).seedAfterGenerateVideo(video, {
+  seedAfterGenerateVideo(qm, video, {
     shotNumber: 1,
     path: 'videos/1.mp4',
   });
@@ -394,15 +392,14 @@ function testGenerateVideoSeedsAssembleWithVideoKeys(): void {
   qm.markInProgress(video1.id);
   qm.markCompleted(video1.id, { path: 'videos/1.mp4' });
 
-  const processor = new QueueProcessor('video', qm, 'run-1', 1);
-  (processor as any).seedAfterGenerateVideo(video1, {
+  seedAfterGenerateVideo(qm, video1, {
     shotNumber: 1,
     path: 'videos/1.mp4',
   });
 
   qm.markInProgress(video2.id);
   qm.markCompleted(video2.id, { path: 'videos/2.mp4' });
-  (processor as any).seedAfterGenerateVideo(video2, {
+  seedAfterGenerateVideo(qm, video2, {
     shotNumber: 2,
     path: 'videos/2.mp4',
   });

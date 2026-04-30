@@ -3,6 +3,8 @@ import { Outlet } from "react-router";
 import TopBar from "./TopBar";
 import CreateRunDialog from "./CreateRunDialog";
 import DetailPanel from "./DetailPanel";
+import StoryChatTakeover from "./StoryChatTakeover";
+import LocationChatTakeover from "./LocationChatTakeover";
 import Toast from "./Toast";
 import HomeView from "../views/HomeView";
 import { useRunStore } from "../stores/run-store";
@@ -22,6 +24,8 @@ export default function AppLayout() {
         onClose={() => setDialogOpen(false)}
       />
       <DetailPanel />
+      <StoryChatTakeover />
+      <LocationChatTakeover />
       <Toast />
     </div>
   );

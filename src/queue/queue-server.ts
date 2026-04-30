@@ -21,7 +21,13 @@ import unzipper from "unzipper";
 import { RunManager, resolveOutputDir } from "./run-manager.js";
 import { getSettings, loadSettings, setLlmProvider, updateSettings } from "./settings.js";
 import { setLlmProvider as setLlmProviderImpl } from "../llm-provider.js";
-import { isElevenLabsAvailable, generateMusicFromVideo, mixMusicIntoVideo } from "../elevenlabs-client.js";
+import {
+  isElevenLabsAvailable,
+  generateMusicFromVideo,
+  mixMusicIntoVideo,
+  generatePerSceneMusic,
+  composeSceneMusicTracks,
+} from "../elevenlabs-client.js";
 import { assembleVideo, getVideoDuration } from "../tools/assemble-video.js";
 import { computeAudioCost } from "./cost-tracker.js";
 import { execFile } from "child_process";
@@ -32,6 +38,18 @@ import { getQueueConcurrency } from "./processors.js";
 import { startGitAutoPull } from "./git-auto-pull.js";
 import type { QueueName, WorkItem } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
+import {
+  handleChatGet,
+  handleChatPost,
+  handleChatApply,
+  handleChatDiscard,
+  handleChatDraft,
+  handleChatStream,
+  handleChatCancel,
+  handleChatReset,
+  handleChatActive,
+  handleChatDraftsList,
+} from "../chat/route-handler.js";
 
 // ---------------------------------------------------------------------------
 // Media helpers (inlined from deleted server-assets.ts)
@@ -339,6 +357,12 @@ runManager.on("item:completed", (data: { runId: string; item: WorkItem }) => {
     const summary = qm.getCostSummary();
     emitEvent(data.runId, "cost_updated", { ...summary });
   }
+});
+
+// Forward cost updates triggered outside the work-item loop (e.g. chat
+// preview generations in src/chat/preview-cost.ts) to SSE clients.
+runManager.on("cost:updated", (data: { runId: string; summary: Record<string, unknown> }) => {
+  emitEvent(data.runId, "cost_updated", { ...data.summary });
 });
 
 runManager.on("item:progress", (data: { runId: string; itemId: string; itemKey: string; progress: { status: string; progress?: number; step?: number; totalSteps?: number; queuePosition?: number } }) => {
@@ -799,6 +823,147 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       // GET /api/runs/:id/events — SSE stream
       if (method === "GET" && action === "events") {
         handleSseStream(req, res, runId, url);
+        return;
+      }
+
+      // GET /api/runs/:id/chats/active — list runners currently active for this run
+      if (method === "GET" && action === "chats" && pathParts.length === 5 && pathParts[4] === "active") {
+        handleChatActive(runManager, runId, res);
+        return;
+      }
+
+      // GET /api/runs/:id/chat-drafts — enumerate scopes whose persisted session has an unapplied draft
+      if (method === "GET" && action === "chat-drafts" && pathParts.length === 4) {
+        handleChatDraftsList(runManager, runId, res);
+        return;
+      }
+
+      // /api/runs/:id/chat/story/:scopeKey[/apply|/discard|/draft|/stream|/cancel|/reset]
+      if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "story") {
+        const scopeKey = pathParts[5];
+        const sub = pathParts[6];
+
+        if (method === "GET" && pathParts.length === 6) {
+          await handleChatGet({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 6) {
+          await handleChatPost({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 7 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "story", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+
+      // /api/runs/:id/chat/location/:locationName[/apply|/discard|/draft|/stream|/cancel|/reset]
+      if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "location") {
+        const scopeKey = pathParts[5];
+        const sub = pathParts[6];
+
+        if (method === "GET" && pathParts.length === 6) {
+          await handleChatGet({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 6) {
+          await handleChatPost({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 7 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "location", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+
+      // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard|/draft|/stream|/cancel|/reset]
+      if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
+        const sceneNumber = parseInt(pathParts[5], 10);
+        const shotInScene = parseInt(pathParts[6], 10);
+        if (Number.isNaN(sceneNumber) || Number.isNaN(shotInScene)) {
+          sendJson(res, 400, { error: "Invalid sceneNumber or shotInScene" });
+          return;
+        }
+        const scopeKey = `${sceneNumber}-${shotInScene}`;
+        const sub = pathParts[7];
+
+        if (method === "GET" && pathParts.length === 7) {
+          await handleChatGet({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7) {
+          await handleChatPost({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 8 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 8 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "shot", scopeKey, sceneNumber, shotInScene, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
         return;
       }
 
@@ -2565,19 +2730,47 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
       try {
         const musicPath = join(outputDir, "generated-music.mp3");
         const finalMusicPath = join(outputDir, "final-music.mp4");
+        const videosDir = join(outputDir, "videos");
 
         const videoDuration = await getVideoDuration(videoPath);
-        await generateMusicFromVideo(videoPath, musicPath);
-        await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
-
-        // Record ElevenLabs music cost
         const qm = runManager.getQueueManager(runId);
-        if (qm) {
-          const costUsd = computeAudioCost('elevenlabs-music', videoDuration);
-          qm.recordCost({
-            itemId: 'music-add', itemKey: 'music:add', model: 'elevenlabs-music',
-            category: 'audio', durationSeconds: videoDuration, costUsd, timestamp: new Date().toISOString(),
-          });
+        const scenes = qm?.getState().storyAnalysis?.scenes ?? [];
+
+        if (!qm || scenes.length === 0) {
+          // Legacy / unanalyzed run — fall back to one Video-to-Music call on final.mp4.
+          console.log("[add-music] storyAnalysis missing or no scenes — falling back to single-call flow");
+          await generateMusicFromVideo(videoPath, musicPath);
+          await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
+
+          if (qm) {
+            const costUsd = computeAudioCost('elevenlabs-music', videoDuration);
+            qm.recordCost({
+              itemId: 'music-add', itemKey: 'music:add', model: 'elevenlabs-music',
+              category: 'audio', durationSeconds: videoDuration, costUsd, timestamp: new Date().toISOString(),
+            });
+            emitEvent(runId, "cost_updated", { ...qm.getCostSummary() });
+          }
+        } else {
+          // Per-scene flow: one Video-to-Music call per scene, crossfade-stitched into generated-music.mp3.
+          console.log(`[add-music] Per-scene flow over ${scenes.length} scene(s)`);
+          const { scenes: musicTracks } = await generatePerSceneMusic(scenes, videosDir, outputDir);
+          await composeSceneMusicTracks(musicTracks.map((t) => t.mp3Path), videoDuration, musicPath);
+          await mixMusicIntoVideo(videoPath, musicPath, finalMusicPath);
+
+          // Record one CostEntry per scene that produced a track.
+          for (const track of musicTracks) {
+            const padded = String(track.sceneNumber).padStart(2, "0");
+            const costUsd = computeAudioCost('elevenlabs-music', track.durationSeconds);
+            qm.recordCost({
+              itemId: `music-add-scene-${padded}`,
+              itemKey: `music:add:scene:${padded}`,
+              model: 'elevenlabs-music',
+              category: 'audio',
+              durationSeconds: track.durationSeconds,
+              costUsd,
+              timestamp: new Date().toISOString(),
+            });
+          }
           emitEvent(runId, "cost_updated", { ...qm.getCostSummary() });
         }
 

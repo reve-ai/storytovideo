@@ -2,7 +2,9 @@ import { useCallback, useRef, useState } from "react";
 import { usePipelineStore, WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
+import { useHasDraft } from "../stores/chat-drafts-store";
 import ImageUpload from "./ImageUpload";
+import DraftBadge from "./DraftBadge";
 import { mediaUrl } from "../utils/media-url";
 
 interface ShotCardProps {
@@ -83,6 +85,11 @@ export default function ShotCard({
   const continuityEnabled = Boolean(shot.continuousFromPrevious);
 
   const shotLabel = `S${String(sceneNumber ?? "?")}.${shotNum}`;
+  const draftScopeKey =
+    typeof sceneNumber === "number" && typeof shotInScene === "number"
+      ? `${sceneNumber}-${shotInScene}`
+      : null;
+  const hasDraft = useHasDraft("shot", draftScopeKey);
   const canToggleContinuity =
     Boolean(activeRunId) &&
     Boolean(targetItemId) &&
@@ -146,7 +153,13 @@ export default function ShotCard({
   );
 
   return (
-    <div className="story-shot-card" data-opens-detail onClick={handleCardClick}>
+    <div
+      className="story-shot-card"
+      data-opens-detail
+      onClick={handleCardClick}
+      style={{ position: "relative" }}
+    >
+      {hasDraft && <DraftBadge absolute />}
       {/* Media area */}
       {playing && videoSrc ? (
         <div className="story-shot-media" style={{ aspectRatio }}>

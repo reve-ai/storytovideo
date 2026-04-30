@@ -1,0 +1,410 @@
+import { copyFileSync, existsSync, mkdirSync } from "fs";
+import { dirname, isAbsolute, join, relative, resolve } from "path";
+import { randomUUID } from "crypto";
+
+import type { RunManager } from "../queue/run-manager.js";
+import type { QueueManager } from "../queue/queue-manager.js";
+import type { Shot } from "../types.js";
+import type { ShotDraft, ShotVideoPreviewArtifact } from "./types.js";
+import { shotExtendVideoInputsHash, shotFrameInputsHash, shotVideoInputsHash } from "./preview-hash.js";
+import { buildStartFramePath } from "../tools/generate-frame.js";
+import { buildVideoOutputPath } from "../tools/generate-video.js";
+import { getVideoDuration } from "../tools/assemble-video.js";
+
+interface ApplyShotDraftResult {
+  ok: boolean;
+  regeneratedItemIds: string[];
+  imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }>;
+  /** Kinds of preview artifacts that were promoted instead of regenerated.
+   *  Empty for legacy (non-smart) applies. Useful for tests/telemetry/UI. */
+  promoted: Array<"frame" | "video">;
+}
+
+function resolveOutputDirAbs(outputDir: string): string {
+  return isAbsolute(outputDir) ? outputDir : resolve(process.cwd(), outputDir);
+}
+
+function nextItemVersion(qm: QueueManager, itemKey: string): number {
+  const items = qm.getItemsByKey(itemKey);
+  if (items.length === 0) return 1;
+  return Math.max(...items.map((i) => i.version)) + 1;
+}
+
+/** Try to promote a sandbox frame preview into the canonical start-frame
+ *  output. Returns the new item id on success, or null if anything is
+ *  ambiguous — caller falls back to redoItem. Promotion is a pure
+ *  optimization: any failure here must be silently skipped. */
+function tryPromoteShotFrame(
+  runManager: RunManager,
+  qm: QueueManager,
+  runId: string,
+  sceneNumber: number,
+  shotInScene: number,
+  draft: ShotDraft,
+  outputDirAbs: string,
+): string | null {
+  const previewArt = draft.previewArtifacts?.frame;
+  if (!previewArt) return null;
+
+  const analysis = qm.getState().storyAnalysis;
+  if (!analysis) return null;
+  const shot = analysis.scenes
+    .find((s) => s.sceneNumber === sceneNumber)
+    ?.shots.find((s) => s.shotInScene === shotInScene);
+  if (!shot) return null;
+
+  // Stale-check: hash the post-mutation shot and compare to what was hashed
+  // when the preview was generated. Mismatch = preview is no longer valid.
+  const expected = shotFrameInputsHash({ artStyle: analysis.artStyle, shot });
+  if (expected !== previewArt.inputsHash) return null;
+
+  const sandboxAbs = isAbsolute(previewArt.sandboxPath)
+    ? previewArt.sandboxPath
+    : join(outputDirAbs, previewArt.sandboxPath);
+  if (!existsSync(sandboxAbs)) return null;
+
+  const itemKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+  const items = qm.getItemsByKey(itemKey);
+  if (items.length === 0) return null;
+  const activeFrame = items.find(
+    (i) => i.status !== "superseded" && i.status !== "cancelled",
+  );
+  if (!activeFrame) return null;
+
+  const version = nextItemVersion(qm, itemKey);
+  const canonicalAbs = buildStartFramePath({
+    outputDir: outputDirAbs,
+    sceneNumber,
+    shotInScene,
+    version,
+  });
+  const canonicalRel = relative(outputDirAbs, canonicalAbs);
+
+  try {
+    mkdirSync(dirname(canonicalAbs), { recursive: true });
+    copyFileSync(sandboxAbs, canonicalAbs);
+  } catch (err) {
+    console.warn(`[applyShotDraft] frame promotion copy failed: ${(err as Error).message}`);
+    return null;
+  }
+
+  qm.setGeneratedOutput(
+    `frame:scene:${sceneNumber}:shot:${shotInScene}:start`,
+    canonicalRel,
+  );
+
+  const newItem = runManager.promoteCompletedItem({
+    runId,
+    itemKey,
+    supersedeId: activeFrame.id,
+    inputsOverride: { shot },
+    outputs: { shotNumber: shot.shotNumber, startPath: canonicalRel },
+  });
+  return newItem?.id ?? null;
+}
+
+/** Result of a successful video promotion. The caller uses
+ *  `canonicalAbs` to ffprobe the actual returned duration (relevant for
+ *  extend mode, where the duration changes on apply). */
+interface PromotedVideo {
+  itemId: string;
+  canonicalAbs: string;
+  canonicalRel: string;
+  mode: "generate" | "extend";
+}
+
+/** Recompute the expected hash for a video preview artifact so the
+ *  freshness check matches what shot-editor.ts wrote when the preview was
+ *  generated. Mode defaults to `generate` for older saved drafts that
+ *  predate the extend tool. */
+function expectedVideoPreviewHash(
+  previewArt: ShotVideoPreviewArtifact,
+  artStyle: string,
+  shot: Shot,
+): string | null {
+  const mode = previewArt.mode ?? "generate";
+  if (mode === "extend") {
+    if (!previewArt.extendMeta) return null;
+    return shotExtendVideoInputsHash({
+      sourceVideoSha: previewArt.extendMeta.sourceVideoSha,
+      continuationPrompt: previewArt.extendMeta.continuationPrompt,
+    });
+  }
+  return shotVideoInputsHash({ artStyle, shot });
+}
+
+/** Try to promote a sandbox video preview into the canonical clip output.
+ *  Returns promotion details on success, or null. Must be called AFTER any
+ *  frame promotion so it picks up the freshly-seeded pending video item as
+ *  its supersede target. */
+function tryPromoteShotVideo(
+  runManager: RunManager,
+  qm: QueueManager,
+  runId: string,
+  sceneNumber: number,
+  shotInScene: number,
+  draft: ShotDraft,
+  outputDirAbs: string,
+): PromotedVideo | null {
+  const previewArt = draft.previewArtifacts?.video;
+  if (!previewArt) return null;
+
+  const analysis = qm.getState().storyAnalysis;
+  if (!analysis) return null;
+  const shot = analysis.scenes
+    .find((s) => s.sceneNumber === sceneNumber)
+    ?.shots.find((s) => s.shotInScene === shotInScene);
+  if (!shot) return null;
+
+  const expected = expectedVideoPreviewHash(previewArt, analysis.artStyle, shot);
+  if (expected === null || expected !== previewArt.inputsHash) return null;
+
+  const sandboxAbs = isAbsolute(previewArt.sandboxPath)
+    ? previewArt.sandboxPath
+    : join(outputDirAbs, previewArt.sandboxPath);
+  if (!existsSync(sandboxAbs)) return null;
+
+  const itemKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
+  const items = qm.getItemsByKey(itemKey);
+  if (items.length === 0) return null;
+  const activeVideo = items.find(
+    (i) => i.status !== "superseded" && i.status !== "cancelled",
+  );
+  if (!activeVideo) return null;
+
+  const version = nextItemVersion(qm, itemKey);
+  const canonicalAbs = buildVideoOutputPath({
+    outputDir: join(outputDirAbs, "videos"),
+    sceneNumber,
+    shotInScene,
+    version,
+  });
+  const canonicalRel = relative(outputDirAbs, canonicalAbs);
+
+  try {
+    mkdirSync(dirname(canonicalAbs), { recursive: true });
+    copyFileSync(sandboxAbs, canonicalAbs);
+  } catch (err) {
+    console.warn(`[applyShotDraft] video promotion copy failed: ${(err as Error).message}`);
+    return null;
+  }
+
+  qm.setGeneratedOutput(
+    `video:scene:${sceneNumber}:shot:${shotInScene}`,
+    canonicalRel,
+  );
+
+  const newItem = runManager.promoteCompletedItem({
+    runId,
+    itemKey,
+    supersedeId: activeVideo.id,
+    inputsOverride: { shot },
+    outputs: { shotNumber: shot.shotNumber, path: canonicalRel, duration: shot.durationSeconds },
+  });
+  if (!newItem?.id) return null;
+  return {
+    itemId: newItem.id,
+    canonicalAbs,
+    canonicalRel,
+    mode: previewArt.mode ?? "generate",
+  };
+}
+
+/**
+ * Apply a Shot draft to the canonical document via existing mutators and trigger
+ * the existing redo cascade for affected items.
+ *
+ * - Field updates use queueManager.updateShotFields (covers all listed fields).
+ * - Image replacements are copied into the run's uploads/ directory and registered
+ *   on the appropriate generate_frame item input, then the item is redone (matches
+ *   the existing /upload route behavior).
+ * - For other Shot field changes that affect generation, all active generate_frame
+ *   items for this shot are redone so the cascade re-queues downstream video.
+ */
+/** Optional injectable duration probe for tests. Production callers omit
+ *  it and ffprobe is used. The probe runs after a successful video
+ *  promotion in `extend` mode so `shot.durationSeconds` reflects the
+ *  actual returned clip length. */
+export interface ApplyShotDraftOptions {
+  probeDuration?: (videoPath: string) => Promise<number>;
+}
+
+export async function applyShotDraft(
+  runManager: RunManager,
+  runId: string,
+  sceneNumber: number,
+  shotInScene: number,
+  draft: ShotDraft,
+  options: ApplyShotDraftOptions = {},
+): Promise<ApplyShotDraftResult> {
+  const qm = runManager.getQueueManager(runId);
+  if (!qm) throw new Error(`Run not found: ${runId}`);
+
+  const probe = options.probeDuration ?? getVideoDuration;
+  const regenerated: string[] = [];
+  const promoted: Array<"frame" | "video"> = [];
+  const imageReplacementsApplied: Array<{ which: "start" | "end"; path: string }> = [];
+
+  // 1. Apply Shot field updates via canonical mutator.
+  const fieldKeys = Object.keys(draft.shotFields);
+  if (fieldKeys.length > 0) {
+    qm.updateShotFields(sceneNumber, shotInScene, draft.shotFields as Record<string, unknown>);
+  }
+
+  // 2. Apply image replacements: copy into uploads/, then redo the corresponding
+  //    generate_frame item with the new path as input (matches /upload route).
+  const state = qm.getState();
+  const outputDirAbs = resolveOutputDirAbs(state.outputDir);
+  const uploadsDir = join(outputDirAbs, "uploads");
+
+  if (draft.pendingImageReplacements.length > 0) {
+    mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  for (const replacement of draft.pendingImageReplacements) {
+    // Source path may be absolute or run-relative.
+    const srcAbs = isAbsolute(replacement.path)
+      ? replacement.path
+      : join(outputDirAbs, replacement.path);
+    if (!existsSync(srcAbs)) {
+      console.warn(`[applyShotDraft] Replacement source missing: ${srcAbs}`);
+      continue;
+    }
+    const ext = srcAbs.match(/\.[a-zA-Z0-9]+$/)?.[0] ?? ".png";
+    const destRel = `uploads/${randomUUID()}${ext}`;
+    const destAbs = join(outputDirAbs, destRel);
+    copyFileSync(srcAbs, destAbs);
+    imageReplacementsApplied.push({ which: replacement.which, path: destRel });
+
+    // Find the active generate_frame item for this shot and redo with the new path.
+    const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+    const frameItems = qm.getItemsByKey(frameKey);
+    const activeFrame = frameItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
+    if (activeFrame) {
+      const inputField = replacement.which === "start" ? "startPath" : "endPath";
+      const newItem = runManager.redoItem(runId, activeFrame.id, {
+        ...activeFrame.inputs,
+        [inputField]: destRel,
+      });
+      if (newItem) regenerated.push(newItem.id);
+    }
+  }
+
+  // 3. Smart-apply: if a fresh sandbox preview exists, promote it instead of
+  //    regenerating. Promotion is a pure optimization — any failure (missing
+  //    file, stale hash, no active item) returns null and we fall through to
+  //    the legacy redoItem path. Skipped entirely when image replacements are
+  //    pending, since those invalidate previews.
+  let promotedFrame: string | null = null;
+  let promotedVideo: PromotedVideo | null = null;
+  if (draft.pendingImageReplacements.length === 0 && draft.previewArtifacts) {
+    promotedFrame = tryPromoteShotFrame(
+      runManager, qm, runId, sceneNumber, shotInScene, draft, outputDirAbs,
+    );
+    if (promotedFrame) {
+      regenerated.push(promotedFrame);
+      promoted.push("frame");
+    }
+    // Video promotion runs after frame promotion so it supersedes the
+    // pending video item that was just seeded by the frame promotion (or
+    // the original active video, if no frame preview was promoted).
+    promotedVideo = tryPromoteShotVideo(
+      runManager, qm, runId, sceneNumber, shotInScene, draft, outputDirAbs,
+    );
+    if (promotedVideo) {
+      regenerated.push(promotedVideo.itemId);
+      promoted.push("video");
+      // Extend mode: ffprobe the promoted clip and update the shot's
+      // canonical duration so downstream assembly + UI reflect the actual
+      // length of the returned video. Failure here only logs a warning;
+      // the promotion itself stays committed.
+      if (promotedVideo.mode === "extend") {
+        try {
+          const measured = await probe(promotedVideo.canonicalAbs);
+          if (Number.isFinite(measured) && measured > 0) {
+            qm.updateShotFields(sceneNumber, shotInScene, { durationSeconds: measured });
+          } else {
+            console.warn(
+              `[applyShotDraft] extend probe returned non-positive duration for ${promotedVideo.canonicalAbs}: ${measured}`,
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[applyShotDraft] extend duration probe failed: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+  }
+
+  // 4. Pick the right redo level based on which field set was edited:
+  //    - Frame-affecting field → redo frame (cascade re-queues video).
+  //    - Video-only field → redo just the active video item (refreshed shot
+  //      inputs); avoids a wasteful frame redo that would supersede a
+  //      just-promoted video preview.
+  //    Skipped when image replacements already redo the frame, or when the
+  //    matching layer was promoted from a fresh preview.
+  //    Also skipped when the video was promoted: the user previewed and
+  //    accepted a video that was generated against the canonical start frame
+  //    (or the latest preview frame), so a frame redo here would cascade via
+  //    seedAfterGenerateFrame into a new pending video item and Grok would
+  //    regenerate the clip we just promoted. The canonical frame stays at
+  //    whatever the promoted video was conditioned on; the user can ask for
+  //    a fresh frame explicitly if they want one.
+  if (fieldKeys.length > 0 && draft.pendingImageReplacements.length === 0) {
+    const frameAffectingFields = new Set<keyof Shot>([
+      "composition", "startFramePrompt", "endFramePrompt",
+      "charactersPresent", "objectsPresent", "location",
+      "continuousFromPrevious", "skipped",
+    ]);
+    const videoOnlyAffectingFields = new Set<keyof Shot>([
+      "durationSeconds", "videoPrompt", "actionPrompt",
+      "dialogue", "speaker", "soundEffects", "cameraDirection",
+    ]);
+    const frameChanged = fieldKeys.some((k) => frameAffectingFields.has(k as keyof Shot));
+    const videoOnlyChanged = fieldKeys.some((k) => videoOnlyAffectingFields.has(k as keyof Shot));
+
+    const frameKey = `frame:scene:${sceneNumber}:shot:${shotInScene}`;
+    const frameItems = qm.getItemsByKey(frameKey);
+    const activeFrame = frameItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
+
+    const updatedAnalysis = qm.getState().storyAnalysis;
+    const updatedShot = updatedAnalysis?.scenes.find((s) => s.sceneNumber === sceneNumber)
+      ?.shots.find((s) => s.shotInScene === shotInScene);
+
+    if (activeFrame) {
+      if (frameChanged && !promotedFrame && !promotedVideo) {
+        const newInputs = updatedShot
+          ? { ...activeFrame.inputs, shot: updatedShot }
+          : { ...activeFrame.inputs };
+        const newItem = runManager.redoItem(runId, activeFrame.id, newInputs);
+        if (newItem) regenerated.push(newItem.id);
+      } else if (videoOnlyChanged && !promotedVideo) {
+        const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
+        const videoItems = qm.getItemsByKey(videoKey);
+        const activeVideo = videoItems.find((i) => i.status !== "superseded" && i.status !== "cancelled");
+        if (activeVideo) {
+          const newInputs = updatedShot
+            ? { ...activeVideo.inputs, shot: updatedShot }
+            : { ...activeVideo.inputs };
+          const newItem = runManager.redoItem(runId, activeVideo.id, newInputs);
+          if (newItem) regenerated.push(newItem.id);
+        }
+      }
+    } else if (frameChanged || videoOnlyChanged) {
+      // Pending shot — no frame item yet. Update the pending generate_video
+      // item's shot input so its eventual generation picks up the new fields.
+      const videoKey = `video:scene:${sceneNumber}:shot:${shotInScene}`;
+      const videoItems = qm.getItemsByKey(videoKey);
+      const activeVideo = videoItems.find((i) => i.status === "pending");
+      if (activeVideo && updatedShot) {
+        activeVideo.inputs = { ...activeVideo.inputs, shot: updatedShot };
+      }
+    }
+  }
+
+  qm.save();
+  await runManager.resumeRun(runId);
+
+  return { ok: true, regeneratedItemIds: regenerated, imageReplacementsApplied, promoted };
+}

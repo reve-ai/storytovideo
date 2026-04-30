@@ -9,6 +9,7 @@ import type { LlmProvider } from '../llm-provider.js';
 
 import type { QueueName, WorkItem } from './types.js';
 import { QueueManager } from './queue-manager.js';
+import { seedDownstream as seedDownstreamFree } from './seed-downstream.js';
 import { rateLimiters } from './rate-limiter-registry.js';
 import { PromptLogger } from './prompt-logger.js';
 import { ConversationLogger } from './conversation-logger.js';
@@ -25,8 +26,9 @@ import { generateFrame } from '../tools/generate-frame.js';
 import { generateVideo } from '../tools/generate-video.js';
 import { assembleVideo, getVideoDuration } from '../tools/assemble-video.js';
 import { analyzeVideoClip, buildAnalyzeVideoPrompt } from '../tools/analyze-video-pacing.js';
-import type { StoryAnalysis, Shot } from '../types.js';
+import type { Shot } from '../types.js';
 import { computeLlmCost, computeImageCost, computeVideoCost } from './cost-tracker.js';
+import { imageBackendToModel, videoBackendToModel } from './backend-models.js';
 
 // ---------------------------------------------------------------------------
 // Per-scene shot schema (matches plan-shots.ts perSceneShotSchema)
@@ -523,8 +525,7 @@ ${JSON.stringify(scene, null, 2)}`;
     this.queueManager.setGeneratedOutput(result.key, this.relativePath(result.path));
 
     // Record image generation cost
-    const imageModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
-    this.recordImageCost(item, imageModelName);
+    this.recordImageCost(item, imageBackendToModel(imageBackend));
 
     // Build asset library from generated outputs
     this.rebuildAssetLibrary();
@@ -610,8 +611,7 @@ ${JSON.stringify(scene, null, 2)}`;
     }
 
     // Record frame generation cost (only if an image was actually generated, not ffmpeg extraction)
-    const frameModelName = imageBackend === 'grok' ? 'grok-imagine-image' : imageBackend === 'nano-banana' ? 'gemini-3.1-flash-image-preview' : 'reve';
-    this.recordImageCost(item, frameModelName);
+    this.recordImageCost(item, imageBackendToModel(imageBackend));
 
     return {
       shotNumber: result.shotNumber,
@@ -662,11 +662,7 @@ ${JSON.stringify(scene, null, 2)}`;
     this.queueManager.setGeneratedOutput(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`, this.relativePath(result.path));
 
     // Record video generation cost
-    const videoModelName = videoBackend === 'grok' ? 'grok-imagine-video'
-      : videoBackend === 'veo' ? 'veo-3.1-generate-preview'
-      : videoBackend === 'veo-reve' ? 'veo-3.1-generate-001'
-      : 'ltx';
-    this.recordVideoCost(item, videoModelName, result.duration);
+    this.recordVideoCost(item, videoBackendToModel(videoBackend), result.duration);
 
     return {
       shotNumber: result.shotNumber,
@@ -832,384 +828,19 @@ ${JSON.stringify(scene, null, 2)}`;
 
   // ---------------------------------------------------------------------------
   // Downstream seeding
+  //
+  // The actual logic lives in seed-downstream.ts so promotion paths
+  // (apply.ts → RunManager.promoteCompletedItem) can invoke it without
+  // going through the worker loop.
   // ---------------------------------------------------------------------------
 
   private seedDownstream(item: WorkItem, outputs: Record<string, unknown>): void {
-    switch (item.type) {
-      case 'analyze_story':
-        this.seedAfterAnalysis(item);
-        break;
-      case 'artifact':
-        this.seedAfterArtifact(item);
-        break;
-      case 'plan_shots':
-        this.seedAfterPlanShots(item, outputs);
-        break;
-      case 'generate_frame':
-        this.seedAfterGenerateFrame(item, outputs);
-        break;
-      case 'generate_video':
-        this.seedAfterGenerateVideo(item, outputs);
-        break;
-    }
-  }
-
-  private seedAfterAnalysis(analyzeItem: WorkItem): void {
-    const state = this.queueManager.getState();
-    const analysis = state.storyAnalysis;
-    if (!analysis) return;
-
-    // Seed character artifacts
-    for (const char of analysis.characters) {
-      this.queueManager.addItem({
-        type: 'artifact',
-        queue: 'llm',
-        itemKey: `artifact:character:${char.name}`,
-        dependencies: [analyzeItem.id],
-        inputs: {
-          artifactType: 'character',
-          name: char.name,
-          physicalDescription: char.physicalDescription,
-          personality: char.personality,
-          ageRange: char.ageRange,
-        },
-        priority: analyzeItem.priority,
-      });
-    }
-
-    // Seed location artifacts
-    for (const loc of analysis.locations) {
-      this.queueManager.addItem({
-        type: 'artifact',
-        queue: 'llm',
-        itemKey: `artifact:location:${loc.name}`,
-        dependencies: [analyzeItem.id],
-        inputs: {
-          artifactType: 'location',
-          name: loc.name,
-          visualDescription: loc.visualDescription,
-        },
-        priority: analyzeItem.priority,
-      });
-    }
-
-    // Seed object artifacts
-    for (const obj of (analysis.objects ?? [])) {
-      this.queueManager.addItem({
-        type: 'artifact',
-        queue: 'llm',
-        itemKey: `artifact:object:${obj.name}`,
-        dependencies: [analyzeItem.id],
-        inputs: {
-          artifactType: 'object',
-          name: obj.name,
-          visualDescription: obj.visualDescription,
-        },
-        priority: analyzeItem.priority,
-      });
-    }
-
-    // Seed scene artifacts
-    for (const scene of analysis.scenes) {
-      this.queueManager.addItem({
-        type: 'artifact',
-        queue: 'llm',
-        itemKey: `artifact:scene:${scene.sceneNumber}`,
-        dependencies: [analyzeItem.id],
-        inputs: {
-          artifactType: 'scene',
-          sceneNumber: scene.sceneNumber,
-          title: scene.title,
-          narrativeSummary: scene.narrativeSummary,
-          charactersPresent: scene.charactersPresent,
-          location: scene.location,
-          estimatedDurationSeconds: scene.estimatedDurationSeconds,
-        },
-        priority: analyzeItem.priority,
-      });
-    }
-
-    // Seed pacing artifact
-    this.queueManager.addItem({
-      type: 'artifact',
-      queue: 'llm',
-      itemKey: 'artifact:pacing',
-      dependencies: [analyzeItem.id],
-      inputs: {
-        artifactType: 'pacing',
-        title: analysis.title,
-        artStyle: analysis.artStyle,
-      },
-      priority: analyzeItem.priority,
-    });
-  }
-
-
-  private seedAfterArtifact(item: WorkItem): void {
-    const state = this.queueManager.getState();
-    const artifactType = item.inputs.artifactType as string;
-
-    switch (artifactType) {
-      case 'character': {
-        this.queueManager.addItem({
-          type: 'generate_asset',
-          queue: 'image',
-          itemKey: `asset:character:${item.inputs.name}:front`,
-          dependencies: [item.id],
-          inputs: {
-            characterName: item.inputs.name,
-            description: item.inputs.physicalDescription,
-            artStyle: state.storyAnalysis?.artStyle ?? '',
-          },
-          priority: item.priority,
-        });
-        break;
-      }
-      case 'location': {
-        this.queueManager.addItem({
-          type: 'generate_asset',
-          queue: 'image',
-          itemKey: `asset:location:${item.inputs.name}`,
-          dependencies: [item.id],
-          inputs: {
-            locationName: item.inputs.name,
-            description: item.inputs.visualDescription,
-            artStyle: state.storyAnalysis?.artStyle ?? '',
-          },
-          priority: item.priority,
-        });
-        break;
-      }
-      case 'object': {
-        this.queueManager.addItem({
-          type: 'generate_asset',
-          queue: 'image',
-          itemKey: `asset:object:${item.inputs.name}`,
-          dependencies: [item.id],
-          inputs: {
-            objectName: item.inputs.name,
-            description: item.inputs.visualDescription,
-            artStyle: state.storyAnalysis?.artStyle ?? '',
-          },
-          priority: item.priority,
-        });
-        break;
-      }
-      case 'scene': {
-        this.queueManager.addItem({
-          type: 'plan_shots',
-          queue: 'llm',
-          itemKey: `plan_shots:scene:${item.inputs.sceneNumber}`,
-          dependencies: [item.id],
-          inputs: { sceneNumber: item.inputs.sceneNumber },
-          priority: item.priority,
-        });
-        break;
-      }
-      case 'pacing':
-        // No downstream items — artStyle feeds into assets/frames via state
-        break;
-    }
-  }
-
-  private seedAfterPlanShots(planItem: WorkItem, outputs: Record<string, unknown>): void {
-    const state = this.queueManager.getState();
-    const analysis = state.storyAnalysis;
-    if (!analysis) return;
-
-    const shots = outputs.shots as Shot[] | undefined;
-    if (!shots || shots.length === 0) return;
-
-    for (const shot of shots) {
-      // Only depend on assets this shot actually uses
-      const shotAssetIds = this.getAssetItemIdsForShot(shot);
-      const frameDeps = [planItem.id, ...shotAssetIds];
-
-      if (shot.continuousFromPrevious && shot.shotInScene > 1) {
-        frameDeps.push(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene - 1}`);
-      }
-
-      this.queueManager.addItem({
-        type: 'generate_frame',
-        queue: 'image',
-        itemKey: `frame:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
-        dependencies: frameDeps,
-        inputs: { shot },
-        priority: planItem.priority,
-      });
-    }
-  }
-
-  private seedAfterGenerateFrame(frameItem: WorkItem, outputs: Record<string, unknown>): void {
-    const startPath = outputs.startPath as string | undefined;
-    const shot = frameItem.inputs.shot as Shot;
-
-    if (!startPath) return; // No frame generated (shouldn't happen)
-
-    // Check if a generate_video item already exists for this shot (e.g. from cascade redo)
-    const existingVideo = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
-    if (existingVideo.some(i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(frameItem.id))) {
-      return; // Already seeded by cascade, skip duplicate
-    }
-
-    this.queueManager.addItem({
-      type: 'generate_video',
-      queue: 'video',
-      itemKey: `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
-      dependencies: [frameItem.id],
-      inputs: {
-        shot,
-        startFramePath: startPath,
-        endFramePath: outputs.endPath as string | undefined,
-      },
-      priority: frameItem.priority,
-    });
-  }
-
-  private seedContinuityFrameAfterGenerateVideo(videoItem: WorkItem, analysis: StoryAnalysis, shot: Shot): void {
-    const scene = analysis.scenes.find(candidate => candidate.sceneNumber === shot.sceneNumber);
-    const nextShot = scene?.shots.find(candidate => candidate.shotInScene === shot.shotInScene + 1);
-
-    if (!nextShot || nextShot.skipped || !nextShot.continuousFromPrevious) {
-      return;
-    }
-
-    const frameKey = `frame:scene:${nextShot.sceneNumber}:shot:${nextShot.shotInScene}`;
-    const existingFrame = this.queueManager.getItemsByKey(frameKey);
-    const hasActiveFrame = existingFrame.some(
-      item => item.status !== 'superseded' && item.status !== 'cancelled'
-    );
-
-    if (hasActiveFrame) {
-      return;
-    }
-
-    this.queueManager.addItem({
-      type: 'generate_frame',
-      queue: 'image',
-      itemKey: frameKey,
-      dependencies: [videoItem.id],
-      inputs: { shot: nextShot },
-      priority: videoItem.priority,
-    });
-  }
-
-  private seedAfterGenerateVideo(item: WorkItem, outputs: Record<string, unknown>): void {
-    const state = this.queueManager.getState();
-    const analysis = state.storyAnalysis;
-    if (!analysis) return;
-
-    // Seed an analyze_video item for this completed video
-    const shotNumber = outputs.shotNumber as number;
-    const videoPath = outputs.path as string;
-    const startFramePath = item.inputs.startFramePath as string;
-    const shot = item.inputs.shot as Shot;
-
-    let analyzeShot = shot;
-    if (shot.continuousFromPrevious && shot.shotInScene > 1) {
-      analyzeShot = { ...shot, startFramePrompt: 'Start frame is the previous clip end frame.' };
-    }
-
-    this.seedContinuityFrameAfterGenerateVideo(item, analysis, shot);
-
-    // Collect reference image paths from the asset library for characters/objects/location in this shot
-    const referenceImagePaths: string[] = [];
-    for (const [key, value] of Object.entries(state.generatedOutputs)) {
-      if (key.startsWith('character:') || key.startsWith('location:') || key.startsWith('object:')) {
-        const name = key.split(':')[1];
-        if (
-          shot.charactersPresent.includes(name) ||
-          shot.objectsPresent?.includes(name) ||
-          shot.location === name
-        ) {
-          referenceImagePaths.push(value);
-        }
-      }
-    }
-
-    // Check if analyze_video already exists for this shot AND depends on this video item.
-    // If the existing analyze depends on an older/superseded video, allow a new one.
-    const existingAnalyze = this.queueManager.getItemsByKey(`analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
-    const hasCurrentAnalysis = existingAnalyze.some(
-      i => i.status !== 'superseded' && i.status !== 'cancelled' && i.dependencies.includes(item.id)
-    );
-    if (!hasCurrentAnalysis) {
-      this.queueManager.addItem({
-        type: 'analyze_video',
-        queue: 'llm',
-        itemKey: `analyze_video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`,
-        dependencies: [item.id],
-        inputs: {
-          shotNumber,
-          videoPath,
-          startFramePath,
-          referenceImagePaths,
-          shot: analyzeShot,
-        },
-        priority: item.priority,
-      });
-    }
-
-    // Check if ALL video items are completed to seed assemble
-    const allShots = analysis.scenes.flatMap(s => s.shots || []).filter(s => !s.skipped);
-    const allVideosDone = allShots.every(shot => {
-      const items = this.queueManager.getItemsByKey(`video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`);
-      return items.some(i => i.status === 'completed' && !i.supersededBy);
-    });
-
-    if (!allVideosDone) return;
-
-    // Check if assemble item already exists
-    const existingAssemble = this.queueManager.getItemsByKey('assemble');
-    if (existingAssemble.some(i => i.status !== 'superseded' && i.status !== 'cancelled')) return;
-
-    const videoKeys = allShots.map(
-      shot => `video:scene:${shot.sceneNumber}:shot:${shot.shotInScene}`
-    );
-
-    this.queueManager.addItem({
-      type: 'assemble',
-      queue: 'llm', // Assembly uses ffmpeg, not an API — put in LLM queue as it's CPU-bound
-      itemKey: 'assemble',
-      dependencies: videoKeys,
-    });
+    seedDownstreamFree(this.queueManager, item, outputs);
   }
 
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-
-  /**
-   * Return asset item IDs for only the characters, location, and objects
-   * that a specific shot references.  This lets frames start generating as
-   * soon as their own assets are ready instead of waiting for every asset
-   * in the whole story.
-   */
-  private getAssetItemIdsForShot(shot: Shot): string[] {
-    const ids: string[] = [];
-
-    for (const charName of shot.charactersPresent) {
-      const items = this.queueManager.getItemsByKey(`asset:character:${charName}:front`);
-      const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
-      if (active) ids.push(active.id);
-    }
-
-    if (shot.location) {
-      const items = this.queueManager.getItemsByKey(`asset:location:${shot.location}`);
-      const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
-      if (active) ids.push(active.id);
-    }
-
-    for (const objName of (shot.objectsPresent ?? [])) {
-      const items = this.queueManager.getItemsByKey(`asset:object:${objName}`);
-      const active = items.find(i => i.status !== 'superseded' && i.status !== 'cancelled');
-      if (active) ids.push(active.id);
-    }
-
-    return ids;
-  }
-
-
 
   private rebuildAssetLibrary(): void {
     // Delegate to QueueManager which stores relative paths

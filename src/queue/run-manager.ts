@@ -4,6 +4,7 @@ import { join, resolve, relative, isAbsolute } from "path";
 import { EventEmitter } from "events";
 import { QueueManager } from "./queue-manager.js";
 import { QueueProcessor, getQueueConcurrency } from "./processors.js";
+import { seedDownstream } from "./seed-downstream.js";
 import type { WorkItem, QueueName } from "./types.js";
 import type { ImageBackend, VideoBackend } from "../types.js";
 
@@ -397,6 +398,39 @@ export class RunManager extends EventEmitter {
     const newItem = qm.redoItem(itemId, newInputs);
     qm.save();
     this.emit("item:redo", { runId, oldItemId: itemId, newItem });
+    return newItem;
+  }
+
+  /** Promote a pre-computed result into the queue as a completed work item.
+   *  Used by the smart-apply path: apply.ts already produced the asset (e.g.
+   *  via a sandbox preview) and wants to register it without rerunning the
+   *  underlying tool. The new item is added as `completed`, the prior active
+   *  item is superseded, the redo cascade re-supersedes stale downstream
+   *  items, and the seeding step creates fresh downstream work. */
+  promoteCompletedItem(opts: {
+    runId: string;
+    itemKey: string;
+    outputs: Record<string, unknown>;
+    supersedeId?: string;
+    inputsOverride?: Record<string, unknown>;
+  }): WorkItem | undefined {
+    const qm = this.queueManagers.get(opts.runId);
+    if (!qm) return undefined;
+
+    const { newItem, supersededId } = qm.promoteCompleted({
+      itemKey: opts.itemKey,
+      outputs: opts.outputs,
+      supersedeId: opts.supersedeId,
+      inputsOverride: opts.inputsOverride,
+    });
+    seedDownstream(qm, newItem, opts.outputs);
+    qm.save();
+
+    this.emit("item:redo", {
+      runId: opts.runId,
+      oldItemId: supersededId,
+      newItem,
+    });
     return newItem;
   }
 

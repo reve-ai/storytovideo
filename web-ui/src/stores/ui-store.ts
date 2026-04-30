@@ -15,6 +15,9 @@ interface UIState {
   detailPanelOpen: boolean;
   detailItemId: string | null;
   hideSuperseded: boolean;
+  useChatDetailPanel: boolean;
+  storyChatOpen: boolean;
+  locationChatName: string | null;
   toasts: ToastMessage[];
 }
 
@@ -23,6 +26,11 @@ interface UIActions {
   openDetail: (itemId: string) => void;
   closeDetail: () => void;
   setHideSuperseded: (hide: boolean) => void;
+  setUseChatDetailPanel: (enabled: boolean) => void;
+  openStoryChat: () => void;
+  closeStoryChat: () => void;
+  openLocationChat: (name: string) => void;
+  closeLocationChat: () => void;
   showToast: (message: string, type?: ToastType) => void;
   dismissToast: (id: number) => void;
 }
@@ -36,6 +44,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
   detailPanelOpen: false,
   detailItemId: null,
   hideSuperseded: false,
+  useChatDetailPanel: true,
+  storyChatOpen: false,
+  locationChatName: null,
   toasts: [],
 
   setView: (view: ViewName) => {
@@ -59,6 +70,26 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setHideSuperseded: (hide: boolean) => {
     set({ hideSuperseded: hide });
+  },
+
+  setUseChatDetailPanel: (enabled: boolean) => {
+    set({ useChatDetailPanel: enabled });
+  },
+
+  openStoryChat: () => {
+    set({ storyChatOpen: true });
+  },
+
+  closeStoryChat: () => {
+    set({ storyChatOpen: false });
+  },
+
+  openLocationChat: (name: string) => {
+    set({ locationChatName: name });
+  },
+
+  closeLocationChat: () => {
+    set({ locationChatName: null });
   },
 
   showToast: (message: string, type: ToastType = "info") => {

@@ -5,7 +5,20 @@ import { useRunStore } from "../stores/run-store";
 import InputForm from "./InputForm";
 import ImageUpload from "./ImageUpload";
 import AssetReplace from "./AssetReplace";
+import ShotChat from "./chat/ShotChat";
 import { mediaUrl } from "../utils/media-url";
+
+function getShotCoords(item: WorkItem): { sceneNumber: number; shotInScene: number } | null {
+  const inputs = (item.inputs ?? {}) as Record<string, unknown>;
+  const shot = inputs.shot as { sceneNumber?: number; shotInScene?: number } | undefined;
+  if (!shot) return null;
+  if (typeof shot.sceneNumber !== "number" || typeof shot.shotInScene !== "number") return null;
+  return { sceneNumber: shot.sceneNumber, shotInScene: shot.shotInScene };
+}
+
+function isChatEligible(item: WorkItem): boolean {
+  return item.type === "generate_frame" || item.type === "generate_video";
+}
 
 function fmtTime(iso: string | null): string {
   if (!iso) return "—";
@@ -46,6 +59,7 @@ function findItem(
 
 export default function DetailPanel() {
   const { detailPanelOpen, detailItemId, closeDetail } = useUIStore();
+  const useChatDetailPanel = useUIStore((s) => s.useChatDetailPanel);
   const queues = usePipelineStore((s) => s.queues);
   const fetchQueues = usePipelineStore((s) => s.fetchQueues);
   const fetchGraph = usePipelineStore((s) => s.fetchGraph);
@@ -55,18 +69,22 @@ export default function DetailPanel() {
 
   const item = detailItemId ? findItem(queues, detailItemId) : null;
 
-  // Click outside to close
+  // Click outside to close.
+  // Use mousedown (not click) so the check runs before React onClick handlers
+  // mutate the DOM. Otherwise a button inside the panel that re-renders itself
+  // away on click (e.g. chat tool Approve/Deny) would be detached by the time
+  // a document-level click listener fires, causing a false "outside" match.
   useEffect(() => {
     if (!detailPanelOpen) return;
-    function handleClick(e: MouseEvent) {
+    function handleMouseDown(e: MouseEvent) {
       const target = e.target as HTMLElement;
       if (panelRef.current?.contains(target)) return;
       // Don't close when clicking elements that open the detail panel
       if (target.closest("[data-opens-detail]")) return;
       closeDetail();
     }
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [detailPanelOpen, closeDetail]);
 
   const handleAction = useCallback(
@@ -153,15 +171,25 @@ export default function DetailPanel() {
     item?.status === "completed" ||
     item?.status === "failed";
 
+  const shotCoords = item ? getShotCoords(item) : null;
+  const showChat =
+    !!item && useChatDetailPanel && isChatEligible(item) && shotCoords !== null;
+
   return (
     <div
       ref={panelRef}
-      className={`detail-panel${detailPanelOpen && item ? " open" : ""}`}
+      className={`detail-panel${detailPanelOpen && item ? " open" : ""}${showChat ? " detail-panel-wide" : ""}`}
     >
       <button className="close-btn" onClick={closeDetail}>
         ×
       </button>
-      {item && (
+      {item && showChat && shotCoords && (
+        <ShotChat
+          sceneNumber={shotCoords.sceneNumber}
+          shotInScene={shotCoords.shotInScene}
+        />
+      )}
+      {item && !showChat && (
         <div>
           <DetailHeader item={item} typeName={typeName} />
           <DetailTimestamps item={item} />
