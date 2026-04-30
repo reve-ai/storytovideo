@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getVideoDuration } from "./tools/assemble-video.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -103,15 +104,32 @@ export async function mixMusicIntoVideo(
     musicWav,
   ]);
 
-  // Step 2: Mix original audio with music using amerge (not amix — amix causes timestamp drift)
+  const videoDuration = await getVideoDuration(videoPath);
+
+  // Step 2: Pre-pad the WAV to exact video duration in a separate ffmpeg pass.
+  // The in-graph filter does NOT propagate duration properly through amerge,
+  // so we pad the music WAV here instead of inside the mix filter chain.
+  const musicPadded = musicWav.replace(/\.wav$/, "-padded.wav");
+  console.log("[elevenlabs] Pre-padding music WAV to video duration...");
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i", musicWav,
+    "-af", `apad=whole_dur=${videoDuration}`,
+    "-ar", "44100",
+    "-ac", "2",
+    "-sample_fmt", "s16",
+    musicPadded,
+  ]);
+
+  // Step 3: Mix original audio with music using amerge (not amix — amix causes timestamp drift)
   console.log("[elevenlabs] Mixing music into video...");
   try {
     await execFileAsync("ffmpeg", [
       "-y",
       "-i", videoPath,
-      "-i", musicWav,
+      "-i", musicPadded,
       "-filter_complex",
-      `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[orig];[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${volume},apad[music];[orig][music]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[out]`,
+      `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo[orig];[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${volume}[music];[orig][music]amerge=inputs=2,pan=stereo|c0=c0+c2|c1=c1+c3[out]`,
       "-map", "0:v",
       "-map", "[out]",
       "-map", "0:s?",
@@ -119,11 +137,13 @@ export async function mixMusicIntoVideo(
       "-c:a", "aac",
       "-b:a", "192k",
       "-c:s", "copy",
+      "-t", String(videoDuration),
       outputPath,
     ]);
   } finally {
-    // Clean up intermediate wav file
+    // Clean up intermediate wav files
     try { fs.unlinkSync(musicWav); } catch { /* ignore */ }
+    try { fs.unlinkSync(musicPadded); } catch { /* ignore */ }
   }
 
   console.log(`[elevenlabs] Final video with music: ${outputPath}`);
