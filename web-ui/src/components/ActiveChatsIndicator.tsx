@@ -44,7 +44,6 @@ export default function ActiveChatsIndicator({ runId }: Props) {
   const [cancelling, setCancelling] = useState<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const openStoryChat = useUIStore((s) => s.openStoryChat);
   const openLocationChat = useUIStore((s) => s.openLocationChat);
 
   useEffect(() => {
@@ -69,7 +68,7 @@ export default function ActiveChatsIndicator({ runId }: Props) {
   const handleClick = (chat: ActiveChat) => {
     setOpen(false);
     if (chat.scope === "story") {
-      openStoryChat();
+      navigate("/script");
       return;
     }
     if (chat.scope === "location") {

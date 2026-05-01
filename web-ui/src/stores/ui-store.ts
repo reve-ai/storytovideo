@@ -16,7 +16,6 @@ interface UIState {
   detailItemId: string | null;
   hideSuperseded: boolean;
   useChatDetailPanel: boolean;
-  storyChatOpen: boolean;
   locationChatName: string | null;
   toasts: ToastMessage[];
 }
@@ -27,8 +26,6 @@ interface UIActions {
   closeDetail: () => void;
   setHideSuperseded: (hide: boolean) => void;
   setUseChatDetailPanel: (enabled: boolean) => void;
-  openStoryChat: () => void;
-  closeStoryChat: () => void;
   openLocationChat: (name: string) => void;
   closeLocationChat: () => void;
   showToast: (message: string, type?: ToastType) => void;
@@ -45,7 +42,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   detailItemId: null,
   hideSuperseded: false,
   useChatDetailPanel: true,
-  storyChatOpen: false,
   locationChatName: null,
   toasts: [],
 
@@ -74,14 +70,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   setUseChatDetailPanel: (enabled: boolean) => {
     set({ useChatDetailPanel: enabled });
-  },
-
-  openStoryChat: () => {
-    set({ storyChatOpen: true });
-  },
-
-  closeStoryChat: () => {
-    set({ storyChatOpen: false });
   },
 
   openLocationChat: (name: string) => {
