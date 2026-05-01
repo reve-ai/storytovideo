@@ -19,6 +19,7 @@ function formatDuration(startedAt: string): string {
 function describe(chat: ActiveChat): string {
   if (chat.scope === "story") return "Story";
   if (chat.scope === "location") return `Location: ${decodeURIComponent(chat.scopeKey)}`;
+  if (chat.scope === "object") return `Object: ${decodeURIComponent(chat.scopeKey)}`;
   // shot: scopeKey is "scene-shot"
   return `Shot ${chat.scopeKey}`;
 }
@@ -45,6 +46,7 @@ export default function ActiveChatsIndicator({ runId }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const openLocationChat = useUIStore((s) => s.openLocationChat);
+  const openObjectChat = useUIStore((s) => s.openObjectChat);
 
   useEffect(() => {
     if (!open) return;
@@ -73,6 +75,10 @@ export default function ActiveChatsIndicator({ runId }: Props) {
     }
     if (chat.scope === "location") {
       openLocationChat(decodeURIComponent(chat.scopeKey));
+      return;
+    }
+    if (chat.scope === "object") {
+      openObjectChat(decodeURIComponent(chat.scopeKey));
       return;
     }
     // shot: navigate to the story view; the user can find the shot row from there

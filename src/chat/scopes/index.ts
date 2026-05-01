@@ -4,3 +4,4 @@
 import "./shot.js";
 import "./story.js";
 import "./location.js";
+import "./object.js";
