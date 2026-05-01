@@ -58,7 +58,7 @@ export interface StoryAnalysis {
 }
 
 export interface AssetLibrary {
-  characterImages: Record<string, { front: string; angle: string }>;  // paths
+  characterImages: Record<string, { front: string }>;                  // paths
   locationImages: Record<string, string>;                              // paths
   objectImages: Record<string, string>;                                // paths
 }

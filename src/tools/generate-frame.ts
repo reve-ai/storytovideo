@@ -213,7 +213,7 @@ export async function buildFrameReferencePlan(params: {
 
   const characterReferences = shot.charactersPresent.flatMap((name): FrameReference[] => {
     const refs = assetLibrary.characterImages[name];
-    const refPath = refs?.front || refs?.angle;
+    const refPath = refs?.front;
     return refPath && fs.existsSync(refPath)
       ? [{ type: "character", name, path: refPath }]
       : [];
@@ -388,8 +388,8 @@ async function generateSingleFrame(params: {
 
   for (const charName of shot.charactersPresent) {
     const charRefs = assetLibrary.characterImages[charName];
-    const refPath = charRefs?.front || charRefs?.angle;
-    console.log(`[generateFrame]   Character ref "${charName}": front=${JSON.stringify(charRefs?.front)}, angle=${JSON.stringify(charRefs?.angle)}, chosen=${JSON.stringify(refPath)}, exists=${refPath ? fs.existsSync(refPath) : 'N/A'}`);
+    const refPath = charRefs?.front;
+    console.log(`[generateFrame]   Character ref "${charName}": front=${JSON.stringify(charRefs?.front)}, chosen=${JSON.stringify(refPath)}, exists=${refPath ? fs.existsSync(refPath) : 'N/A'}`);
     if (!charRefs) {
       console.log(`[generateFrame]   Character ref "${charName}": NOT FOUND in assetLibrary`);
     }
@@ -650,7 +650,7 @@ export const generateFrameTool = {
     }).describe("The shot to generate keyframes for"),
     artStyle: z.string().describe("The visual art style for the entire video"),
     assetLibrary: z.object({
-      characterImages: z.record(z.string(), z.object({ front: z.string(), angle: z.string() })),
+      characterImages: z.record(z.string(), z.object({ front: z.string() })),
       locationImages: z.record(z.string(), z.string()),
       objectImages: z.record(z.string(), z.string()).optional(),
     }).describe("AssetLibrary with character, location, and object reference image paths"),

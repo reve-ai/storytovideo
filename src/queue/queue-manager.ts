@@ -140,9 +140,7 @@ export class QueueManager {
       const lib = this.state.assetLibrary;
       for (const [name, imgs] of Object.entries(lib.characterImages)) {
         const frontRel = stripPrefix(imgs.front);
-        const angleRel = stripPrefix(imgs.angle);
         if (frontRel !== null) { lib.characterImages[name] = { ...imgs, front: frontRel }; changed = true; }
-        if (angleRel !== null) { lib.characterImages[name] = { ...lib.characterImages[name], angle: angleRel }; changed = true; }
       }
       for (const [name, path] of Object.entries(lib.locationImages)) {
         const rel = stripPrefix(path);
@@ -817,12 +815,8 @@ export class QueueManager {
 
     for (const char of analysis.characters) {
       const frontPath = this.state.generatedOutputs[`character:${char.name}:front`];
-      const anglePath = this.state.generatedOutputs[`character:${char.name}:angle`];
       if (frontPath) {
-        lib.characterImages[char.name] = {
-          front: frontPath,
-          angle: anglePath ?? frontPath,
-        };
+        lib.characterImages[char.name] = { front: frontPath };
       }
     }
 
@@ -848,7 +842,7 @@ export class QueueManager {
     const lib = this.state.assetLibrary;
     return {
       characterImages: Object.fromEntries(
-        Object.entries(lib.characterImages).map(([name, imgs]) => [name, { front: toAbs(imgs.front), angle: toAbs(imgs.angle) }])
+        Object.entries(lib.characterImages).map(([name, imgs]) => [name, { front: toAbs(imgs.front) }])
       ),
       locationImages: Object.fromEntries(
         Object.entries(lib.locationImages).map(([name, p]) => [name, toAbs(p)])
