@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
-import type { Location, Shot, StoryAnalysis } from "../types.js";
+import type { Location, Shot, StoryAnalysis, StoryObject } from "../types.js";
 
-export type ChatScope = "shot" | "location" | "story";
+export type ChatScope = "shot" | "location" | "story" | "object";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -43,6 +43,10 @@ export interface LocationPreviewArtifacts {
   referenceImage?: PreviewArtifact;
 }
 
+export interface ObjectPreviewArtifacts {
+  referenceImage?: PreviewArtifact;
+}
+
 export interface ShotDraft {
   shotFields: Partial<Shot>;
   pendingImageReplacements: PendingImageReplacement[];
@@ -61,13 +65,21 @@ export interface LocationDraft {
   previewArtifacts?: LocationPreviewArtifacts;
 }
 
+export type ObjectFields = Partial<Pick<StoryObject, "visualDescription">>;
+
+export interface ObjectDraft {
+  objectFields: ObjectFields;
+  pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: ObjectPreviewArtifacts;
+}
+
 export type StoryFields = Partial<Pick<StoryAnalysis, "title" | "artStyle">>;
 
 export interface StoryDraft {
   storyFields: StoryFields;
 }
 
-export type ChatDraft = ShotDraft | LocationDraft | StoryDraft;
+export type ChatDraft = ShotDraft | LocationDraft | ObjectDraft | StoryDraft;
 
 export interface ChatIntermediate {
   kind: "frame" | "video" | "asset";
@@ -118,6 +130,10 @@ export function emptyLocationDraft(): LocationDraft {
   return { locationFields: {}, pendingReferenceImage: null };
 }
 
+export function emptyObjectDraft(): ObjectDraft {
+  return { objectFields: {}, pendingReferenceImage: null };
+}
+
 export function emptyStoryDraft(): StoryDraft {
   return { storyFields: {} };
 }
@@ -128,6 +144,10 @@ export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotD
 
 export function isLocationDraft(draft: ChatDraft | null | undefined): draft is LocationDraft {
   return !!draft && "locationFields" in draft;
+}
+
+export function isObjectDraft(draft: ChatDraft | null | undefined): draft is ObjectDraft {
+  return !!draft && "objectFields" in draft;
 }
 
 export function isStoryDraft(draft: ChatDraft | null | undefined): draft is StoryDraft {
@@ -150,6 +170,14 @@ export function isLocationDraftEmpty(draft: LocationDraft | null): boolean {
   return noFields && noImage && noPreviews;
 }
 
+export function isObjectDraftEmpty(draft: ObjectDraft | null): boolean {
+  if (!draft) return true;
+  const noFields = Object.keys(draft.objectFields).length === 0;
+  const noImage = !draft.pendingReferenceImage;
+  const noPreviews = !draft.previewArtifacts?.referenceImage;
+  return noFields && noImage && noPreviews;
+}
+
 export function isStoryDraftEmpty(draft: StoryDraft | null): boolean {
   if (!draft) return true;
   return Object.keys(draft.storyFields).length === 0;
@@ -159,6 +187,7 @@ export function isDraftEmpty(draft: ChatDraft | null): boolean {
   if (!draft) return true;
   if (isShotDraft(draft)) return isShotDraftEmpty(draft);
   if (isLocationDraft(draft)) return isLocationDraftEmpty(draft);
+  if (isObjectDraft(draft)) return isObjectDraftEmpty(draft);
   if (isStoryDraft(draft)) return isStoryDraftEmpty(draft);
   return true;
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { usePipelineStore, type AssetEntry } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
+import { useUIStore } from "../stores/ui-store";
 import AssetReplace from "../components/AssetReplace";
 import { mediaUrl } from "../utils/media-url";
 
-function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
+function AssetCard({ asset, runId, onOpenChat }: { asset: AssetEntry; runId: string; onOpenChat?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editDesc, setEditDesc] = useState(asset.description);
@@ -147,13 +148,33 @@ function AssetCard({ asset, runId }: { asset: AssetEntry; runId: string }) {
             </button>
           )}
           <AssetReplace assetKey={asset.assetKey} label={asset.name} onSuccess={handleUploaded} />
+          {onOpenChat && (
+            <button
+              className="btn btn-xs"
+              onClick={onOpenChat}
+              disabled={loading}
+              title="Open chat to edit this object"
+            >
+              💬 Chat
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function AssetSection({ title, assets, runId }: { title: string; assets: AssetEntry[]; runId: string }) {
+function AssetSection({
+  title,
+  assets,
+  runId,
+  onOpenChatFor,
+}: {
+  title: string;
+  assets: AssetEntry[];
+  runId: string;
+  onOpenChatFor?: (asset: AssetEntry) => void;
+}) {
   if (assets.length === 0) return null;
   return (
     <div style={{ marginBottom: "2rem" }}>
@@ -164,7 +185,12 @@ function AssetSection({ title, assets, runId }: { title: string; assets: AssetEn
         gap: "1rem",
       }}>
         {assets.map((asset) => (
-          <AssetCard key={asset.assetKey} asset={asset} runId={runId} />
+          <AssetCard
+            key={asset.assetKey}
+            asset={asset}
+            runId={runId}
+            onOpenChat={onOpenChatFor ? () => onOpenChatFor(asset) : undefined}
+          />
         ))}
       </div>
     </div>
@@ -175,6 +201,7 @@ export default function AssetsView() {
   const activeRunId = useRunStore((s) => s.activeRunId);
   const assets = usePipelineStore((s) => s.assets);
   const fetchAssets = usePipelineStore((s) => s.fetchAssets);
+  const openObjectChat = useUIStore((s) => s.openObjectChat);
 
   useEffect(() => {
     if (activeRunId) fetchAssets(activeRunId);
@@ -197,7 +224,12 @@ export default function AssetsView() {
     <div className="p-3">
       <AssetSection title="Characters" assets={assets.characters} runId={activeRunId} />
       <AssetSection title="Locations" assets={assets.locations} runId={activeRunId} />
-      <AssetSection title="Objects" assets={assets.objects} runId={activeRunId} />
+      <AssetSection
+        title="Objects"
+        assets={assets.objects}
+        runId={activeRunId}
+        onOpenChatFor={(asset) => openObjectChat(asset.name)}
+      />
     </div>
   );
 }
