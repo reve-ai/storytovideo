@@ -28,13 +28,13 @@ export default function LocationChatTakeover() {
 
   return (
     <div
-      className={`story-chat-takeover${open ? " open" : ""}`}
+      className={`chat-takeover${open ? " open" : ""}`}
       aria-hidden={!open}
     >
-      <div className="story-chat-takeover-header">
+      <div className="chat-takeover-header">
         <button
           type="button"
-          className="story-chat-takeover-close"
+          className="chat-takeover-close"
           onClick={close}
           aria-label="Close location chat"
           title="Close (Esc)"
@@ -42,7 +42,7 @@ export default function LocationChatTakeover() {
           ✕
         </button>
       </div>
-      <div className="story-chat-takeover-body">
+      <div className="chat-takeover-body">
         {open && locationName && <LocationChat locationName={locationName} />}
       </div>
     </div>
