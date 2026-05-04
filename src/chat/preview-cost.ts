@@ -9,7 +9,7 @@ import type { ImageBackend, VideoBackend } from '../types.js';
 /** Chat-scope identifier ("shot" / "location" / "object") used in
  *  CostEntry.itemKey so preview costs can be filtered out of the per-item
  *  breakdown that drives the canonical cost view. */
-export type PreviewScope = 'shot' | 'location' | 'object';
+export type PreviewScope = 'shot' | 'location' | 'object' | 'character';
 export type PreviewImageKind = 'frame' | 'referenceImage';
 export type PreviewVideoKind = 'video' | 'extendedVideo';
 
