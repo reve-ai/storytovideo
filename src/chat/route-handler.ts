@@ -17,13 +17,19 @@ import {
   listActiveChats,
   removeRunner,
 } from "./runner-registry.js";
-import type { ChatScope, LocationDraft, LocationFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
+import type { CharacterDraft, CharacterFields, ChatScope, LocationDraft, LocationFields, ObjectDraft, ObjectFields, SceneDraft, SceneFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
 import {
+  emptyCharacterDraft,
   emptyLocationDraft,
+  emptyObjectDraft,
+  emptySceneDraft,
   emptyShotDraft,
   emptyStoryDraft,
+  isCharacterDraft,
   isDraftEmpty,
   isLocationDraft,
+  isObjectDraft,
+  isSceneDraft,
   isShotDraft,
   isStoryDraft,
 } from "./types.js";
@@ -223,10 +229,39 @@ export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
     sendJson(res, 200, { ok: true, draft: next });
     return;
   }
+  if (scope === "object") {
+    const current: ObjectDraft = isObjectDraft(session.draft) ? session.draft : emptyObjectDraft();
+    const next: ObjectDraft = {
+      objectFields: { ...current.objectFields, ...(fields as ObjectFields) },
+      pendingReferenceImage: current.pendingReferenceImage,
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  if (scope === "character") {
+    const current: CharacterDraft = isCharacterDraft(session.draft) ? session.draft : emptyCharacterDraft();
+    const next: CharacterDraft = {
+      characterFields: { ...current.characterFields, ...(fields as CharacterFields) },
+      pendingReferenceImage: current.pendingReferenceImage,
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
   if (scope === "story") {
     const current: StoryDraft = isStoryDraft(session.draft) ? session.draft : emptyStoryDraft();
     const next: StoryDraft = {
       storyFields: { ...current.storyFields, ...(fields as StoryFields) },
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  if (scope === "scene") {
+    const current: SceneDraft = isSceneDraft(session.draft) ? session.draft : emptySceneDraft();
+    const next: SceneDraft = {
+      sceneFields: { ...current.sceneFields, ...(fields as SceneFields) },
     };
     store.setDraft(scope, scopeKey, runId, next);
     sendJson(res, 200, { ok: true, draft: next });

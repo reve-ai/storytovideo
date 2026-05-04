@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { usePipelineStore, type WorkItem } from "../stores/pipeline-store";
 import { useRunStore } from "../stores/run-store";
 import { useUIStore } from "../stores/ui-store";
+import StoryChat from "../components/chat/StoryChat";
 
 function getAllItems(queues: ReturnType<typeof usePipelineStore.getState>["queues"]): WorkItem[] {
   const items: WorkItem[] = [];
@@ -23,6 +24,7 @@ export default function ScriptView() {
   const redoScene = usePipelineStore((s) => s.redoScene);
   const queues = usePipelineStore((s) => s.queues);
   const showToast = useUIStore((s) => s.showToast);
+  const openSceneChat = useUIStore((s) => s.openSceneChat);
 
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -90,21 +92,23 @@ export default function ScriptView() {
     <div style={{ padding: "1rem", maxWidth: "900px", margin: "0 auto" }}>
       <h2 style={{ marginTop: 0 }}>Script</h2>
 
+      <div style={{ marginBottom: "1rem", maxHeight: "60vh", display: "flex", flexDirection: "column" }}>
+        <StoryChat />
+      </div>
+
       {scriptData.convertedScript && (
-        <div style={{
+        <details style={{
           marginBottom: "1rem",
           padding: "0.75rem",
           borderRadius: "6px",
           border: "1px solid var(--border, #444)",
           background: "var(--surface, #1e1e1e)",
         }}>
-          <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted, #888)", marginBottom: "0.35rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Original Prompt
-          </div>
-          <div style={{ fontSize: "0.85rem", color: "var(--text, #eee)", whiteSpace: "pre-wrap" }}>
+          <summary>Original Prompt</summary>
+          <div style={{ fontSize: "0.85rem", color: "var(--text, #eee)", whiteSpace: "pre-wrap", marginTop: "0.35rem" }}>
             {scriptData.storyText}
           </div>
-        </div>
+        </details>
       )}
 
       <div style={{ marginBottom: "1rem" }}>
@@ -166,14 +170,21 @@ export default function ScriptView() {
                         📍 {scene.location} · 👥 {scene.charactersPresent.join(", ") || "—"}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={redoingScene !== null}
-                      onClick={() => handleRedoScene(scene.sceneNumber)}
-                      style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "1rem" }}
-                    >
-                      {redoingScene === scene.sceneNumber ? "Redoing…" : "Redo Scene"}
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", whiteSpace: "nowrap", flexShrink: 0, marginLeft: "1rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => openSceneChat(scene.sceneNumber)}
+                      >
+                        💬 Chat
+                      </button>
+                      <button
+                        type="button"
+                        disabled={redoingScene !== null}
+                        onClick={() => handleRedoScene(scene.sceneNumber)}
+                      >
+                        {redoingScene === scene.sceneNumber ? "Redoing…" : "Redo Scene"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

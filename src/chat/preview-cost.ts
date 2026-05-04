@@ -6,10 +6,10 @@ import { computeImageCost, computeVideoCost } from '../queue/cost-tracker.js';
 import { imageBackendToModel, videoBackendToModel } from '../queue/backend-models.js';
 import type { ImageBackend, VideoBackend } from '../types.js';
 
-/** Chat-scope identifier ("shot" / "location") used in CostEntry.itemKey so
- *  preview costs can be filtered out of the per-item breakdown that drives
- *  the canonical cost view. */
-export type PreviewScope = 'shot' | 'location';
+/** Chat-scope identifier ("shot" / "location" / "object") used in
+ *  CostEntry.itemKey so preview costs can be filtered out of the per-item
+ *  breakdown that drives the canonical cost view. */
+export type PreviewScope = 'shot' | 'location' | 'object' | 'character';
 export type PreviewImageKind = 'frame' | 'referenceImage';
 export type PreviewVideoKind = 'video' | 'extendedVideo';
 

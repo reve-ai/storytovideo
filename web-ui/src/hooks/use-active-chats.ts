@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type ActiveChatScope = "shot" | "location" | "story";
+export type ActiveChatScope = "shot" | "location" | "story" | "object" | "character" | "scene";
 
 export interface ActiveChat {
   scope: ActiveChatScope;

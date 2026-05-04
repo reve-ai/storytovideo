@@ -2,18 +2,18 @@ import { useEffect } from "react";
 
 import { useUIStore } from "../stores/ui-store";
 import { useRunStore } from "../stores/run-store";
-import LocationChat from "./chat/LocationChat";
+import ObjectChat from "./chat/ObjectChat";
 
 /**
- * Takeover-style panel for the Location-scoped chat. Slides in over the main
- * view when triggered from a location chip in StoryView.
+ * Takeover-style panel for the Object-scoped chat. Slides in over the main
+ * view when triggered from an object asset card in AssetsView.
  */
-export default function LocationChatTakeover() {
-  const locationName = useUIStore((s) => s.locationChatName);
-  const close = useUIStore((s) => s.closeLocationChat);
+export default function ObjectChatTakeover() {
+  const objectName = useUIStore((s) => s.objectChatName);
+  const close = useUIStore((s) => s.closeObjectChat);
   const activeRunId = useRunStore((s) => s.activeRunId);
 
-  const open = !!locationName;
+  const open = !!objectName;
 
   useEffect(() => {
     if (!open) return;
@@ -36,14 +36,14 @@ export default function LocationChatTakeover() {
           type="button"
           className="chat-takeover-close"
           onClick={close}
-          aria-label="Close location chat"
+          aria-label="Close object chat"
           title="Close (Esc)"
         >
           ✕
         </button>
       </div>
       <div className="chat-takeover-body">
-        {open && locationName && <LocationChat locationName={locationName} />}
+        {open && objectName && <ObjectChat objectName={objectName} />}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { UIMessage } from "ai";
 import { useChatDraftsStore } from "./chat-drafts-store";
 
-export type ChatScope = "shot" | "story" | "location";
+export type ChatScope = "shot" | "story" | "location" | "object" | "character" | "scene";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -30,6 +30,10 @@ export interface StoryDraft {
   storyFields: Record<string, unknown>;
 }
 
+export interface SceneDraft {
+  sceneFields: Record<string, unknown>;
+}
+
 export interface PendingReferenceImage {
   path: string;
 }
@@ -42,7 +46,23 @@ export interface LocationDraft {
   };
 }
 
-export type ChatDraft = ShotDraft | StoryDraft | LocationDraft;
+export interface ObjectDraft {
+  objectFields: Record<string, unknown>;
+  pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: {
+    referenceImage?: PreviewArtifact;
+  };
+}
+
+export interface CharacterDraft {
+  characterFields: Record<string, unknown>;
+  pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: {
+    referenceImage?: PreviewArtifact;
+  };
+}
+
+export type ChatDraft = ShotDraft | StoryDraft | LocationDraft | ObjectDraft | CharacterDraft | SceneDraft;
 
 export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
   return !!draft && "shotFields" in draft;
@@ -56,6 +76,18 @@ export function isLocationDraft(draft: ChatDraft | null | undefined): draft is L
   return !!draft && "locationFields" in draft;
 }
 
+export function isObjectDraft(draft: ChatDraft | null | undefined): draft is ObjectDraft {
+  return !!draft && "objectFields" in draft;
+}
+
+export function isCharacterDraft(draft: ChatDraft | null | undefined): draft is CharacterDraft {
+  return !!draft && "characterFields" in draft;
+}
+
+export function isSceneDraft(draft: ChatDraft | null | undefined): draft is SceneDraft {
+  return !!draft && "sceneFields" in draft;
+}
+
 export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   if (!draft) return 0;
   if (isShotDraft(draft)) {
@@ -66,6 +98,15 @@ export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   }
   if (isLocationDraft(draft)) {
     return Object.keys(draft.locationFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
+  if (isObjectDraft(draft)) {
+    return Object.keys(draft.objectFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
+  if (isCharacterDraft(draft)) {
+    return Object.keys(draft.characterFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
+  if (isSceneDraft(draft)) {
+    return Object.keys(draft.sceneFields).length;
   }
   return 0;
 }
@@ -81,6 +122,14 @@ export function hasPromotablePreview(draft: ChatDraft | null | undefined): boole
     return Boolean(a?.frame || a?.video);
   }
   if (isLocationDraft(draft)) {
+    if (draft.pendingReferenceImage) return false;
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  if (isObjectDraft(draft)) {
+    if (draft.pendingReferenceImage) return false;
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  if (isCharacterDraft(draft)) {
     if (draft.pendingReferenceImage) return false;
     return Boolean(draft.previewArtifacts?.referenceImage);
   }

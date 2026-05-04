@@ -87,7 +87,6 @@ export async function generateAsset(params: {
   // Determine asset type and key
   let assetType: "character" | "location" | "object";
   let assetName: string;
-  const angleType = "front";
 
   if (characterName) {
     assetType = "character";
@@ -102,7 +101,7 @@ export async function generateAsset(params: {
     throw new Error("Either characterName, locationName, or objectName must be provided");
   }
 
-  const key = `${assetType}:${assetName}:${angleType}`;
+  const key = `${assetType}:${assetName}:front`;
 
   // Build the prompt
   const isEditing = Boolean(referenceImagePath && fs.existsSync(referenceImagePath));
@@ -117,13 +116,13 @@ export async function generateAsset(params: {
 
   // Dry-run mode: return placeholder path
   if (dryRun) {
-    const placeholder = `[dry-run] assets/${assetType}s/${assetName}_${angleType}.png`;
+    const placeholder = `[dry-run] assets/${assetType}s/${assetName}_front.png`;
     return { key, path: placeholder, finalPrompt: prompt };
   }
 
   // Log the operation
   if (isEditing) {
-    console.log(`[generateAsset] Editing reference image for ${assetType}: ${assetName} (${angleType})`);
+    console.log(`[generateAsset] Editing reference image for ${assetType}: ${assetName} (front)`);
   } else {
     console.log(`[generateAsset] Generating new ${assetType}: ${assetName}\n  Prompt: ${prompt}`);
   }
@@ -138,7 +137,7 @@ export async function generateAsset(params: {
 
       // Save image
       const sanitizedName = assetName.toLowerCase().replace(/\//g, '-').replace(/\s+/g, ' ').trim();
-      const filename = `${sanitizedName}_${angleType}_v${version}.png`;
+      const filename = `${sanitizedName}_front_v${version}.png`;
       const filePath = path.join(assetDir, filename);
       // Characters and objects use 1:1 (reference images); locations use the run's aspect ratio
       const assetAspectRatio = (assetType === "character" || assetType === "object") ? "1:1" : (params.aspectRatio ?? "16:9");

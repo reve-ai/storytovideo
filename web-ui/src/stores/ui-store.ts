@@ -16,8 +16,10 @@ interface UIState {
   detailItemId: string | null;
   hideSuperseded: boolean;
   useChatDetailPanel: boolean;
-  storyChatOpen: boolean;
   locationChatName: string | null;
+  objectChatName: string | null;
+  characterChatName: string | null;
+  sceneChatNumber: number | null;
   toasts: ToastMessage[];
 }
 
@@ -27,10 +29,14 @@ interface UIActions {
   closeDetail: () => void;
   setHideSuperseded: (hide: boolean) => void;
   setUseChatDetailPanel: (enabled: boolean) => void;
-  openStoryChat: () => void;
-  closeStoryChat: () => void;
   openLocationChat: (name: string) => void;
   closeLocationChat: () => void;
+  openObjectChat: (name: string) => void;
+  closeObjectChat: () => void;
+  openCharacterChat: (name: string) => void;
+  closeCharacterChat: () => void;
+  openSceneChat: (n: number) => void;
+  closeSceneChat: () => void;
   showToast: (message: string, type?: ToastType) => void;
   dismissToast: (id: number) => void;
 }
@@ -45,8 +51,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
   detailItemId: null,
   hideSuperseded: false,
   useChatDetailPanel: true,
-  storyChatOpen: false,
   locationChatName: null,
+  objectChatName: null,
+  characterChatName: null,
+  sceneChatNumber: null,
   toasts: [],
 
   setView: (view: ViewName) => {
@@ -76,20 +84,36 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ useChatDetailPanel: enabled });
   },
 
-  openStoryChat: () => {
-    set({ storyChatOpen: true });
-  },
-
-  closeStoryChat: () => {
-    set({ storyChatOpen: false });
-  },
-
   openLocationChat: (name: string) => {
     set({ locationChatName: name });
   },
 
   closeLocationChat: () => {
     set({ locationChatName: null });
+  },
+
+  openObjectChat: (name: string) => {
+    set({ objectChatName: name });
+  },
+
+  closeObjectChat: () => {
+    set({ objectChatName: null });
+  },
+
+  openCharacterChat: (name: string) => {
+    set({ characterChatName: name });
+  },
+
+  closeCharacterChat: () => {
+    set({ characterChatName: null });
+  },
+
+  openSceneChat: (n: number) => {
+    set({ sceneChatNumber: n });
+  },
+
+  closeSceneChat: () => {
+    set({ sceneChatNumber: null });
   },
 
   showToast: (message: string, type: ToastType = "info") => {

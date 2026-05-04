@@ -61,8 +61,8 @@ async function testReferencePlanPrioritizesAndCollagesOverflow(): Promise<void> 
 
   const assetLibrary: AssetLibrary = {
     characterImages: {
-      Alice: { front: alice, angle: alice },
-      Bob: { front: bob, angle: bob },
+      Alice: { front: alice },
+      Bob: { front: bob },
     },
     locationImages: {
       Archive: archive,
@@ -108,7 +108,7 @@ async function testPreviousFrameRequiresEligibleShot(): Promise<void> {
   const plan = await buildFrameReferencePlan({
     shot: makeShot({ shotNumber: 1, shotInScene: 1, charactersPresent: ["Alice"], objectsPresent: [] }),
     assetLibrary: {
-      characterImages: { Alice: { front: alice, angle: alice } },
+      characterImages: { Alice: { front: alice } },
       locationImages: {},
       objectImages: {},
     },

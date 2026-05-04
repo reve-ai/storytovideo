@@ -4,7 +4,10 @@ import { randomUUID } from "crypto";
 import type { UIMessage } from "ai";
 import {
   emptyChatSession,
+  isCharacterDraft,
   isLocationDraft,
+  isObjectDraft,
+  isSceneDraft,
   isShotDraft,
   isStoryDraft,
   type ChatDraft,
@@ -148,7 +151,10 @@ export interface DraftSummary {
 function draftHasFieldEdits(draft: ChatDraft): boolean {
   if (isShotDraft(draft)) return Object.keys(draft.shotFields).length > 0;
   if (isLocationDraft(draft)) return Object.keys(draft.locationFields).length > 0;
+  if (isObjectDraft(draft)) return Object.keys(draft.objectFields).length > 0;
+  if (isCharacterDraft(draft)) return Object.keys(draft.characterFields).length > 0;
   if (isStoryDraft(draft)) return Object.keys(draft.storyFields).length > 0;
+  if (isSceneDraft(draft)) return Object.keys(draft.sceneFields).length > 0;
   return false;
 }
 
@@ -158,6 +164,12 @@ function draftHasPreview(draft: ChatDraft): boolean {
     return Boolean(a?.frame || a?.video);
   }
   if (isLocationDraft(draft)) {
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  if (isObjectDraft(draft)) {
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  if (isCharacterDraft(draft)) {
     return Boolean(draft.previewArtifacts?.referenceImage);
   }
   return false;
@@ -171,7 +183,7 @@ function draftHasPreview(draft: ChatDraft): boolean {
 export function listChatDrafts(outputDir: string): DraftSummary[] {
   const root = join(resolveOutputDir(outputDir), "chats");
   if (!existsSync(root)) return [];
-  const scopes: ChatScope[] = ["shot", "location", "story"];
+  const scopes: ChatScope[] = ["shot", "location", "story", "object", "character", "scene"];
   const out: DraftSummary[] = [];
   for (const scope of scopes) {
     const scopeDir = join(root, scope);

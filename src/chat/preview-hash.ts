@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 
-import type { Location, Shot } from "../types.js";
+import type { Character, Location, Shot, StoryObject } from "../types.js";
 
 /** Deterministic JSON stringify with sorted object keys. Arrays preserve
  *  order; primitives serialize as JSON. Used so the preview-promotion hash
@@ -89,4 +89,22 @@ export function locationReferenceInputsHash(opts: {
   location: Location;
 }): string {
   return sha256Hex(stableStringify({ kind: "referenceImage", artStyle: opts.artStyle, location: opts.location }));
+}
+
+/** Hash of the inputs that drive a reference-image preview for an object. */
+export function objectReferenceInputsHash(opts: {
+  artStyle: string;
+  object: StoryObject;
+}): string {
+  return sha256Hex(stableStringify({ kind: "referenceImage", artStyle: opts.artStyle, object: opts.object }));
+}
+
+/** Hash of the inputs that drive a reference-image preview for a character.
+ *  Hashes the full Character record so any field change invalidates the
+ *  preview, even though only physicalDescription drives generation today. */
+export function characterReferenceInputsHash(opts: {
+  artStyle: string;
+  character: Character;
+}): string {
+  return sha256Hex(stableStringify({ kind: "referenceImage", artStyle: opts.artStyle, character: opts.character }));
 }
