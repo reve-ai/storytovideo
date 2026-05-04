@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
-import type { Character, Location, Shot, StoryAnalysis, StoryObject } from "../types.js";
+import type { Character, Location, Scene, Shot, StoryAnalysis, StoryObject } from "../types.js";
 
-export type ChatScope = "shot" | "location" | "story" | "object" | "character";
+export type ChatScope = "shot" | "story" | "location" | "object" | "character" | "scene";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -91,7 +91,13 @@ export interface StoryDraft {
   storyFields: StoryFields;
 }
 
-export type ChatDraft = ShotDraft | LocationDraft | ObjectDraft | CharacterDraft | StoryDraft;
+export type SceneFields = Partial<Pick<Scene, "title" | "narrativeSummary" | "location" | "charactersPresent" | "estimatedDurationSeconds">>;
+
+export interface SceneDraft {
+  sceneFields: SceneFields;
+}
+
+export type ChatDraft = ShotDraft | LocationDraft | ObjectDraft | CharacterDraft | StoryDraft | SceneDraft;
 
 export interface ChatIntermediate {
   kind: "frame" | "video" | "asset";
@@ -154,6 +160,10 @@ export function emptyStoryDraft(): StoryDraft {
   return { storyFields: {} };
 }
 
+export function emptySceneDraft(): SceneDraft {
+  return { sceneFields: {} };
+}
+
 export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
   return !!draft && "shotFields" in draft;
 }
@@ -172,6 +182,10 @@ export function isCharacterDraft(draft: ChatDraft | null | undefined): draft is 
 
 export function isStoryDraft(draft: ChatDraft | null | undefined): draft is StoryDraft {
   return !!draft && "storyFields" in draft;
+}
+
+export function isSceneDraft(draft: ChatDraft | null | undefined): draft is SceneDraft {
+  return !!draft && "sceneFields" in draft;
 }
 
 export function isShotDraftEmpty(draft: ShotDraft | null): boolean {
@@ -211,6 +225,11 @@ export function isStoryDraftEmpty(draft: StoryDraft | null): boolean {
   return Object.keys(draft.storyFields).length === 0;
 }
 
+export function isSceneDraftEmpty(draft: SceneDraft | null): boolean {
+  if (!draft) return true;
+  return Object.keys(draft.sceneFields).length === 0;
+}
+
 export function isDraftEmpty(draft: ChatDraft | null): boolean {
   if (!draft) return true;
   if (isShotDraft(draft)) return isShotDraftEmpty(draft);
@@ -218,5 +237,6 @@ export function isDraftEmpty(draft: ChatDraft | null): boolean {
   if (isObjectDraft(draft)) return isObjectDraftEmpty(draft);
   if (isCharacterDraft(draft)) return isCharacterDraftEmpty(draft);
   if (isStoryDraft(draft)) return isStoryDraftEmpty(draft);
+  if (isSceneDraft(draft)) return isSceneDraftEmpty(draft);
   return true;
 }
