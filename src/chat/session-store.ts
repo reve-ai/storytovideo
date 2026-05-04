@@ -7,6 +7,7 @@ import {
   isCharacterDraft,
   isLocationDraft,
   isObjectDraft,
+  isSceneDraft,
   isShotDraft,
   isStoryDraft,
   type ChatDraft,
@@ -153,6 +154,7 @@ function draftHasFieldEdits(draft: ChatDraft): boolean {
   if (isObjectDraft(draft)) return Object.keys(draft.objectFields).length > 0;
   if (isCharacterDraft(draft)) return Object.keys(draft.characterFields).length > 0;
   if (isStoryDraft(draft)) return Object.keys(draft.storyFields).length > 0;
+  if (isSceneDraft(draft)) return Object.keys(draft.sceneFields).length > 0;
   return false;
 }
 
@@ -181,7 +183,7 @@ function draftHasPreview(draft: ChatDraft): boolean {
 export function listChatDrafts(outputDir: string): DraftSummary[] {
   const root = join(resolveOutputDir(outputDir), "chats");
   if (!existsSync(root)) return [];
-  const scopes: ChatScope[] = ["shot", "location", "story", "object", "character"];
+  const scopes: ChatScope[] = ["shot", "location", "story", "object", "character", "scene"];
   const out: DraftSummary[] = [];
   for (const scope of scopes) {
     const scopeDir = join(root, scope);

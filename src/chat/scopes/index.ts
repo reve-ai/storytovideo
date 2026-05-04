@@ -6,3 +6,4 @@ import "./story.js";
 import "./location.js";
 import "./object.js";
 import "./character.js";
+import "./scene.js";

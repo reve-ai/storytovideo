@@ -24,6 +24,7 @@ export default function ScriptView() {
   const redoScene = usePipelineStore((s) => s.redoScene);
   const queues = usePipelineStore((s) => s.queues);
   const showToast = useUIStore((s) => s.showToast);
+  const openSceneChat = useUIStore((s) => s.openSceneChat);
 
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -169,14 +170,21 @@ export default function ScriptView() {
                         📍 {scene.location} · 👥 {scene.charactersPresent.join(", ") || "—"}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      disabled={redoingScene !== null}
-                      onClick={() => handleRedoScene(scene.sceneNumber)}
-                      style={{ whiteSpace: "nowrap", flexShrink: 0, marginLeft: "1rem" }}
-                    >
-                      {redoingScene === scene.sceneNumber ? "Redoing…" : "Redo Scene"}
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", whiteSpace: "nowrap", flexShrink: 0, marginLeft: "1rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => openSceneChat(scene.sceneNumber)}
+                      >
+                        💬 Chat
+                      </button>
+                      <button
+                        type="button"
+                        disabled={redoingScene !== null}
+                        onClick={() => handleRedoScene(scene.sceneNumber)}
+                      >
+                        {redoingScene === scene.sceneNumber ? "Redoing…" : "Redo Scene"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

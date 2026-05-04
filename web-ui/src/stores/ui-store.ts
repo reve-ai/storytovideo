@@ -19,6 +19,7 @@ interface UIState {
   locationChatName: string | null;
   objectChatName: string | null;
   characterChatName: string | null;
+  sceneChatNumber: number | null;
   toasts: ToastMessage[];
 }
 
@@ -34,6 +35,8 @@ interface UIActions {
   closeObjectChat: () => void;
   openCharacterChat: (name: string) => void;
   closeCharacterChat: () => void;
+  openSceneChat: (n: number) => void;
+  closeSceneChat: () => void;
   showToast: (message: string, type?: ToastType) => void;
   dismissToast: (id: number) => void;
 }
@@ -51,6 +54,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   locationChatName: null,
   objectChatName: null,
   characterChatName: null,
+  sceneChatNumber: null,
   toasts: [],
 
   setView: (view: ViewName) => {
@@ -102,6 +106,14 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
   closeCharacterChat: () => {
     set({ characterChatName: null });
+  },
+
+  openSceneChat: (n: number) => {
+    set({ sceneChatNumber: n });
+  },
+
+  closeSceneChat: () => {
+    set({ sceneChatNumber: null });
   },
 
   showToast: (message: string, type: ToastType = "info") => {
