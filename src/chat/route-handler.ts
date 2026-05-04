@@ -17,12 +17,14 @@ import {
   listActiveChats,
   removeRunner,
 } from "./runner-registry.js";
-import type { ChatScope, LocationDraft, LocationFields, ObjectDraft, ObjectFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
+import type { CharacterDraft, CharacterFields, ChatScope, LocationDraft, LocationFields, ObjectDraft, ObjectFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
 import {
+  emptyCharacterDraft,
   emptyLocationDraft,
   emptyObjectDraft,
   emptyShotDraft,
   emptyStoryDraft,
+  isCharacterDraft,
   isDraftEmpty,
   isLocationDraft,
   isObjectDraft,
@@ -229,6 +231,16 @@ export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
     const current: ObjectDraft = isObjectDraft(session.draft) ? session.draft : emptyObjectDraft();
     const next: ObjectDraft = {
       objectFields: { ...current.objectFields, ...(fields as ObjectFields) },
+      pendingReferenceImage: current.pendingReferenceImage,
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  if (scope === "character") {
+    const current: CharacterDraft = isCharacterDraft(session.draft) ? session.draft : emptyCharacterDraft();
+    const next: CharacterDraft = {
+      characterFields: { ...current.characterFields, ...(fields as CharacterFields) },
       pendingReferenceImage: current.pendingReferenceImage,
     };
     store.setDraft(scope, scopeKey, runId, next);

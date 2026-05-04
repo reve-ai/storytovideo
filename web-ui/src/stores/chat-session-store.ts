@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { UIMessage } from "ai";
 import { useChatDraftsStore } from "./chat-drafts-store";
 
-export type ChatScope = "shot" | "story" | "location" | "object";
+export type ChatScope = "shot" | "story" | "location" | "object" | "character";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -50,7 +50,15 @@ export interface ObjectDraft {
   };
 }
 
-export type ChatDraft = ShotDraft | StoryDraft | LocationDraft | ObjectDraft;
+export interface CharacterDraft {
+  characterFields: Record<string, unknown>;
+  pendingReferenceImage: PendingReferenceImage | null;
+  previewArtifacts?: {
+    referenceImage?: PreviewArtifact;
+  };
+}
+
+export type ChatDraft = ShotDraft | StoryDraft | LocationDraft | ObjectDraft | CharacterDraft;
 
 export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
   return !!draft && "shotFields" in draft;
@@ -68,6 +76,10 @@ export function isObjectDraft(draft: ChatDraft | null | undefined): draft is Obj
   return !!draft && "objectFields" in draft;
 }
 
+export function isCharacterDraft(draft: ChatDraft | null | undefined): draft is CharacterDraft {
+  return !!draft && "characterFields" in draft;
+}
+
 export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   if (!draft) return 0;
   if (isShotDraft(draft)) {
@@ -81,6 +93,9 @@ export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   }
   if (isObjectDraft(draft)) {
     return Object.keys(draft.objectFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
+  if (isCharacterDraft(draft)) {
+    return Object.keys(draft.characterFields).length + (draft.pendingReferenceImage ? 1 : 0);
   }
   return 0;
 }
@@ -100,6 +115,10 @@ export function hasPromotablePreview(draft: ChatDraft | null | undefined): boole
     return Boolean(draft.previewArtifacts?.referenceImage);
   }
   if (isObjectDraft(draft)) {
+    if (draft.pendingReferenceImage) return false;
+    return Boolean(draft.previewArtifacts?.referenceImage);
+  }
+  if (isCharacterDraft(draft)) {
     if (draft.pendingReferenceImage) return false;
     return Boolean(draft.previewArtifacts?.referenceImage);
   }

@@ -961,6 +961,47 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
         return;
       }
 
+      // /api/runs/:id/chat/character/:characterName[/apply|/discard|/draft|/stream|/cancel|/reset]
+      if (action === "chat" && pathParts.length >= 6 && pathParts[4] === "character") {
+        const scopeKey = pathParts[5];
+        const sub = pathParts[6];
+
+        if (method === "GET" && pathParts.length === 6) {
+          await handleChatGet({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 6) {
+          await handleChatPost({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "GET" && pathParts.length === 7 && sub === "stream") {
+          await handleChatStream({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "cancel") {
+          await handleChatCancel({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "apply") {
+          await handleChatApply({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "discard") {
+          await handleChatDiscard({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "draft") {
+          await handleChatDraft({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        if (method === "POST" && pathParts.length === 7 && sub === "reset") {
+          await handleChatReset({ runManager, runId, scope: "character", scopeKey, sceneNumber: 0, shotInScene: 0, req, res });
+          return;
+        }
+        sendJson(res, 405, { error: "Method not allowed" });
+        return;
+      }
+
       // /api/runs/:id/chat/shot/:sceneNumber/:shotInScene[/apply|/discard|/draft|/stream|/cancel|/reset]
       if (action === "chat" && pathParts.length >= 7 && pathParts[4] === "shot") {
         const sceneNumber = parseInt(pathParts[5], 10);

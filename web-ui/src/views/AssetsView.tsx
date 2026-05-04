@@ -202,6 +202,7 @@ export default function AssetsView() {
   const assets = usePipelineStore((s) => s.assets);
   const fetchAssets = usePipelineStore((s) => s.fetchAssets);
   const openObjectChat = useUIStore((s) => s.openObjectChat);
+  const openCharacterChat = useUIStore((s) => s.openCharacterChat);
 
   useEffect(() => {
     if (activeRunId) fetchAssets(activeRunId);
@@ -222,7 +223,12 @@ export default function AssetsView() {
 
   return (
     <div className="p-3">
-      <AssetSection title="Characters" assets={assets.characters} runId={activeRunId} />
+      <AssetSection
+        title="Characters"
+        assets={assets.characters}
+        runId={activeRunId}
+        onOpenChatFor={(asset) => openCharacterChat(asset.name)}
+      />
       <AssetSection title="Locations" assets={assets.locations} runId={activeRunId} />
       <AssetSection
         title="Objects"
