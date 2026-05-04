@@ -238,6 +238,32 @@ export function buildShotEditorTools(ctx: ShotEditorContext): ToolSet {
       },
     }),
 
+    getScene: ({
+      description:
+        "Returns the parent Scene of the shot being edited, including scene metadata (title, narrativeSummary, location, charactersPresent, estimatedDurationSeconds, transition) and the full list of sibling shots in the scene. Each entry in `shots` is the canonical Shot record with an extra `isCurrent: true` flag on the one being edited. Use this to understand what happens before and after the current shot when writing prompts, dialogue, or composition.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const analysis = ctx.queueManager.getState().storyAnalysis;
+        if (!analysis) return { error: "No storyAnalysis available" };
+        const scene = analysis.scenes?.find((s) => s.sceneNumber === ctx.sceneNumber);
+        if (!scene) return { error: `Scene ${ctx.sceneNumber} not found` };
+        const shots = (scene.shots ?? []).map((s) => ({
+          ...s,
+          isCurrent: s.shotInScene === ctx.shotInScene,
+        }));
+        return {
+          sceneNumber: scene.sceneNumber,
+          title: scene.title,
+          narrativeSummary: scene.narrativeSummary,
+          location: scene.location,
+          charactersPresent: scene.charactersPresent,
+          estimatedDurationSeconds: scene.estimatedDurationSeconds,
+          transition: scene.transition,
+          shots,
+        };
+      },
+    }),
+
     getDownstreamImpact: ({
       description: "Reports which queue items would be invalidated by the current draft.",
       inputSchema: z.object({}),
@@ -575,6 +601,7 @@ const SYSTEM_INSTRUCTIONS = `You are an editor for a single Shot in an AI video 
 The Shot is part of a larger story analysis document. You can:
 - Read the current Shot via getShot.
 - See available characters/locations/objects via getStoryContext.
+- See the parent Scene and all sibling shots (so you know what happens before and after the current shot) via getScene.
 - See which downstream queue items would be regenerated via getDownstreamImpact.
 - Stage a partial update to the Shot via updateShotFields. This goes into a draft, not the live document.
 - Stage an image replacement via replaceFrameImage.
