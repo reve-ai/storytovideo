@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useActiveChats, type ActiveChat } from "../hooks/use-active-chats";
+import { usePipelineStore, type ScriptData } from "../stores/pipeline-store";
 import { useUIStore } from "../stores/ui-store";
 
 interface Props {
@@ -16,11 +17,16 @@ function formatDuration(startedAt: string): string {
   return `${min}m${sec % 60 ? ` ${sec % 60}s` : ""}`;
 }
 
-function describe(chat: ActiveChat): string {
+function describe(chat: ActiveChat, scriptData: ScriptData | null): string {
   if (chat.scope === "story") return "Story";
   if (chat.scope === "location") return `Location: ${decodeURIComponent(chat.scopeKey)}`;
   if (chat.scope === "object") return `Object: ${decodeURIComponent(chat.scopeKey)}`;
   if (chat.scope === "character") return `Character: ${decodeURIComponent(chat.scopeKey)}`;
+  if (chat.scope === "scene") {
+    const sceneNumber = Number(decodeURIComponent(chat.scopeKey));
+    const scene = scriptData?.scenes.find((s) => s.sceneNumber === sceneNumber);
+    return scene?.title ? `Scene ${sceneNumber}: ${scene.title}` : `Scene ${decodeURIComponent(chat.scopeKey)}`;
+  }
   // shot: scopeKey is "scene-shot"
   return `Shot ${chat.scopeKey}`;
 }
@@ -49,6 +55,8 @@ export default function ActiveChatsIndicator({ runId }: Props) {
   const openLocationChat = useUIStore((s) => s.openLocationChat);
   const openObjectChat = useUIStore((s) => s.openObjectChat);
   const openCharacterChat = useUIStore((s) => s.openCharacterChat);
+  const openSceneChat = useUIStore((s) => s.openSceneChat);
+  const scriptData = usePipelineStore((s) => s.scriptData);
 
   useEffect(() => {
     if (!open) return;
@@ -85,6 +93,10 @@ export default function ActiveChatsIndicator({ runId }: Props) {
     }
     if (chat.scope === "character") {
       openCharacterChat(decodeURIComponent(chat.scopeKey));
+      return;
+    }
+    if (chat.scope === "scene") {
+      openSceneChat(Number(decodeURIComponent(chat.scopeKey)));
       return;
     }
     // shot: navigate to the story view; the user can find the shot row from there
@@ -140,7 +152,7 @@ export default function ActiveChatsIndicator({ runId }: Props) {
                   onClick={() => handleClick(chat)}
                 >
                   <div className="active-chats-item-line">
-                    <span className="active-chats-item-label">{describe(chat)}</span>
+                    <span className="active-chats-item-label">{describe(chat, scriptData)}</span>
                     <span className="active-chats-item-time">{formatDuration(chat.startedAt)}</span>
                   </div>
                   {chat.currentToolName && (

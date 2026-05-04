@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { UIMessage } from "ai";
 import { useChatDraftsStore } from "./chat-drafts-store";
 
-export type ChatScope = "shot" | "story" | "location" | "object" | "character";
+export type ChatScope = "shot" | "story" | "location" | "object" | "character" | "scene";
 
 export interface PendingImageReplacement {
   which: "start" | "end";
@@ -28,6 +28,10 @@ export interface ShotDraft {
 
 export interface StoryDraft {
   storyFields: Record<string, unknown>;
+}
+
+export interface SceneDraft {
+  sceneFields: Record<string, unknown>;
 }
 
 export interface PendingReferenceImage {
@@ -58,7 +62,7 @@ export interface CharacterDraft {
   };
 }
 
-export type ChatDraft = ShotDraft | StoryDraft | LocationDraft | ObjectDraft | CharacterDraft;
+export type ChatDraft = ShotDraft | StoryDraft | LocationDraft | ObjectDraft | CharacterDraft | SceneDraft;
 
 export function isShotDraft(draft: ChatDraft | null | undefined): draft is ShotDraft {
   return !!draft && "shotFields" in draft;
@@ -80,6 +84,10 @@ export function isCharacterDraft(draft: ChatDraft | null | undefined): draft is 
   return !!draft && "characterFields" in draft;
 }
 
+export function isSceneDraft(draft: ChatDraft | null | undefined): draft is SceneDraft {
+  return !!draft && "sceneFields" in draft;
+}
+
 export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   if (!draft) return 0;
   if (isShotDraft(draft)) {
@@ -96,6 +104,9 @@ export function draftFieldCount(draft: ChatDraft | null | undefined): number {
   }
   if (isCharacterDraft(draft)) {
     return Object.keys(draft.characterFields).length + (draft.pendingReferenceImage ? 1 : 0);
+  }
+  if (isSceneDraft(draft)) {
+    return Object.keys(draft.sceneFields).length;
   }
   return 0;
 }

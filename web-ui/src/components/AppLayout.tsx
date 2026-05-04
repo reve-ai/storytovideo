@@ -6,6 +6,7 @@ import DetailPanel from "./DetailPanel";
 import LocationChatTakeover from "./LocationChatTakeover";
 import ObjectChatTakeover from "./ObjectChatTakeover";
 import CharacterChatTakeover from "./CharacterChatTakeover";
+import SceneChatTakeover from "./SceneChatTakeover";
 import Toast from "./Toast";
 import HomeView from "../views/HomeView";
 import { useRunStore } from "../stores/run-store";
@@ -28,6 +29,7 @@ export default function AppLayout() {
       <LocationChatTakeover />
       <ObjectChatTakeover />
       <CharacterChatTakeover />
+      <SceneChatTakeover />
       <Toast />
     </div>
   );

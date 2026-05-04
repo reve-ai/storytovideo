@@ -17,17 +17,19 @@ import {
   listActiveChats,
   removeRunner,
 } from "./runner-registry.js";
-import type { CharacterDraft, CharacterFields, ChatScope, LocationDraft, LocationFields, ObjectDraft, ObjectFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
+import type { CharacterDraft, CharacterFields, ChatScope, LocationDraft, LocationFields, ObjectDraft, ObjectFields, SceneDraft, SceneFields, ShotDraft, StoryDraft, StoryFields } from "./types.js";
 import {
   emptyCharacterDraft,
   emptyLocationDraft,
   emptyObjectDraft,
+  emptySceneDraft,
   emptyShotDraft,
   emptyStoryDraft,
   isCharacterDraft,
   isDraftEmpty,
   isLocationDraft,
   isObjectDraft,
+  isSceneDraft,
   isShotDraft,
   isStoryDraft,
 } from "./types.js";
@@ -251,6 +253,15 @@ export async function handleChatDraft(opts: HandleChatOptions): Promise<void> {
     const current: StoryDraft = isStoryDraft(session.draft) ? session.draft : emptyStoryDraft();
     const next: StoryDraft = {
       storyFields: { ...current.storyFields, ...(fields as StoryFields) },
+    };
+    store.setDraft(scope, scopeKey, runId, next);
+    sendJson(res, 200, { ok: true, draft: next });
+    return;
+  }
+  if (scope === "scene") {
+    const current: SceneDraft = isSceneDraft(session.draft) ? session.draft : emptySceneDraft();
+    const next: SceneDraft = {
+      sceneFields: { ...current.sceneFields, ...(fields as SceneFields) },
     };
     store.setDraft(scope, scopeKey, runId, next);
     sendJson(res, 200, { ok: true, draft: next });
